@@ -10,6 +10,7 @@ namespace PlayGroundSharp.App;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel viewModel = new();
+    private AssistMode assistMode;
 
     public MainWindow()
     {
@@ -21,6 +22,7 @@ public partial class MainWindow : Window
         {
             if (args.Text == ".") await ShowCompletionAsync();
             if (args.Text == "(") await ShowSignatureHelpAsync();
+            if (args.Text == ")" && assistMode == AssistMode.Signature) HideAssist();
         };
         Editor.TextArea.Caret.PositionChanged += (_, _) =>
             viewModel.CursorStatus = $"Ln {Editor.TextArea.Caret.Line}, Col {Editor.TextArea.Caret.Column}";
@@ -36,13 +38,13 @@ public partial class MainWindow : Window
 
     private async void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (CompletionPanel.Visibility == Visibility.Visible && e.Key is Key.Enter or Key.Tab &&
+        if (assistMode == AssistMode.Completion && e.Key is Key.Enter or Key.Tab &&
             CompletionList.SelectedItem is CompletionCandidate candidate)
         {
             e.Handled = true;
             InsertCompletion(candidate);
         }
-        else if (CompletionPanel.Visibility == Visibility.Visible && e.Key is Key.Up or Key.Down)
+        else if (assistMode == AssistMode.Completion && e.Key is Key.Up or Key.Down)
         {
             e.Handled = true;
             CompletionList.SelectedIndex = Math.Clamp(
@@ -52,7 +54,7 @@ public partial class MainWindow : Window
         else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             e.Handled = true;
-            CompletionPanel.Visibility = Visibility.Collapsed;
+            HideAssist();
             await viewModel.ExecuteAsync();
             Editor.Text = viewModel.InputText;
         }
@@ -63,7 +65,7 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Escape)
         {
-            if (CompletionPanel.Visibility == Visibility.Visible) CompletionPanel.Visibility = Visibility.Collapsed;
+            if (CompletionPanel.Visibility == Visibility.Visible) HideAssist();
             else if (viewModel.IsRunning) await viewModel.CancelAsync();
         }
         else if (e.Key == Key.Up && Editor.Document.LineCount == 1)
@@ -78,26 +80,38 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Editor_TextChanged(object? sender, EventArgs e) => viewModel.InputText = Editor.Text;
+    private void Editor_TextChanged(object? sender, EventArgs e)
+    {
+        viewModel.InputText = Editor.Text;
+        if (assistMode == AssistMode.Signature && !HasOpenArgumentList(Editor.Text, Editor.CaretOffset)) HideAssist();
+    }
 
     private async Task ShowCompletionAsync()
     {
         var items = await viewModel.GetCompletionsAsync(Editor.CaretOffset);
         CompletionList.ItemsSource = items;
+        CompletionList.IsHitTestVisible = true;
         CompletionList.DisplayMemberPath = nameof(CompletionCandidate.DisplayText);
         CompletionList.SelectedIndex = items.Count > 0 ? 0 : -1;
         CompletionPanel.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        assistMode = items.Count > 0 ? AssistMode.Completion : AssistMode.None;
         viewModel.Status = items.Count > 0 ? $"{items.Count} completions" : "No completions";
     }
 
     private async Task ShowSignatureHelpAsync()
     {
         var help = await viewModel.GetSignatureHelpAsync(Editor.CaretOffset);
-        if (help is null) return;
+        if (help is null)
+        {
+            HideAssist();
+            return;
+        }
         CompletionList.ItemsSource = help.Signatures;
+        CompletionList.IsHitTestVisible = false;
         CompletionList.DisplayMemberPath = string.Empty;
-        CompletionList.SelectedIndex = 0;
+        CompletionList.SelectedIndex = -1;
         CompletionPanel.Visibility = Visibility.Visible;
+        assistMode = AssistMode.Signature;
     }
 
     private void CompletionList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -111,8 +125,26 @@ public partial class MainWindow : Window
     private void InsertCompletion(CompletionCandidate item)
     {
         Editor.Document.Insert(Editor.CaretOffset, item.DisplayText);
-        CompletionPanel.Visibility = Visibility.Collapsed;
+        HideAssist();
         Editor.Focus();
+    }
+
+    private void HideAssist()
+    {
+        CompletionPanel.Visibility = Visibility.Collapsed;
+        CompletionList.ItemsSource = null;
+        assistMode = AssistMode.None;
+    }
+
+    private static bool HasOpenArgumentList(string text, int caretOffset)
+    {
+        var balance = 0;
+        foreach (var character in text.AsSpan(0, Math.Clamp(caretOffset, 0, text.Length)))
+        {
+            if (character == '(') balance++;
+            else if (character == ')') balance--;
+        }
+        return balance > 0;
     }
 
     private async void Editor_MouseHover(object sender, MouseEventArgs e)
@@ -132,4 +164,6 @@ public partial class MainWindow : Window
             Editor.Focus();
         }
     }
+
+    private enum AssistMode { None, Completion, Signature }
 }

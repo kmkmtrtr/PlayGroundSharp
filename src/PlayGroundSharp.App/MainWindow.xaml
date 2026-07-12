@@ -51,16 +51,17 @@
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
                   <Grid Grid.Row="1" Margin="0,0,0,8">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <TextBlock Text=">" Foreground="{StaticResource AccentBrush}" FontSize="16" FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" />
-                <avalon:TextEditor x:Name="Editor" Grid.Column="1" MinHeight="24" MaxHeight="280"
+                <TextBlock Grid.Row="1" Text=">" Foreground="{StaticResource AccentBrush}" FontSize="16" FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" />
+                <avalon:TextEditor x:Name="Editor" Grid.Row="1" Grid.Column="1" MinHeight="24" MaxHeight="280"
                                    FontFamily="Cascadia Mono,Consolas" FontSize="14" ShowLineNumbers="False"
                                    Background="#FFFFFF" Foreground="#202124" CaretOffset="0"
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                    PreviewKeyDown="Editor_PreviewKeyDown" TextChanged="Editor_TextChanged"
                                    MouseHover="Editor_MouseHover" />
-                <Border x:Name="CompletionPanel" Grid.Column="1" Panel.ZIndex="10" Visibility="Collapsed"
-                        VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="0,0,0,8"
+                <Border x:Name="CompletionPanel" Grid.Row="0" Grid.Column="1" Visibility="Collapsed"
+                        HorizontalAlignment="Left" Margin="0,0,0,4"
                         Background="#FFFFFF" BorderBrush="#BDC1C6" BorderThickness="1" CornerRadius="3" MaxHeight="260" MinWidth="320">
                         <ListBox x:Name="CompletionList" Background="#FFFFFF" Foreground="#202124" BorderThickness="0"
                                  FontFamily="Cascadia Mono,Consolas" MouseDoubleClick="CompletionList_MouseDoubleClick" />

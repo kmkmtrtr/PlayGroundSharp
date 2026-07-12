@@ -54,7 +54,7 @@ values.Where(x => x % 2 == 0)
 await Task.FromResult(42)
 ```
 
-`Last` contains the most recent original result object and `Out[index]` retrieves the original result for a submission.
+The transcript follows a REPL layout: each submitted line starts with `>`, its value appears on the following line, and the next active `>` prompt follows immediately. `Last` contains the most recent original result object and `Out[index]` retrieves the original result for a submission.
 
 ## Commands
 

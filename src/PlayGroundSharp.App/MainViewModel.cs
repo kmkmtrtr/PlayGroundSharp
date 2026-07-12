@@ -324,7 +324,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private static string FormatSnapshot(ResultSnapshot snapshot)
     {
         var suffix = snapshot.IsTruncated ? " … (truncated)" : string.Empty;
-        return (snapshot.Display ?? snapshot.Kind.ToString()) + suffix + (snapshot.TypeName is null ? string.Empty : $"  [{snapshot.TypeName}]");
+        return (snapshot.Display ?? snapshot.Kind.ToString()) + suffix;
     }
 
     public async ValueTask DisposeAsync()

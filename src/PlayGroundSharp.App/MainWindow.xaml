@@ -40,7 +40,7 @@
                         <DataTemplate>
                             <Grid Margin="0,2,0,7">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="28" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{Binding Prefix}" Foreground="{Binding PrefixBrush}" FontFamily="Cascadia Mono,Consolas" />
@@ -50,11 +50,11 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                  <Grid Grid.Row="1" Margin="0,2,0,10">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <TextBlock Text="›" Foreground="{StaticResource AccentBrush}" FontSize="22" VerticalAlignment="Top" HorizontalAlignment="Center" />
-                <avalon:TextEditor x:Name="Editor" Grid.Column="1" MinHeight="56" MaxHeight="280"
-                                   FontFamily="Cascadia Mono,Consolas" FontSize="14" ShowLineNumbers="True"
+                  <Grid Grid.Row="1" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Text=">" Foreground="{StaticResource AccentBrush}" FontSize="16" FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" />
+                <avalon:TextEditor x:Name="Editor" Grid.Column="1" MinHeight="24" MaxHeight="280"
+                                   FontFamily="Cascadia Mono,Consolas" FontSize="14" ShowLineNumbers="False"
                                    Background="#FFFFFF" Foreground="#202124" CaretOffset="0"
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                    PreviewKeyDown="Editor_PreviewKeyDown" TextChanged="Editor_TextChanged"

@@ -4,7 +4,7 @@ Build and start the Debug App, then execute each item in a fresh session where n
 
 | AC | Procedure | Expected |
 |---|---|---|
-| 01 | `1 + 2` | `Out` shows `3` |
+| 01 | `1 + 2` | the line below the submitted `>` prompt shows `3` |
 | 02 | `var values = Enumerable.Range(1, 10).ToArray();`, then `values.Sum()` | `55` |
 | 03 | Submit invalid code, then `values.Sum()` | diagnostics, then still `55` |
 | 04 | Type `values.` | `Length`, `Where`, `Select` completion |

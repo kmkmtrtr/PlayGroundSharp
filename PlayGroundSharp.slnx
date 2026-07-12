@@ -11,4 +11,8 @@
     <Project Path="tests/PlayGroundSharp.LanguageService.Tests/PlayGroundSharp.LanguageService.Tests.csproj" />
     <Project Path="tests/PlayGroundSharp.Worker.Tests/PlayGroundSharp.Worker.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Fixtures/">
+    <Project Path="tests/Fixtures/PlayGroundSharp.TestDependency/PlayGroundSharp.TestDependency.csproj" />
+    <Project Path="tests/Fixtures/PlayGroundSharp.TestFixture/PlayGroundSharp.TestFixture.csproj" />
+  </Folder>
 </Solution>

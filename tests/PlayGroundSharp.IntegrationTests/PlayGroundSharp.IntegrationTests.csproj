@@ -13,6 +13,7 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="..\..\src\PlayGroundSharp.Core\PlayGroundSharp.Core.csproj" />
+    <ProjectReference Include="..\..\src\PlayGroundSharp.Worker\PlayGroundSharp.Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>

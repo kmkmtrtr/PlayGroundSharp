@@ -13,6 +13,8 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="..\..\src\PlayGroundSharp.Worker\PlayGroundSharp.Worker.csproj" />
+    <ProjectReference Include="..\Fixtures\PlayGroundSharp.TestDependency\PlayGroundSharp.TestDependency.csproj" />
+    <ProjectReference Include="..\Fixtures\PlayGroundSharp.TestFixture\PlayGroundSharp.TestFixture.csproj" />
   </ItemGroup>
 
   <ItemGroup>

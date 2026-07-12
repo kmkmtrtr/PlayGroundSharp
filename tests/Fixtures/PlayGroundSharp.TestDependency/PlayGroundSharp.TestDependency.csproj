@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>PlayGroundSharp.TestDependency</PackageId>
+    <Version>1.0.0</Version>
+    <IsPackable>true</IsPackable>
+    <Description>Offline transitive dependency fixture for PlayGroundSharp tests.</Description>
+  </PropertyGroup>
+</Project>

@@ -1,5 +1,6 @@
 using PlayGroundSharp.Core;
 using PlayGroundSharp.LanguageService;
+using PlayGroundSharp.TestFixture;
 
 namespace PlayGroundSharp.LanguageService.Tests;
 
@@ -39,5 +40,13 @@ public sealed class CSharpLanguageServiceTests
         Assert.NotNull(signature);
         Assert.Contains(signature.Signatures, static text => text.Contains("Join", StringComparison.Ordinal));
         Assert.Contains(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public async Task CompletesTypeFromDynamicReference()
+    {
+        var context = new SessionContext([], SessionContext.DefaultImports, [typeof(Greeter).Assembly.Location]);
+        var items = await service.GetCompletionsAsync(context, "new PlayGroundSharp.TestFixture.Gre", "new PlayGroundSharp.TestFixture.Gre".Length);
+        Assert.Contains(items, static item => item.DisplayText == "Greeter");
     }
 }

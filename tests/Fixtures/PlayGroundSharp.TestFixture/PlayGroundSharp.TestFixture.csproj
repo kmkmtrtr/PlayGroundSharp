@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>PlayGroundSharp.TestFixture</PackageId>
+    <Version>1.0.0</Version>
+    <IsPackable>true</IsPackable>
+    <Description>Offline DLL and NuGet fixture for PlayGroundSharp tests.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PlayGroundSharp.TestDependency\PlayGroundSharp.TestDependency.csproj" />
+  </ItemGroup>
+</Project>

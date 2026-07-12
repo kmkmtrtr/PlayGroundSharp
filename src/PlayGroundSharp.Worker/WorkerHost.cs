@@ -8,6 +8,7 @@ namespace PlayGroundSharp.Worker;
 public sealed class WorkerHost(string pipeName)
 {
     private readonly ScriptSession session = new();
+    private readonly PackageRestoreService packageRestore = new();
     private CancellationTokenSource? executionCancellation;
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
@@ -31,11 +32,14 @@ public sealed class WorkerHost(string pipeName)
             switch (envelope.Kind)
             {
                 case MessageKinds.Execute:
-                    await ExecuteAsync(transport, envelope, hostToken).ConfigureAwait(false);
+                    if (executionCancellation is not null)
+                    {
+                        throw new InvalidOperationException("Another submission is already running.");
+                    }
+                    _ = ExecuteAsync(transport, envelope, hostToken);
                     break;
                 case MessageKinds.Cancel:
                     executionCancellation?.Cancel();
-                    await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Cancelled, envelope.CorrelationId, new CancelledEvent(true)), hostToken).ConfigureAwait(false);
                     break;
                 case MessageKinds.Reset:
                     session.Reset();
@@ -48,6 +52,9 @@ public sealed class WorkerHost(string pipeName)
                 case MessageKinds.AddUsing:
                     session.AddUsing(envelope.ReadPayload<AddUsingRequest>().Namespace);
                     await SendContextAsync(transport, envelope.CorrelationId, hostToken).ConfigureAwait(false);
+                    break;
+                case MessageKinds.AddPackage:
+                    await AddPackageAsync(transport, envelope, hostToken).ConfigureAwait(false);
                     break;
                 default:
                     throw new InvalidDataException($"Unknown message kind '{envelope.Kind}'.");
@@ -97,5 +104,17 @@ public sealed class WorkerHost(string pipeName)
         var context = session.Context;
         return transport.WriteAsync(PipeEnvelope.Create(MessageKinds.SessionChanged, correlationId,
             new SessionChangedEvent(context.ReferencePaths, context.Imports)), cancellationToken);
+    }
+
+    private async Task AddPackageAsync(PipeTransport transport, PipeEnvelope envelope, CancellationToken cancellationToken)
+    {
+        var request = envelope.ReadPayload<AddPackageRequest>();
+        var restored = await packageRestore.RestoreAsync(request.PackageId, request.Version, request.Source,
+            message => transport.WriteAsync(PipeEnvelope.Create(MessageKinds.PackageProgress, envelope.CorrelationId,
+                new PackageProgressEvent(message)), cancellationToken).GetAwaiter().GetResult(), cancellationToken).ConfigureAwait(false);
+        foreach (var path in restored.AssemblyPaths) session.AddReference(path);
+        await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.PackageAdded, envelope.CorrelationId,
+            new PackageAddedEvent(restored.PackageId, restored.Version, restored.AssemblyPaths)), cancellationToken).ConfigureAwait(false);
+        await SendContextAsync(transport, envelope.CorrelationId, cancellationToken).ConfigureAwait(false);
     }
 }

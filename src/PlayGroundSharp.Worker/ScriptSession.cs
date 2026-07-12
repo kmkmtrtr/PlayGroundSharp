@@ -24,6 +24,7 @@ public sealed class ScriptSession
     private readonly List<string> submissions = [];
     private readonly List<string> imports = [.. SessionContext.DefaultImports];
     private readonly List<string> references = [];
+    private readonly Dictionary<string, (string Identity, string Path)> assemblyIdentities = new(StringComparer.OrdinalIgnoreCase);
     private ScriptState<object?>? state;
     private ScriptOptions options;
 
@@ -102,8 +103,17 @@ public sealed class ScriptSession
         {
             return;
         }
+        var assemblyName = System.Reflection.AssemblyName.GetAssemblyName(fullPath);
+        var simpleName = assemblyName.Name ?? throw new BadImageFormatException("Assembly has no simple name.");
+        var identity = assemblyName.FullName ?? simpleName;
+        if (assemblyIdentities.TryGetValue(simpleName, out var loaded) &&
+            (!loaded.Identity.Equals(identity, StringComparison.OrdinalIgnoreCase) || !loaded.Path.Equals(fullPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Assembly '{simpleName}' is already loaded from another path or version. Worker reconstruction is required.");
+        }
         options = options.AddReferences(MetadataReference.CreateFromFile(fullPath));
         references.Add(fullPath);
+        assemblyIdentities[simpleName] = (identity, fullPath);
     }
 
     public void AddUsing(string @namespace)

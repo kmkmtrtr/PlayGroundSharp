@@ -26,6 +26,8 @@ Deliver a vertical .NET 10 WPF MVP: the UI sends incremental C# submissions over
 | 5.1 | Harden value handling | Depth/cycle/item/string/output limits | Snapshot tests |
 | 5.2 | Harden lifecycle | Cancel, kill/restart, state-loss notice | AC-10 |
 | 5.3 | Document and validate | README, architecture, Debug/Release | Full validation |
+| 6.1 | Add theme selection (low priority) | User-selectable theme colors and persistence | Manual UI check |
+| 6.2 | Add result pop-out (low priority) | Detachable detailed result viewer | Manual UI check |
 
 ## Risks and mitigations
 

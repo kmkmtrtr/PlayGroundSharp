@@ -1,5 +1,7 @@
 using PlayGroundSharp.Core;
 using PlayGroundSharp.Worker;
+using PlayGroundSharp.TestFixture;
+using PlayGroundSharp.TestDependency;
 
 namespace PlayGroundSharp.Worker.Tests;
 
@@ -57,5 +59,15 @@ public sealed class ScriptSessionTests
         Assert.Contains("err", string.Concat(error));
         Assert.Equal("42", (await session.ExecuteAsync(2, "Last")).Snapshot?.Display);
         Assert.Equal("42", (await session.ExecuteAsync(3, "Out[1]")).Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task AddsLocalDllReferences()
+    {
+        var session = new ScriptSession();
+        session.AddReference(typeof(DependencyValue).Assembly.Location);
+        session.AddReference(typeof(Greeter).Assembly.Location);
+        var result = await session.ExecuteAsync(1, "PlayGroundSharp.TestFixture.Greeter.Message");
+        Assert.Equal("hello from fixture", result.Snapshot?.Display);
     }
 }

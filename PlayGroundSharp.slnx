@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PlayGroundSharp.App/PlayGroundSharp.App.csproj" />
+    <Project Path="src/PlayGroundSharp.Core/PlayGroundSharp.Core.csproj" />
+    <Project Path="src/PlayGroundSharp.LanguageService/PlayGroundSharp.LanguageService.csproj" />
+    <Project Path="src/PlayGroundSharp.Worker/PlayGroundSharp.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PlayGroundSharp.Core.Tests/PlayGroundSharp.Core.Tests.csproj" />
+    <Project Path="tests/PlayGroundSharp.IntegrationTests/PlayGroundSharp.IntegrationTests.csproj" />
+    <Project Path="tests/PlayGroundSharp.LanguageService.Tests/PlayGroundSharp.LanguageService.Tests.csproj" />
+    <Project Path="tests/PlayGroundSharp.Worker.Tests/PlayGroundSharp.Worker.Tests.csproj" />
+  </Folder>
+</Solution>

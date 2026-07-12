@@ -32,8 +32,8 @@
                 <Grid MinHeight="{Binding ActualHeight, ElementName=TranscriptScroll}">
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
                   </Grid.RowDefinitions>
                   <ItemsControl Grid.Row="0" ItemsSource="{Binding Transcript}">
                     <ItemsControl.ItemTemplate>
@@ -50,7 +50,7 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                  <Grid Grid.Row="2" Margin="0,2,0,10">
+                  <Grid Grid.Row="1" Margin="0,2,0,10">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <TextBlock Text="›" Foreground="{StaticResource AccentBrush}" FontSize="22" VerticalAlignment="Top" HorizontalAlignment="Center" />
                 <avalon:TextEditor x:Name="Editor" Grid.Column="1" MinHeight="56" MaxHeight="280"

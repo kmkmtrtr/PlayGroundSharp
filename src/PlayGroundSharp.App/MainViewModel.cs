@@ -36,6 +36,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
     public IAsyncRelayCommand CancelCommand { get; }
     public IAsyncRelayCommand ResetCommand { get; }
+    public IAsyncRelayCommand RestartWorkerCommand { get; }
     public IRelayCommand ClearCommand { get; }
     public IRelayCommand ToggleReferenceDrawerCommand { get; }
 
@@ -43,6 +44,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         CancelCommand = new AsyncRelayCommand(CancelAsync);
         ResetCommand = new AsyncRelayCommand(ResetAsync);
+        RestartWorkerCommand = new AsyncRelayCommand(RestartWorkerAsync);
         ClearCommand = new RelayCommand(Transcript.Clear);
         ToggleReferenceDrawerCommand = new RelayCommand(() => IsReferenceDrawerOpen = !IsReferenceDrawerOpen);
         worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEvent(envelope));
@@ -114,7 +116,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         await worker.CancelAsync();
         await Task.Delay(TimeSpan.FromSeconds(1.5));
         if (!IsRunning) return;
-        await worker.RestartAsync();
+        await RestartAndRehydrateAsync();
         IsRunning = false;
         Status = "Ready";
         submissions.Clear();
@@ -233,6 +235,27 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         submissions.Clear();
         SessionStatus = "0 submissions";
         Transcript.Add(TranscriptLine.System("Session reset."));
+    }
+
+    private async Task RestartWorkerAsync()
+    {
+        Status = "Starting Worker";
+        await RestartAndRehydrateAsync();
+        submissions.Clear();
+        executingCode = null;
+        IsRunning = false;
+        Status = "Ready";
+        SessionStatus = "0 submissions — Worker restarted";
+        Transcript.Add(TranscriptLine.System("Worker restarted. Variables and methods were lost; references and usings were restored."));
+    }
+
+    private async Task RestartAndRehydrateAsync()
+    {
+        await worker.RestartAsync();
+        foreach (var import in imports.Except(SessionContext.DefaultImports, StringComparer.Ordinal))
+            await worker.AddUsingAsync(import);
+        foreach (var reference in references)
+            await worker.AddReferenceAsync(reference);
     }
 
     private async Task ExecuteCommandAsync(string command)

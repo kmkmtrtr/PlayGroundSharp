@@ -15,6 +15,7 @@ public sealed class WorkerClient : IAsyncDisposable
     private PipeTransport? transport;
     private CancellationTokenSource? lifetime;
     private Task? readLoop;
+    private bool isStopping;
 
     public event Action<PipeEnvelope>? EventReceived;
     public event Action<string>? Disconnected;
@@ -35,7 +36,11 @@ public sealed class WorkerClient : IAsyncDisposable
         startInfo.WorkingDirectory = workerDirectory;
         process = Process.Start(startInfo) ?? throw new InvalidOperationException("Worker process could not be started.");
         process.EnableRaisingEvents = true;
-        process.Exited += (_, _) => Disconnected?.Invoke($"Worker exited with code {process.ExitCode}.");
+        var startedProcess = process;
+        process.Exited += (_, _) =>
+        {
+            if (!isStopping) Disconnected?.Invoke($"Worker exited with code {startedProcess.ExitCode}.");
+        };
 
         pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -128,6 +133,7 @@ public sealed class WorkerClient : IAsyncDisposable
 
     private async Task StopAsync()
     {
+        isStopping = true;
         lifetime?.Cancel();
         if (readLoop is not null)
         {
@@ -147,6 +153,7 @@ public sealed class WorkerClient : IAsyncDisposable
         readLoop = null;
         lifetime?.Dispose();
         lifetime = null;
+        isStopping = false;
     }
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);

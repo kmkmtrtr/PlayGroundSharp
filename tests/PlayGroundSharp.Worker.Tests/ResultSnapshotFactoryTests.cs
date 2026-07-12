@@ -40,6 +40,27 @@ public sealed class ResultSnapshotFactoryTests
         Assert.Contains("boom", snapshot.Display);
     }
 
+    [Fact]
+    public void LimitsStringsAndObjectDepth()
+    {
+        var longString = factory.Create(new string('x', ResultSnapshotFactory.MaximumStringLength + 1));
+        var root = new Node();
+        var current = root;
+        for (var index = 0; index < ResultSnapshotFactory.MaximumDepth + 1; index++)
+        {
+            current.Next = new Node();
+            current = current.Next;
+        }
+        var deep = factory.Create(root);
+
+        Assert.True(longString.IsTruncated);
+        Assert.Equal(ResultSnapshotFactory.MaximumStringLength, longString.Display?.Length);
+        Assert.True(ContainsKind(deep, SnapshotKind.MaxDepth));
+    }
+
+    private static bool ContainsKind(ResultSnapshot snapshot, SnapshotKind kind) =>
+        snapshot.Kind == kind || snapshot.Properties?.Any(property => ContainsKind(property.Value, kind)) == true;
+
     private sealed class Node
     {
         public Node? Next { get; set; }

@@ -126,8 +126,8 @@ public sealed class CSharpLanguageService
     {
         var workspace = new AdhocWorkspace(MefHostServices.Create(MefHostServices.DefaultAssemblies));
         var projectId = ProjectId.CreateNewId();
-        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Regular);
-        var compilationOptions = new CSharpCompilationOptions(OutputKind.ConsoleApplication,
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script);
+        var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
             usings: context.Imports, nullableContextOptions: NullableContextOptions.Enable);
         var references = GetPlatformReferences()
             .Concat(context.ReferencePaths.Where(File.Exists).Select(static path => MetadataReference.CreateFromFile(path)))

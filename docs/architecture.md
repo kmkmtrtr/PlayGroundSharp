@@ -2,7 +2,7 @@
 
 ## Phase 0 environment
 
-The repository started empty. .NET SDK 10.0.109 and Windows Desktop Runtime 10.0.9 are installed. Roslyn continuity, completion, dynamic references and package restore are retained as automated tests rather than disposable spikes.
+The repository started empty. .NET SDK 10.0.109 and Windows Desktop Runtime 10.0.9 are installed. Roslyn continuity (values, variables, methods, types, await, runtime-error continuation), completion (arrays, LINQ extensions, session types), dynamic DLL references and offline package restore with a transitive dependency are retained as automated tests rather than disposable spikes.
 
 ## Components
 
@@ -38,3 +38,7 @@ Reference paths are added to Roslyn ScriptOptions and the language workspace. Th
 ## Security
 
 PlayGroundSharp is not a sandbox. Code runs with the current Windows user's authority and can access files, processes and networks. Process separation protects UI availability and permits crash/loop recovery. Untrusted code or packages must not be executed.
+
+## Validation summary
+
+Debug and Release builds complete with zero warnings. The automated suite covers Core framing, Worker state/snapshots/package restore, LanguageService completion/diagnostics and separate-process integration including infinite-loop termination. UI Automation smoke tests exercise the actual WPF prompt, transcript, package restore and Worker recovery; details are in `docs/manual-testing.md`.

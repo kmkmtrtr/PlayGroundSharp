@@ -36,10 +36,23 @@ public partial class MainWindow : Window
 
     private async void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        if (CompletionPanel.Visibility == Visibility.Visible && e.Key is Key.Enter or Key.Tab &&
+            CompletionList.SelectedItem is CompletionCandidate candidate)
         {
             e.Handled = true;
-            CompletionPopup.IsOpen = false;
+            InsertCompletion(candidate);
+        }
+        else if (CompletionPanel.Visibility == Visibility.Visible && e.Key is Key.Up or Key.Down)
+        {
+            e.Handled = true;
+            CompletionList.SelectedIndex = Math.Clamp(
+                CompletionList.SelectedIndex + (e.Key == Key.Down ? 1 : -1), 0, CompletionList.Items.Count - 1);
+            CompletionList.ScrollIntoView(CompletionList.SelectedItem);
+        }
+        else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            e.Handled = true;
+            CompletionPanel.Visibility = Visibility.Collapsed;
             await viewModel.ExecuteAsync();
             Editor.Text = viewModel.InputText;
         }
@@ -50,7 +63,7 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Escape)
         {
-            if (CompletionPopup.IsOpen) CompletionPopup.IsOpen = false;
+            if (CompletionPanel.Visibility == Visibility.Visible) CompletionPanel.Visibility = Visibility.Collapsed;
             else if (viewModel.IsRunning) await viewModel.CancelAsync();
         }
         else if (e.Key == Key.Up && Editor.Document.LineCount == 1)
@@ -73,7 +86,8 @@ public partial class MainWindow : Window
         CompletionList.ItemsSource = items;
         CompletionList.DisplayMemberPath = nameof(CompletionCandidate.DisplayText);
         CompletionList.SelectedIndex = items.Count > 0 ? 0 : -1;
-        CompletionPopup.IsOpen = items.Count > 0;
+        CompletionPanel.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        viewModel.Status = items.Count > 0 ? $"{items.Count} completions" : "No completions";
     }
 
     private async Task ShowSignatureHelpAsync()
@@ -83,17 +97,22 @@ public partial class MainWindow : Window
         CompletionList.ItemsSource = help.Signatures;
         CompletionList.DisplayMemberPath = string.Empty;
         CompletionList.SelectedIndex = 0;
-        CompletionPopup.IsOpen = true;
+        CompletionPanel.Visibility = Visibility.Visible;
     }
 
     private void CompletionList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (CompletionList.SelectedItem is CompletionCandidate item)
         {
-            Editor.Document.Insert(Editor.CaretOffset, item.DisplayText);
-            CompletionPopup.IsOpen = false;
-            Editor.Focus();
+            InsertCompletion(item);
         }
+    }
+
+    private void InsertCompletion(CompletionCandidate item)
+    {
+        Editor.Document.Insert(Editor.CaretOffset, item.DisplayText);
+        CompletionPanel.Visibility = Visibility.Collapsed;
+        Editor.Focus();
     }
 
     private async void Editor_MouseHover(object sender, MouseEventArgs e)

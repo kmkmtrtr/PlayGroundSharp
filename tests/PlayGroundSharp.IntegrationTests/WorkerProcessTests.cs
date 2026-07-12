@@ -60,6 +60,37 @@ public sealed class WorkerProcessTests
         }
     }
 
+    [Fact]
+    public async Task InfiniteSubmissionCanBeTerminatedAndWorkerReplaced()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-loop-{Guid.NewGuid():N}";
+        using var looping = StartWorker(pipeName);
+        await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await pipe.ConnectAsync(timeout.Token);
+        await using var transport = new PipeTransport(pipe);
+        var correlationId = Guid.NewGuid();
+        await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Execute, correlationId, new ExecuteRequest(1, "while (true) { }")), timeout.Token);
+        var started = await transport.ReadAsync(timeout.Token);
+        Assert.Equal(MessageKinds.Started, started?.Kind);
+
+        looping.Kill(entireProcessTree: true);
+        await looping.WaitForExitAsync(timeout.Token);
+        var replacementPipe = $"pgs-after-loop-{Guid.NewGuid():N}";
+        using var replacement = StartWorker(replacementPipe);
+        try
+        {
+            await using var replacementConnection = new NamedPipeClientStream(".", replacementPipe, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await replacementConnection.ConnectAsync(timeout.Token);
+            Assert.False(replacement.HasExited);
+        }
+        finally
+        {
+            if (!replacement.HasExited) replacement.Kill(entireProcessTree: true);
+            await replacement.WaitForExitAsync(timeout.Token);
+        }
+    }
+
     private static Process StartWorker(string pipeName)
     {
         var workerDll = typeof(WorkerHost).Assembly.Location;

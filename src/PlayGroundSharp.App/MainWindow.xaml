@@ -100,11 +100,13 @@
 
         <Grid Grid.Row="1" Background="{DynamicResource BackgroundBrush}">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="TypeExplorerColumn" Width="286" />
+                <ColumnDefinition x:Name="TypeExplorerSplitterColumn" Width="5" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="ReferenceDrawerSplitterColumn" Width="0" />
+                <ColumnDefinition x:Name="ReferenceDrawerColumn" Width="0" />
             </Grid.ColumnDefinitions>
-            <Border x:Name="TypeExplorerPane" Grid.Column="0" Width="286" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
+            <Border x:Name="TypeExplorerPane" Grid.Column="0" MinWidth="220" MaxWidth="520" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="0,0,1,0" Visibility="{Binding IsTypeExplorerOpen, Converter={StaticResource BooleanToVisibilityConverter}}"
                     IsVisibleChanged="TypeExplorerPane_IsVisibleChanged">
                 <DockPanel>
@@ -138,7 +140,7 @@
                         <Grid Grid.Row="1" Margin="0,8,0,0">
                             <TreeView x:Name="TypeExplorerTree" ItemsSource="{Binding TypeExplorerItems}" AutomationProperties.Name="TypeExplorerTree"
                                       Background="Transparent" BorderThickness="0" Foreground="{DynamicResource ForegroundBrush}"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged"
                                       PreviewMouseLeftButtonUp="TypeExplorerTree_PreviewMouseLeftButtonUp"
                                       PreviewKeyDown="TypeExplorerTree_PreviewKeyDown">
                                 <TreeView.Resources>
@@ -197,6 +199,10 @@
                     </Grid>
                 </DockPanel>
             </Border>
+            <GridSplitter Grid.Column="1" Style="{StaticResource VerticalPaneSplitterStyle}"
+                          AutomationProperties.Name="{DynamicResource Tooltip.ResizeExplorer}"
+                          ToolTip="{DynamicResource Tooltip.ResizeExplorer}"
+                          Visibility="{Binding IsTypeExplorerOpen, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <Popup x:Name="SymbolDetailPopup" PlacementTarget="{Binding ElementName=TypeExplorerTree}" Placement="Right"
                    HorizontalOffset="8" StaysOpen="True" AllowsTransparency="True">
                 <Border Width="440" MaxHeight="560" Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}"
@@ -238,7 +244,7 @@
                     </ScrollViewer>
                 </Border>
             </Popup>
-            <ScrollViewer x:Name="TranscriptScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="20,16,18,6"
+            <ScrollViewer x:Name="TranscriptScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="20,16,18,6"
                           AutomationProperties.Name="ConsoleSurface"
                           PreviewMouseLeftButtonDown="ConsoleSurface_PreviewMouseLeftButtonDown">
                 <Grid MinHeight="{Binding ViewportHeight, ElementName=TranscriptScroll}">
@@ -300,9 +306,9 @@
                                 <RowDefinition Height="30" />
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="390" />
-                                <ColumnDefinition Width="1" />
-                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="390" MinWidth="250" />
+                                <ColumnDefinition Width="5" />
+                                <ColumnDefinition Width="*" MinWidth="250" />
                             </Grid.ColumnDefinitions>
                             <ListBox x:Name="CompletionList" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
                                      FontFamily="Cascadia Mono,Consolas" Focusable="False"
@@ -314,7 +320,9 @@
                                     </Style>
                                 </ListBox.ItemContainerStyle>
                             </ListBox>
-                            <Border Grid.Column="1" Background="{DynamicResource BorderBrush}" />
+                            <GridSplitter Grid.Column="1" Style="{StaticResource VerticalPaneSplitterStyle}"
+                                          AutomationProperties.Name="{DynamicResource Tooltip.ResizeCompletion}"
+                                          ToolTip="{DynamicResource Tooltip.ResizeCompletion}" />
                             <Border x:Name="AssistSummaryPanel" Grid.Column="2" Background="{DynamicResource PanelBrush}" Padding="12,10">
                                 <Grid>
                                     <Grid.RowDefinitions>
@@ -342,8 +350,13 @@
                   </Grid>
                 </Grid>
             </ScrollViewer>
-            <Border Grid.Column="2" Width="470" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="1,0,0,0" Visibility="{Binding IsReferenceDrawerOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <GridSplitter Grid.Column="3" Style="{StaticResource VerticalPaneSplitterStyle}"
+                          AutomationProperties.Name="{DynamicResource Tooltip.ResizeWorkspace}"
+                          ToolTip="{DynamicResource Tooltip.ResizeWorkspace}"
+                          Visibility="{Binding IsReferenceDrawerOpen, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <Border x:Name="ReferenceDrawerPane" Grid.Column="4" MinWidth="320" MaxWidth="720" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1,0,0,0" Visibility="{Binding IsReferenceDrawerOpen, Converter={StaticResource BooleanToVisibilityConverter}}"
+                    IsVisibleChanged="ReferenceDrawerPane_IsVisibleChanged">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,12,14,10">
                         <StackPanel>

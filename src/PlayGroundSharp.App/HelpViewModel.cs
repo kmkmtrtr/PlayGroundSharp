@@ -30,13 +30,13 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("入力と補完", "C#補完、シグネチャ、診断を現在のセッション状態から生成します。",
         [
-            new("キー操作", "EnterまたはCtrl+Enterで実行します（設定で変更可能）。Ctrl+Spaceで補完、Tabで明示選択、Escで閉じます。Shift+EnterまたはEnterで改行します。"),
+            new("キー操作", "EnterまたはCtrl+Enterで実行します（設定で変更可能）。Ctrl+Spaceで補完、Tabで明示選択、Escで閉じます。Shift+EnterまたはEnterで改行します。補完Popup中央の境界をドラッグすると候補とドキュメントの幅を変更できます。"),
             new("履歴", "一行入力で上下キーを押すと履歴を移動します。過去の入力行をクリックして現在の入力へコピーできます。"),
             new("補完の確定", "候補は入力内容に応じて絞り込まれます。Enterでは候補を確定せず、Tabまたはダブルクリックだけで挿入します。")
         ]),
         new("シンボル", "名前空間、型、メソッドとドキュメントを探索します。",
         [
-            new("ホバーと固定表示", "項目へマウスを置くと署名と概要をすばやく確認できます。クリックするとパラメーターや戻り値を左下へ固定表示します。"),
+            new("ホバーと詳細表示", "項目へマウスを置くと署名と概要をすばやく確認できます。クリックするとパラメーターや戻り値を右側のフライアウトへ表示します。Explorer右端をドラッグすると一覧幅を変更できます。"),
             new("日本語ドキュメント", "アセンブリ付属のXMLコメントは通常英語です。内容を不正確に自動翻訳せず、.NET APIでは固定詳細からMicrosoft Learnの日本語ページを開けます。"),
             new("検索", "名前空間、型、メソッド、コメント、アセンブリ名を横断検索します。")
         ]),
@@ -74,12 +74,12 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Input and IntelliSense", "Completion and diagnostics use the current session state.",
         [
-            new("Keys", "Run with Enter or Ctrl+Enter as configured. Ctrl+Space opens completion, Tab explicitly accepts, and Esc closes it. Completion is never accepted by Enter."),
+            new("Keys", "Run with Enter or Ctrl+Enter as configured. Ctrl+Space opens completion, Tab explicitly accepts, and Esc closes it. Completion is never accepted by Enter. Drag the center divider to resize completion items and documentation."),
             new("History", "Use Up and Down on a single line, or click a prior input to copy it into the editor.")
         ]),
         new("Symbol explorer", "Browse namespaces, types, methods, and XML documentation.",
         [
-            new("Hover and pin", "Hover for a compact signature and summary. Click to pin parameters and return documentation in the lower pane."),
+            new("Hover and details", "Hover for a compact signature and summary. Click for parameter and return documentation in a right-side flyout. Drag the Explorer edge to resize it."),
             new("Localized docs", "Assembly XML documentation is commonly English. Framework symbols link to the localized Microsoft Learn API page rather than applying an unreliable automatic translation.")
         ]),
         new("Workspaces", "Save and reconstruct a session later.",

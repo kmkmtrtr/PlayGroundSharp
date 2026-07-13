@@ -19,6 +19,8 @@ public partial class MainWindow : Window
     private CancellationTokenSource? completionDescriptionCancellation;
     private AssistMode assistMode;
     private int completionStart;
+    private GridLength typeExplorerWidth = new(286);
+    private GridLength referenceDrawerWidth = new(470);
 
     public MainWindow()
     {
@@ -80,7 +82,29 @@ public partial class MainWindow : Window
 
     private void TypeExplorerPane_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (e.NewValue is false) SymbolDetailPopup.IsOpen = false;
+        if (e.NewValue is true)
+        {
+            TypeExplorerColumn.Width = typeExplorerWidth;
+            TypeExplorerSplitterColumn.Width = new(5);
+            return;
+        }
+        if (TypeExplorerColumn.ActualWidth > 0) typeExplorerWidth = new(TypeExplorerColumn.ActualWidth);
+        TypeExplorerColumn.Width = new(0);
+        TypeExplorerSplitterColumn.Width = new(0);
+        SymbolDetailPopup.IsOpen = false;
+    }
+
+    private void ReferenceDrawerPane_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is true)
+        {
+            ReferenceDrawerSplitterColumn.Width = new(5);
+            ReferenceDrawerColumn.Width = referenceDrawerWidth;
+            return;
+        }
+        if (ReferenceDrawerColumn.ActualWidth > 0) referenceDrawerWidth = new(ReferenceDrawerColumn.ActualWidth);
+        ReferenceDrawerSplitterColumn.Width = new(0);
+        ReferenceDrawerColumn.Width = new(0);
     }
 
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

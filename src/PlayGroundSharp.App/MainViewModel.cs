@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -13,6 +14,8 @@ public sealed record VariableItem(string Name, string TypeName, string Value, bo
 {
     public string Kind => IsReadOnly ? "const" : "var";
 }
+
+public sealed record LibraryItem(string Kind, string Name, string Version, string Source, string? Path);
 
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
@@ -39,6 +42,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string cursorStatus = "Ln 1, Col 1";
     [ObservableProperty] private bool isRunning;
     [ObservableProperty] private bool isReferenceDrawerOpen;
+    [ObservableProperty] private string packageSearchText = string.Empty;
+    [ObservableProperty] private string packageSearchMessage = "Search packages on nuget.org";
+    [ObservableProperty] private bool includePrereleasePackages;
+    [ObservableProperty] private bool isPackageSearchBusy;
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = SettingsStore.Load().ExecutionKeyMode;
     [ObservableProperty] private AppThemeMode themeMode = SettingsStore.Load().ThemeMode;
 
@@ -47,6 +54,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
     public ObservableCollection<VariableItem> VariableItems { get; } = [];
+    public ObservableCollection<NuGetPackageInfo> PackageSearchItems { get; } = [];
+    public ObservableCollection<LibraryItem> LibraryItems { get; } = [];
     public IReadOnlyList<ExecutionKeyMode> ExecutionKeyModes { get; } = Enum.GetValues<ExecutionKeyMode>();
     public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();
     public IAsyncRelayCommand CancelCommand { get; }
@@ -54,6 +63,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public IAsyncRelayCommand RestartWorkerCommand { get; }
     public IRelayCommand ClearCommand { get; }
     public IRelayCommand ToggleReferenceDrawerCommand { get; }
+    public IAsyncRelayCommand SearchPackagesCommand { get; }
+    public IAsyncRelayCommand<NuGetPackageInfo> InstallPackageCommand { get; }
 
     public MainViewModel()
     {
@@ -62,6 +73,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         RestartWorkerCommand = new AsyncRelayCommand(RestartWorkerAsync);
         ClearCommand = new RelayCommand(Transcript.Clear);
         ToggleReferenceDrawerCommand = new RelayCommand(() => IsReferenceDrawerOpen = !IsReferenceDrawerOpen);
+        SearchPackagesCommand = new AsyncRelayCommand(SearchPackagesAsync);
+        InstallPackageCommand = new AsyncRelayCommand<NuGetPackageInfo>(InstallPackageAsync);
         worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEvent(envelope));
         worker.Disconnected += message => Application.Current.Dispatcher.Invoke(() =>
         {
@@ -308,6 +321,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 packages.Add((package.PackageId, package.Version));
                 PackageItems.Clear();
                 foreach (var item in packages) PackageItems.Add($"{item.Id} {item.Version}");
+                AddPackageLibrary(package);
                 foreach (var path in package.AssemblyPaths)
                     if (!references.Contains(path, StringComparer.OrdinalIgnoreCase))
                     {
@@ -315,6 +329,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                         ReferenceItems.Add(path);
                     }
                 Transcript.Add(TranscriptLine.System($"Package added: {package.PackageId} {package.Version}"));
+                break;
+            case MessageKinds.PackageSearchResults:
+                var searchResults = envelope.ReadPayload<PackageSearchResultsEvent>();
+                PackageSearchItems.Clear();
+                foreach (var item in searchResults.Packages) PackageSearchItems.Add(item);
+                PackageSearchMessage = searchResults.TotalHits == 0
+                    ? "No packages found."
+                    : $"{searchResults.TotalHits:N0} packages found — showing {searchResults.Packages.Count}";
                 break;
         }
     }
@@ -389,6 +411,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 references.Add(path);
                 ReferenceItems.Add(path);
+                AddAssemblyLibrary(path, "Local DLL");
             }
             Transcript.Add(TranscriptLine.System($"Reference added: {path}"));
         }
@@ -402,15 +425,99 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var match = Regex.Match(command, "^:package add (?<id>[A-Za-z0-9._-]+)(?: --version (?<version>[^ ]+))?$");
             if (!match.Success) throw new ArgumentException("Usage: :package add <PackageId> [--version <Version>]");
             var version = match.Groups["version"].Success ? match.Groups["version"].Value : null;
-            Status = "Restoring package";
-            await worker.AddPackageAsync(match.Groups["id"].Value, version);
-            Status = "Ready";
+            await AddPackageAsync(match.Groups["id"].Value, version);
         }
         else
         {
             Transcript.Add(TranscriptLine.Diagnostic($"Unknown command: {command}"));
         }
         InputText = string.Empty;
+    }
+
+    private async Task SearchPackagesAsync()
+    {
+        if (IsPackageSearchBusy) return;
+        IsPackageSearchBusy = true;
+        PackageSearchMessage = "Searching nuget.org…";
+        Status = "Searching packages";
+        try
+        {
+            await worker.SearchPackagesAsync(PackageSearchText, IncludePrereleasePackages);
+            Status = "Ready";
+        }
+        catch (Exception error)
+        {
+            PackageSearchMessage = error.Message;
+            Status = "Package search failed";
+        }
+        finally
+        {
+            IsPackageSearchBusy = false;
+        }
+    }
+
+    private Task InstallPackageAsync(NuGetPackageInfo? package) => package is null
+        ? Task.CompletedTask
+        : AddPackageAsync(package.PackageId, package.Version);
+
+    private async Task AddPackageAsync(string packageId, string? version)
+    {
+        if (IsPackageSearchBusy) return;
+        if (version is not null && packages.Any(item =>
+            item.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase) && item.Version == version))
+        {
+            PackageSearchMessage = $"{packageId} {version} is already installed.";
+            return;
+        }
+
+        IsPackageSearchBusy = true;
+        Status = "Restoring package";
+        PackageSearchMessage = $"Installing {packageId} {version ?? "latest stable"}…";
+        try
+        {
+            await worker.AddPackageAsync(packageId, version);
+            Status = "Ready";
+            var installed = packages.FirstOrDefault(item => item.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase));
+            PackageSearchMessage = installed == default
+                ? $"Installed {packageId}."
+                : $"Installed {installed.Id} {installed.Version}.";
+        }
+        catch (Exception error)
+        {
+            Status = "Package install failed";
+            PackageSearchMessage = error.Message;
+        }
+        finally
+        {
+            IsPackageSearchBusy = false;
+        }
+    }
+
+    private void AddPackageLibrary(PackageAddedEvent package)
+    {
+        for (var index = LibraryItems.Count - 1; index >= 0; index--)
+            if (LibraryItems[index].Kind == "Package" &&
+                LibraryItems[index].Name.Equals(package.PackageId, StringComparison.OrdinalIgnoreCase))
+                LibraryItems.RemoveAt(index);
+        LibraryItems.Add(new("Package", package.PackageId, package.Version,
+            $"NuGet · {package.AssemblyPaths.Count} assemblies", null));
+        foreach (var path in package.AssemblyPaths) AddAssemblyLibrary(path, $"NuGet: {package.PackageId}");
+    }
+
+    private void AddAssemblyLibrary(string path, string source)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (LibraryItems.Any(item => item.Path?.Equals(fullPath, StringComparison.OrdinalIgnoreCase) == true)) return;
+        try
+        {
+            var identity = AssemblyName.GetAssemblyName(fullPath);
+            LibraryItems.Add(new("Assembly", identity.Name ?? Path.GetFileNameWithoutExtension(fullPath),
+                identity.Version?.ToString() ?? string.Empty, source, fullPath));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or BadImageFormatException)
+        {
+            LibraryItems.Add(new("Assembly", Path.GetFileNameWithoutExtension(fullPath), string.Empty, source, fullPath));
+        }
     }
 
     private static string FormatSnapshot(ResultSnapshot snapshot)

@@ -41,7 +41,9 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Up` / `Down`: move through single-line input history
 - Click a previous `In` line: copy it into the current prompt
 - **Stop**: request cancellation, then terminate/restart an unresponsive Worker after 1.5 seconds
-- **Session**: open Variables, Packages, Assemblies, Usings and settings
+- **Session**: open Variables, NuGet, Libraries, Usings and settings
+- **NuGet**: search nuget.org, review package metadata and install the displayed exact version
+- **Libraries**: list imported packages, local DLLs and package runtime assemblies with versions and sources
 - **Inspect** on a result: open its bounded property/item tree in a separate window
 
 Examples:
@@ -76,11 +78,12 @@ The transcript follows a REPL layout: each submitted line starts with `>`, its v
 
 If package version is omitted, NuGet floating version `*` resolves the latest stable version and the exact selected version is shown. Package restore runs outside the UI thread and uses the normal NuGet cache. Assembly upgrades/removals and conflicting identities require a Worker restart.
 
-Typing `:` opens command completion. After adding a DLL or package, `:using add ` completion lists namespaces found in those assemblies. C# type completion can also show an unimported added-library type with its namespace; accepting it with `Tab` adds the required using to both execution and IntelliSense contexts.
+Typing `:` opens command completion. After adding a DLL or package, `:using add ` completion lists namespaces found in those assemblies. C# type completion can also show an unimported added-library type with its namespace; accepting it with `Tab` adds the required using to both execution and IntelliSense contexts. The NuGet browser discovers the official V3 `SearchQueryService` endpoint from the nuget.org service index rather than relying on a fixed search host.
 
 ## Current limitations
 
 - Package removal/upgrades and unloading an existing assembly identity are not supported in-place.
-- NuGet package-ID completion does not perform online search; enter the package ID explicitly.
+- NuGet browsing currently targets nuget.org; additional configured package sources are not shown in the browser.
 - Variable values are preview snapshots and are truncated to 512 characters in the list.
 - Quick Info uses mouse hover; signature help and completion share the compact assistance popup.
+- BenchmarkDotNet integration is deferred; the planned design uses a disposable benchmark Worker instead of running benchmarks inside the stateful interactive Worker.

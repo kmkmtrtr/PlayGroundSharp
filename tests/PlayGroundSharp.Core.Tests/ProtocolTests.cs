@@ -27,4 +27,19 @@ public sealed class ProtocolTests
         Assert.Equal(correlationId, envelope.CorrelationId);
         Assert.Equal("1 + 2", envelope.ReadPayload<ExecuteRequest>().Code);
     }
+
+    [Fact]
+    public void PackageSearchResultsRoundTripAsNeutralDtos()
+    {
+        var payload = new PackageSearchResultsEvent("json", 1,
+            [new("Example.Package", "1.2.3", "Description", "Author", 42, true)]);
+
+        var envelope = PipeEnvelope.Create(MessageKinds.PackageSearchResults, Guid.NewGuid(), payload);
+        var restored = envelope.ReadPayload<PackageSearchResultsEvent>();
+
+        Assert.Equal("json", restored.Query);
+        var package = Assert.Single(restored.Packages);
+        Assert.Equal("Example.Package", package.PackageId);
+        Assert.True(package.IsVerified);
+    }
 }

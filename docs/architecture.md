@@ -31,6 +31,8 @@ The Worker converts values into bounded `ResultSnapshot` trees. It detects cycle
 
 Package restore uses a temporary SDK project and `dotnet restore`, then reads `obj/project.assets.json`. This delegates target-framework and transitive asset selection to the .NET SDK, supports local-feed tests, and reuses the global package cache. Temporary files are deleted in `finally`.
 
+Package browsing also stays outside the WPF process. The App sends a typed search request to the Worker, which discovers `SearchQueryService` from the NuGet V3 service index, performs an asynchronous bounded query, and returns neutral package metadata DTOs. Automated search tests use a fake HTTP handler and never contact public NuGet.
+
 ## Assembly loading and reconstruction
 
 Reference paths are added to Roslyn ScriptOptions and the language workspace. The MVP does not replace an already loaded assembly with the same identity. Package upgrades, removals and identity conflicts explicitly require Worker reconstruction.
@@ -42,6 +44,10 @@ PlayGroundSharp is not a sandbox. Code runs with the current Windows user's auth
 ## User settings
 
 Execution-key and Light/Dark theme preferences are stored under the user's local application data. Theme changes mutate shared WPF brush resources; language analysis and execution behavior are unaffected.
+
+## Benchmarking extension point
+
+BenchmarkDotNet should not execute inside the long-lived interactive Worker: generated benchmark hosts, tiered compilation, process launches and assembly loading would pollute session state and make cancellation/recovery harder. A future `:benchmark` workflow should snapshot the selected expression or method into a temporary generated benchmark project, run BenchmarkDotNet in a disposable child Worker, stream progress, and return only a neutral summary/table to the transcript. This remains a low-priority follow-up.
 
 ## Validation summary
 

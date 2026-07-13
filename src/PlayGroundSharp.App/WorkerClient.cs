@@ -66,6 +66,9 @@ public sealed class WorkerClient : IAsyncDisposable
     public Task AddPackageAsync(string packageId, string? version, CancellationToken cancellationToken = default) =>
         SendAndWaitAsync(MessageKinds.AddPackage, new AddPackageRequest(packageId, version), cancellationToken);
 
+    public Task SearchPackagesAsync(string query, bool includePrerelease, int take = 20, CancellationToken cancellationToken = default) =>
+        SendAndWaitAsync(MessageKinds.SearchPackages, new SearchPackagesRequest(query, includePrerelease, take), cancellationToken);
+
     public async Task CancelAsync(CancellationToken cancellationToken = default)
     {
         EnsureConnected();
@@ -106,9 +109,16 @@ public sealed class WorkerClient : IAsyncDisposable
                 var envelope = await transport!.ReadAsync(cancellationToken).ConfigureAwait(false);
                 if (envelope is null) break;
                 EventReceived?.Invoke(envelope);
-                if (envelope.Kind is MessageKinds.Completed or MessageKinds.Cancelled or MessageKinds.SessionChanged or MessageKinds.Error)
+                if (envelope.Kind is MessageKinds.Completed or MessageKinds.Cancelled or MessageKinds.SessionChanged or
+                    MessageKinds.PackageSearchResults or MessageKinds.Error)
                 {
-                    if (pending.TryGetValue(envelope.CorrelationId, out var completion)) completion.TrySetResult();
+                    if (pending.TryGetValue(envelope.CorrelationId, out var completion))
+                    {
+                        if (envelope.Kind == MessageKinds.Error)
+                            completion.TrySetException(new InvalidOperationException(envelope.ReadPayload<WorkerErrorEvent>().Message));
+                        else
+                            completion.TrySetResult();
+                    }
                 }
             }
         }

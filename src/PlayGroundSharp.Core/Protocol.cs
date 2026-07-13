@@ -36,6 +36,7 @@ public static class MessageKinds
     public const string AddReference = "reference.add";
     public const string AddUsing = "using.add";
     public const string AddPackage = "package.add";
+    public const string SearchPackages = "package.search";
     public const string Started = "execution.started";
     public const string ConsoleOut = "console.out";
     public const string ConsoleError = "console.error";
@@ -48,6 +49,7 @@ public static class MessageKinds
     public const string SessionChanged = "session.changed";
     public const string PackageProgress = "package.progress";
     public const string PackageAdded = "package.added";
+    public const string PackageSearchResults = "package.search.results";
     public const string Error = "worker.error";
 }
 
@@ -57,6 +59,7 @@ public sealed record ResetRequest;
 public sealed record AddReferenceRequest(string Path);
 public sealed record AddUsingRequest(string Namespace);
 public sealed record AddPackageRequest(string PackageId, string? Version = null, string? Source = null);
+public sealed record SearchPackagesRequest(string Query, bool IncludePrerelease = false, int Take = 20);
 public sealed record ExecutionStartedEvent(int SubmissionIndex);
 public sealed record ConsoleEvent(string Text);
 public sealed record DiagnosticsEvent(IReadOnlyList<DiagnosticInfo> Diagnostics);
@@ -68,4 +71,12 @@ public sealed record CancelledEvent(bool Cooperative);
 public sealed record SessionChangedEvent(IReadOnlyList<string> References, IReadOnlyList<string> Usings);
 public sealed record PackageProgressEvent(string Message);
 public sealed record PackageAddedEvent(string PackageId, string Version, IReadOnlyList<string> AssemblyPaths);
+public sealed record NuGetPackageInfo(
+    string PackageId,
+    string Version,
+    string Description,
+    string Authors,
+    long TotalDownloads,
+    bool IsVerified);
+public sealed record PackageSearchResultsEvent(string Query, long TotalHits, IReadOnlyList<NuGetPackageInfo> Packages);
 public sealed record WorkerErrorEvent(string Message);

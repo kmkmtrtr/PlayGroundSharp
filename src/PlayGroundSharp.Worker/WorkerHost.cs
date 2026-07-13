@@ -9,6 +9,7 @@ public sealed class WorkerHost(string pipeName)
 {
     private readonly ScriptSession session = new();
     private readonly PackageRestoreService packageRestore = new();
+    private readonly PackageSearchService packageSearch = new();
     private CancellationTokenSource? executionCancellation;
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
@@ -55,6 +56,9 @@ public sealed class WorkerHost(string pipeName)
                     break;
                 case MessageKinds.AddPackage:
                     await AddPackageAsync(transport, envelope, hostToken).ConfigureAwait(false);
+                    break;
+                case MessageKinds.SearchPackages:
+                    await SearchPackagesAsync(transport, envelope, hostToken).ConfigureAwait(false);
                     break;
                 default:
                     throw new InvalidDataException($"Unknown message kind '{envelope.Kind}'.");
@@ -118,5 +122,14 @@ public sealed class WorkerHost(string pipeName)
         await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.PackageAdded, envelope.CorrelationId,
             new PackageAddedEvent(restored.PackageId, restored.Version, restored.AssemblyPaths)), cancellationToken).ConfigureAwait(false);
         await SendContextAsync(transport, envelope.CorrelationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SearchPackagesAsync(PipeTransport transport, PipeEnvelope envelope, CancellationToken cancellationToken)
+    {
+        var request = envelope.ReadPayload<SearchPackagesRequest>();
+        var results = await packageSearch.SearchAsync(
+            request.Query, request.IncludePrerelease, request.Take, cancellationToken).ConfigureAwait(false);
+        await transport.WriteAsync(PipeEnvelope.Create(
+            MessageKinds.PackageSearchResults, envelope.CorrelationId, results), cancellationToken).ConfigureAwait(false);
     }
 }

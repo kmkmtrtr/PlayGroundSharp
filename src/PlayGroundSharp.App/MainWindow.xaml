@@ -102,13 +102,13 @@
                   </Grid>
                 </Grid>
             </ScrollViewer>
-            <Border Grid.Column="1" Width="300" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
+            <Border Grid.Column="1" Width="460" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="1,0,0,0" Visibility="{Binding IsReferenceDrawerOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Session" FontSize="16" FontWeight="SemiBold" Margin="14,12" />
                     <TabControl Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0">
                         <TabItem Header="Variables">
-                            <ListView ItemsSource="{Binding VariableItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
+                            <ListView ItemsSource="{Binding VariableItems}" AutomationProperties.Name="VariableList" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                 <ListView.View>
                                     <GridView>
@@ -120,10 +120,67 @@
                                 </ListView.View>
                             </ListView>
                         </TabItem>
-                        <TabItem Header="Packages"><ListBox ItemsSource="{Binding PackageItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
-                        <TabItem Header="Assemblies"><ListBox ItemsSource="{Binding ReferenceItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
+                        <TabItem Header="NuGet">
+                            <Grid Margin="10">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="NuGetSearchText" Padding="7,5"
+                                             ToolTip="Package ID, title, description or tag" />
+                                    <Button Grid.Column="1" Content="Search" AutomationProperties.Name="NuGetSearchButton" Command="{Binding SearchPackagesCommand}" Margin="6,0,0,0" />
+                                </Grid>
+                                <CheckBox Grid.Row="1" Content="Include prerelease" IsChecked="{Binding IncludePrereleasePackages}" Margin="0,7,0,0" />
+                                <TextBlock Grid.Row="2" Text="{Binding PackageSearchMessage}" Margin="0,7" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource MutedBrush}" />
+                                <ListBox Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="NuGetSearchResults" BorderThickness="0"
+                                         Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="4,8">
+                                                <Grid>
+                                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding PackageId}" FontWeight="SemiBold" />
+                                                        <TextBlock Text="{Binding Version, StringFormat={}  {0}}" Foreground="{DynamicResource MutedBrush}" />
+                                                        <TextBlock Text="  Verified" Foreground="{DynamicResource AccentBrush}"
+                                                                   Visibility="{Binding IsVerified, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Grid.RowSpan="2" Content="Install" Padding="9,4"
+                                                            Command="{Binding DataContext.InstallPackageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <TextBlock Grid.Row="1" Text="{Binding Description}" TextWrapping="Wrap" MaxHeight="42" Margin="0,4,8,0" />
+                                                    <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}">
+                                                        <Run Text="{Binding Authors}"/><Run Text=" · "/><Run Text="{Binding TotalDownloads, StringFormat={}{0:N0} downloads}"/>
+                                                    </TextBlock>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </TabItem>
+                        <TabItem Header="Libraries">
+                            <ListView ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="ImportedLibraryList" BorderThickness="0" Background="{DynamicResource InputBrush}"
+                                      Foreground="{DynamicResource ForegroundBrush}" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="72" />
+                                        <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="150" />
+                                        <GridViewColumn Header="Version" DisplayMemberBinding="{Binding Version}" Width="92" />
+                                        <GridViewColumn Header="Source" DisplayMemberBinding="{Binding Source}" Width="160" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </TabItem>
                         <TabItem Header="Usings"><ListBox ItemsSource="{Binding UsingItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
-                        <TabItem Header="Session">
+                        <TabItem Header="Settings">
                             <StackPanel Margin="10">
                                 <TextBlock Text="{Binding SessionStatus}" TextWrapping="Wrap" />
                                 <TextBlock Text="Execution key" Margin="0,14,0,4" FontWeight="SemiBold" />

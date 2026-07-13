@@ -16,7 +16,12 @@ public sealed record VariableItem(string Name, string TypeName, string Value, bo
 }
 
 public sealed record LibraryItem(string Kind, string Name, string Version, string Source, string? Path);
-public sealed record UiOption<T>(T Value, string Label) where T : struct, Enum;
+public sealed partial class UiOption<T>(T value, string label) : ObservableObject where T : struct, Enum
+{
+    public T Value { get; } = value;
+    [ObservableProperty] private string label = label;
+    public override string ToString() => Label;
+}
 
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
@@ -75,17 +80,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<NuGetPackageInfo> PackageSearchItems { get; } = [];
     public ObservableCollection<LibraryItem> LibraryItems { get; } = [];
     public ObservableCollection<SymbolExplorerNode> TypeExplorerItems { get; } = [];
-    public IReadOnlyList<UiOption<ExecutionKeyMode>> ExecutionKeyOptions =>
+    public IReadOnlyList<UiOption<ExecutionKeyMode>> ExecutionKeyOptions { get; } =
     [
         new(ExecutionKeyMode.Enter, "Enter"),
         new(ExecutionKeyMode.ControlEnter, "Ctrl+Enter")
     ];
-    public IReadOnlyList<UiOption<AppThemeMode>> ThemeOptions =>
+    public IReadOnlyList<UiOption<AppThemeMode>> ThemeOptions { get; } =
     [
-        new(AppThemeMode.Light, LanguageMode == AppLanguageMode.Japanese ? "ライト" : "Light"),
-        new(AppThemeMode.Dark, LanguageMode == AppLanguageMode.Japanese ? "ダーク" : "Dark")
+        new(AppThemeMode.Light, string.Empty),
+        new(AppThemeMode.Dark, string.Empty)
     ];
-    public IReadOnlyList<UiOption<AppLanguageMode>> LanguageOptions =>
+    public IReadOnlyList<UiOption<AppLanguageMode>> LanguageOptions { get; } =
     [
         new(AppLanguageMode.Japanese, "日本語"),
         new(AppLanguageMode.English, "English")
@@ -102,6 +107,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public MainViewModel()
     {
+        UpdateThemeOptionLabels(LanguageMode);
         SetLocalizedStatus("Status.StartingWorker");
         SetSessionStatus("Session.Count", 0);
         DiagnosticStatus = Localize("Diagnostics.Count", 0, 0);
@@ -477,13 +483,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         SettingsStore.Save(new(ExecutionKeyMode, ThemeMode, value));
         App.ApplyLanguage(value);
-        OnPropertyChanged(nameof(ThemeOptions));
-        OnPropertyChanged(nameof(LanguageOptions));
+        UpdateThemeOptionLabels(value);
         Status = Localize(statusLocalizationKey, statusLocalizationArguments);
         SessionStatus = Localize(sessionLocalizationKey, sessionLocalizationArguments);
         DiagnosticStatus = Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
         CursorStatus = Localize("Cursor.Position", cursorLine, cursorColumn);
         RebuildTypeExplorer();
+    }
+
+    private void UpdateThemeOptionLabels(AppLanguageMode languageMode)
+    {
+        ThemeOptions[0].Label = languageMode == AppLanguageMode.Japanese ? "ライト" : "Light";
+        ThemeOptions[1].Label = languageMode == AppLanguageMode.Japanese ? "ダーク" : "Dark";
     }
 
     private SessionContext Context => new([.. submissions], [.. imports], [.. references]);

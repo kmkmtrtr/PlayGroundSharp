@@ -175,8 +175,21 @@
                                                             <TextBlock Text="{Binding InheritanceDisplay}" FontFamily="Cascadia Mono,Consolas"
                                                                        FontSize="11" TextWrapping="Wrap"
                                                                        Visibility="{Binding HasInheritance, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                            <TextBlock Text="{Binding Summary}" FontSize="11.5" TextWrapping="Wrap" Margin="0,7,0,0"
-                                                                       Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                            <TextBlock Text="{DynamicResource Docs.Summary}" Foreground="{DynamicResource MutedBrush}"
+                                                                       FontSize="10.5" FontWeight="SemiBold" Margin="0,7,0,1" />
+                                                            <TextBlock FontSize="11.5" TextWrapping="Wrap">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Text" Value="{Binding Summary}" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding HasSummary}" Value="False">
+                                                                                <Setter Property="Text" Value="{DynamicResource Docs.NoSummary}" />
+                                                                                <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
                                                             <TextBlock Text="{DynamicResource Docs.HoverHint}" Foreground="{DynamicResource MutedBrush}"
                                                                        FontSize="10.5" Margin="0,7,0,0" />
                                                         </StackPanel>
@@ -246,10 +259,20 @@
                                        Visibility="{Binding HasInheritance, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             <TextBlock Text="{Binding InheritanceDisplay}" FontFamily="Cascadia Mono,Consolas" FontSize="11.5" TextWrapping="Wrap" LineHeight="18"
                                        Visibility="{Binding HasInheritance, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                            <TextBlock Text="{DynamicResource Docs.Summary}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,3"
-                                       Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                            <TextBlock Text="{Binding Summary}" FontSize="11.5" TextWrapping="Wrap" LineHeight="18"
-                                       Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{DynamicResource Docs.Summary}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,3" />
+                            <TextBlock FontSize="11.5" TextWrapping="Wrap" LineHeight="18">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="{Binding Summary}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasSummary}" Value="False">
+                                                <Setter Property="Text" Value="{DynamicResource Docs.NoSummary}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                             <TextBlock Text="{DynamicResource Docs.Parameters}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,3"
                                        Visibility="{Binding HasParameters, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             <ItemsControl ItemsSource="{Binding ParameterItems}" Visibility="{Binding HasParameters, Converter={StaticResource BooleanToVisibilityConverter}}">

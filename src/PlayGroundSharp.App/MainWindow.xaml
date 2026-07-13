@@ -142,6 +142,7 @@
                                       Background="Transparent" BorderThickness="0" Foreground="{DynamicResource ForegroundBrush}"
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged"
                                       PreviewMouseLeftButtonUp="TypeExplorerTree_PreviewMouseLeftButtonUp"
+                                      PreviewMouseWheel="TypeExplorerTree_PreviewMouseWheel"
                                       PreviewKeyDown="TypeExplorerTree_PreviewKeyDown">
                                 <TreeView.Resources>
                                     <HierarchicalDataTemplate DataType="{x:Type local:SymbolExplorerNode}" ItemsSource="{Binding Children}">

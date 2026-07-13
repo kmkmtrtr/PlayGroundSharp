@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Highlighting;
 using Microsoft.Win32;
@@ -14,6 +15,7 @@ namespace PlayGroundSharp.App;
 
 public partial class MainWindow : Window
 {
+    private const int WmMouseHorizontalWheel = 0x020E;
     private readonly MainViewModel viewModel = new();
     private IReadOnlyList<CompletionCandidate> allCompletionItems = [];
     private CancellationTokenSource? completionDescriptionCancellation;
@@ -21,6 +23,7 @@ public partial class MainWindow : Window
     private int completionStart;
     private GridLength typeExplorerWidth = new(286);
     private GridLength referenceDrawerWidth = new(470);
+    private HwndSource? windowSource;
 
     public MainWindow()
     {
@@ -44,12 +47,16 @@ public partial class MainWindow : Window
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
+        windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        windowSource?.AddHook(WindowMessageHook);
         await viewModel.InitializeAsync();
         Editor.Focus();
     }
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
+        windowSource?.RemoveHook(WindowMessageHook);
+        windowSource = null;
         completionDescriptionCancellation?.Cancel();
         completionDescriptionCancellation?.Dispose();
         await viewModel.DisposeAsync();
@@ -78,6 +85,16 @@ public partial class MainWindow : Window
             TypeExplorerTree.SelectedItem is not SymbolExplorerNode { Signature.Length: > 0 }) return;
         e.Handled = true;
         SymbolDetailPopup.IsOpen = true;
+    }
+
+    private void TypeExplorerTree_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
+        var scrollViewer = FindAncestor<ScrollViewer>(e.OriginalSource as DependencyObject) ??
+                           FindDescendant<ScrollViewer>(TypeExplorerTree);
+        if (scrollViewer is not { ScrollableWidth: > 0 }) return;
+        ScrollHorizontally(scrollViewer, -e.Delta);
+        e.Handled = true;
     }
 
     private void TypeExplorerPane_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -116,12 +133,54 @@ public partial class MainWindow : Window
 
     private void Window_Deactivated(object? sender, EventArgs e) => SymbolDetailPopup.IsOpen = false;
 
+    private IntPtr WindowMessageHook(
+        IntPtr windowHandle,
+        int message,
+        IntPtr wordParameter,
+        IntPtr longParameter,
+        ref bool handled)
+    {
+        if (message != WmMouseHorizontalWheel) return IntPtr.Zero;
+
+        var delta = unchecked((short)((wordParameter.ToInt64() >> 16) & 0xffff));
+        var screenX = unchecked((short)(longParameter.ToInt64() & 0xffff));
+        var screenY = unchecked((short)((longParameter.ToInt64() >> 16) & 0xffff));
+        var hit = InputHitTest(PointFromScreen(new Point(screenX, screenY))) as DependencyObject;
+        var scrollViewer = FindAncestor<ScrollViewer>(hit);
+        if (scrollViewer is not { ScrollableWidth: > 0 }) return IntPtr.Zero;
+
+        ScrollHorizontally(scrollViewer, delta);
+        handled = true;
+        return IntPtr.Zero;
+    }
+
+    private static void ScrollHorizontally(ScrollViewer scrollViewer, int delta)
+    {
+        var distance = Math.Clamp(scrollViewer.ViewportWidth * 0.15, 36, 120);
+        var offset = Math.Clamp(
+            scrollViewer.HorizontalOffset + Math.Sign(delta) * distance,
+            0,
+            scrollViewer.ScrollableWidth);
+        scrollViewer.ScrollToHorizontalOffset(offset);
+    }
+
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
     {
         while (current is not null)
         {
             if (current is T match) return match;
             current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match) return match;
+            if (FindDescendant<T>(child) is { } descendant) return descendant;
         }
         return null;
     }

@@ -44,7 +44,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - **Types**: open a searchable namespace/type/method tree built from active usings, session declarations and dynamically added libraries; selecting a symbol shows its signature, XML `<summary>`, `<param>` and `<returns>` documentation
 - Hover a symbol for a compact signature/summary popup; click it to pin full details. Framework symbols can open their localized Microsoft Learn API page.
 - **Session**: open Variables, NuGet, Libraries, Usings and settings
-- Drag the Explorer and Workspace dividers to resize either sidebar; deep Explorer hierarchies also retain horizontal scrolling
+- Drag the Explorer and Workspace dividers to resize either sidebar; use a horizontal wheel or `Shift+wheel` to scroll deep Explorer hierarchies
 - Drag the divider inside completion to resize the candidate and documentation panes
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
 - **NuGet**: search nuget.org, review package metadata and install the displayed exact version

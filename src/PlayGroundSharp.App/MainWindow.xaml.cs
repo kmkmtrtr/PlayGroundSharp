@@ -56,7 +56,7 @@ public partial class MainWindow : Window
     private void TypeExplorerTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         viewModel.SelectedExplorerNode = e.NewValue as SymbolExplorerNode;
-        SymbolDetailPopup.IsOpen = e.NewValue is SymbolExplorerNode { Signature.Length: > 0 };
+        if (e.NewValue is not SymbolExplorerNode { Signature.Length: > 0 }) SymbolDetailPopup.IsOpen = false;
     }
 
     private void TypeExplorerTree_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -64,6 +64,17 @@ public partial class MainWindow : Window
         if (FindAncestor<TreeViewItem>(e.OriginalSource as DependencyObject)?.DataContext is not
             SymbolExplorerNode { Signature.Length: > 0 } node) return;
         viewModel.SelectedExplorerNode = node;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (Equals(viewModel.SelectedExplorerNode, node)) SymbolDetailPopup.IsOpen = true;
+        });
+    }
+
+    private void TypeExplorerTree_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space) ||
+            TypeExplorerTree.SelectedItem is not SymbolExplorerNode { Signature.Length: > 0 }) return;
+        e.Handled = true;
         SymbolDetailPopup.IsOpen = true;
     }
 
@@ -71,6 +82,15 @@ public partial class MainWindow : Window
     {
         if (e.NewValue is false) SymbolDetailPopup.IsOpen = false;
     }
+
+    private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (SymbolDetailPopup.IsOpen &&
+            FindAncestor<TreeView>(e.OriginalSource as DependencyObject) != TypeExplorerTree)
+            SymbolDetailPopup.IsOpen = false;
+    }
+
+    private void Window_Deactivated(object? sender, EventArgs e) => SymbolDetailPopup.IsOpen = false;
 
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
     {
@@ -253,7 +273,12 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Escape)
         {
-            if (AssistPopup.IsOpen) HideAssist();
+            if (SymbolDetailPopup.IsOpen)
+            {
+                e.Handled = true;
+                SymbolDetailPopup.IsOpen = false;
+            }
+            else if (AssistPopup.IsOpen) HideAssist();
             else if (viewModel.IsRunning) await viewModel.CancelAsync();
         }
         else if (e.Key == Key.Up && Editor.Document.LineCount == 1)

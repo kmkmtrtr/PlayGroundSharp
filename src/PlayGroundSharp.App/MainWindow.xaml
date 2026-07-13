@@ -6,7 +6,8 @@
         Title="PlayGroundSharp" Width="1200" Height="800" MinWidth="820" MinHeight="560"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
-        Loaded="Window_Loaded" Closing="Window_Closing" PreviewKeyDown="Window_PreviewKeyDown">
+        Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="Window_Deactivated"
+        PreviewKeyDown="Window_PreviewKeyDown" PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="54" />
@@ -138,7 +139,8 @@
                             <TreeView x:Name="TypeExplorerTree" ItemsSource="{Binding TypeExplorerItems}" AutomationProperties.Name="TypeExplorerTree"
                                       Background="Transparent" BorderThickness="0" Foreground="{DynamicResource ForegroundBrush}"
                                       ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged"
-                                      PreviewMouseLeftButtonUp="TypeExplorerTree_PreviewMouseLeftButtonUp">
+                                      PreviewMouseLeftButtonUp="TypeExplorerTree_PreviewMouseLeftButtonUp"
+                                      PreviewKeyDown="TypeExplorerTree_PreviewKeyDown">
                                 <TreeView.Resources>
                                     <HierarchicalDataTemplate DataType="{x:Type local:SymbolExplorerNode}" ItemsSource="{Binding Children}">
                                         <Grid Margin="0,1" ToolTipService.InitialShowDelay="180" ToolTipService.ShowDuration="15000">
@@ -196,7 +198,7 @@
                 </DockPanel>
             </Border>
             <Popup x:Name="SymbolDetailPopup" PlacementTarget="{Binding ElementName=TypeExplorerTree}" Placement="Right"
-                   HorizontalOffset="8" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                   HorizontalOffset="8" StaysOpen="True" AllowsTransparency="True">
                 <Border Width="440" MaxHeight="560" Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" CornerRadius="9" Padding="16,14">
                     <Border.Effect>

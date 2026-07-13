@@ -73,6 +73,22 @@
             <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
         </Style>
 
+        <Style x:Key="IconToolbarButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontFamily" Value="Segoe UI Symbol,Segoe UI" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="ToolTipService.InitialShowDelay" Value="400" />
+            <Setter Property="ToolTipService.ShowDuration" Value="12000" />
+        </Style>
+
+        <Style x:Key="DangerIconToolbarButtonStyle" TargetType="Button" BasedOn="{StaticResource IconToolbarButtonStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+        </Style>
+
         <Style x:Key="AccentButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
             <Setter Property="Foreground" Value="White" />

@@ -17,9 +17,12 @@
         <Border Grid.Row="0" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel Margin="16,8">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="{DynamicResource Ui.Types}" Command="{Binding ToggleTypeExplorerCommand}">
+                    <Button Content="C#" Command="{Binding ToggleTypeExplorerCommand}"
+                            ToolTip="{DynamicResource Tooltip.Types}" AutomationProperties.Name="{DynamicResource Ui.Types}">
                         <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                            <Style TargetType="Button" BasedOn="{StaticResource IconToolbarButtonStyle}">
+                                <Setter Property="FontFamily" Value="Cascadia Mono,Consolas" />
+                                <Setter Property="FontSize" Value="11.5" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsTypeExplorerOpen}" Value="True">
                                         <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
@@ -30,9 +33,10 @@
                             </Style>
                         </Button.Style>
                     </Button>
-                    <Button Content="{DynamicResource Ui.Session}" Command="{Binding ToggleReferenceDrawerCommand}">
+                    <Button Content="▤" Command="{Binding ToggleReferenceDrawerCommand}"
+                            ToolTip="{DynamicResource Tooltip.Session}" AutomationProperties.Name="{DynamicResource Ui.Session}">
                         <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                            <Style TargetType="Button" BasedOn="{StaticResource IconToolbarButtonStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsReferenceDrawerOpen}" Value="True">
                                         <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
@@ -44,10 +48,14 @@
                         </Button.Style>
                     </Button>
                     <Border Width="1" Height="20" Background="{DynamicResource BorderBrush}" Margin="7,0" />
-                    <Button Content="{DynamicResource Ui.Stop}" Style="{StaticResource DangerToolbarButtonStyle}" Command="{Binding CancelCommand}" IsEnabled="{Binding IsRunning}" />
-                    <Button Content="{DynamicResource Ui.Restart}" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding RestartWorkerCommand}" />
-                    <Button Content="{DynamicResource Ui.Reset}" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ResetCommand}" />
-                    <Button Content="{DynamicResource Ui.Clear}" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ClearCommand}" />
+                    <Button Content="■" Style="{StaticResource DangerIconToolbarButtonStyle}" Command="{Binding CancelCommand}" IsEnabled="{Binding IsRunning}"
+                            ToolTip="{DynamicResource Tooltip.Stop}" AutomationProperties.Name="{DynamicResource Ui.Stop}" FontSize="13" />
+                    <Button Content="↻" Style="{StaticResource IconToolbarButtonStyle}" Command="{Binding RestartWorkerCommand}"
+                            ToolTip="{DynamicResource Tooltip.Restart}" AutomationProperties.Name="{DynamicResource Ui.Restart}" />
+                    <Button Content="⟲" Style="{StaticResource IconToolbarButtonStyle}" Command="{Binding ResetCommand}"
+                            ToolTip="{DynamicResource Tooltip.Reset}" AutomationProperties.Name="{DynamicResource Ui.Reset}" />
+                    <Button Content="⌫" Style="{StaticResource IconToolbarButtonStyle}" Command="{Binding ClearCommand}"
+                            ToolTip="{DynamicResource Tooltip.Clear}" AutomationProperties.Name="{DynamicResource Ui.Clear}" />
                 </StackPanel>
                 <Border DockPanel.Dock="Left" Width="32" Height="32" CornerRadius="8" Background="{DynamicResource SelectionBrush}" Margin="0,0,10,0">
                     <TextBlock Text=">_" Foreground="{DynamicResource AccentBrush}" FontFamily="Cascadia Mono,Consolas"

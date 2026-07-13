@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
         Title="PlayGroundSharp" Width="1120" Height="760" MinWidth="760" MinHeight="520"
-        Background="{StaticResource BackgroundBrush}" Foreground="{StaticResource ForegroundBrush}"
+        Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
         Loaded="Window_Loaded" Closing="Window_Closing">
     <Grid>
         <Grid.RowDefinitions>
@@ -12,23 +12,25 @@
             <RowDefinition Height="27" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel Margin="12,7">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="References" Command="{Binding ToggleReferenceDrawerCommand}" />
+                    <Button Content="Session" Command="{Binding ToggleReferenceDrawerCommand}" />
                     <Button Content="Stop" Command="{Binding CancelCommand}" IsEnabled="{Binding IsRunning}" />
                     <Button Content="Restart Worker" Command="{Binding RestartWorkerCommand}" />
                     <Button Content="Reset" Command="{Binding ResetCommand}" />
                     <Button Content="Clear" Command="{Binding ClearCommand}" />
                 </StackPanel>
                 <TextBlock Text="PlayGroundSharp" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <TextBlock Text="  C# Interactive Console" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="  C# Interactive Console" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" />
             </DockPanel>
         </Border>
 
-        <Grid Grid.Row="1" Background="{StaticResource BackgroundBrush}">
+        <Grid Grid.Row="1" Background="{DynamicResource BackgroundBrush}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <ScrollViewer x:Name="TranscriptScroll" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="16,12,16,4">
+            <ScrollViewer x:Name="TranscriptScroll" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="16,12,16,4"
+                          AutomationProperties.Name="ConsoleSurface"
+                          PreviewMouseLeftButtonDown="ConsoleSurface_PreviewMouseLeftButtonDown">
                 <Grid MinHeight="{Binding ActualHeight, ElementName=TranscriptScroll}">
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -42,10 +44,14 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="28" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{Binding Prefix}" Foreground="{Binding PrefixBrush}" FontFamily="Cascadia Mono,Consolas" />
                                 <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" FontFamily="Cascadia Mono,Consolas"
                                            Foreground="{Binding TextBrush}" MouseLeftButtonUp="TranscriptLine_MouseLeftButtonUp" Cursor="Hand" />
+                                <Button Grid.Column="2" Content="Inspect" Padding="7,2" Margin="8,0,0,0"
+                                        Visibility="{Binding IsInspectable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                        Click="InspectResult_Click" />
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -53,34 +59,80 @@
                   <Grid Grid.Row="1" Margin="0,0,0,8">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <TextBlock Grid.Row="1" Text=">" Foreground="{StaticResource AccentBrush}" FontSize="16" FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" />
+                <TextBlock Grid.Row="1" Text=">" Foreground="{DynamicResource AccentBrush}" FontSize="16" FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" />
                 <avalon:TextEditor x:Name="Editor" Grid.Row="1" Grid.Column="1" MinHeight="24" MaxHeight="280"
+                                   AutomationProperties.Name="InputEditor"
                                    FontFamily="Cascadia Mono,Consolas" FontSize="14" ShowLineNumbers="False"
-                                   Background="#FFFFFF" Foreground="#202124" CaretOffset="0"
+                                   Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" CaretOffset="0"
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                    PreviewKeyDown="Editor_PreviewKeyDown" TextChanged="Editor_TextChanged"
                                    MouseHover="Editor_MouseHover" />
-                <Border x:Name="CompletionPanel" Grid.Row="0" Grid.Column="1" Visibility="Collapsed"
-                        HorizontalAlignment="Left" Margin="0,0,0,4"
-                        Background="#FFFFFF" BorderBrush="#BDC1C6" BorderThickness="1" CornerRadius="3" MaxHeight="260" MinWidth="320">
-                        <ListBox x:Name="CompletionList" Background="#FFFFFF" Foreground="#202124" BorderThickness="0"
-                                 FontFamily="Cascadia Mono,Consolas" MouseDoubleClick="CompletionList_MouseDoubleClick" />
-                </Border>
+                <Popup x:Name="AssistPopup" Grid.Row="1" Grid.Column="1" PlacementTarget="{Binding ElementName=Editor}"
+                       Placement="Top" VerticalOffset="-4" StaysOpen="True" AllowsTransparency="True"
+                       PopupAnimation="Fade" Focusable="False">
+                    <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
+                            MaxHeight="340" MinWidth="360" MaxWidth="760">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <ListBox x:Name="CompletionList" MaxHeight="210" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
+                                     FontFamily="Cascadia Mono,Consolas" Focusable="False"
+                                     SelectionChanged="CompletionList_SelectionChanged"
+                                     MouseDoubleClick="CompletionList_MouseDoubleClick">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Focusable" Value="False" />
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                            </ListBox>
+                            <Border x:Name="AssistSummaryPanel" Grid.Row="1" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
+                                    Padding="8,6" Visibility="Collapsed">
+                                <ScrollViewer MaxHeight="90" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock x:Name="AssistSummary" Foreground="{DynamicResource ForegroundBrush}" TextWrapping="Wrap"
+                                               FontFamily="Segoe UI" FontSize="12" />
+                                </ScrollViewer>
+                            </Border>
+                            <TextBlock x:Name="AssistHint" Grid.Row="2" Margin="8,4" Foreground="{DynamicResource MutedBrush}" FontSize="11" />
+                        </Grid>
+                    </Border>
+                </Popup>
                   </Grid>
                 </Grid>
             </ScrollViewer>
-            <Border Grid.Column="1" Width="300" Background="#F8F9FA" BorderBrush="{StaticResource BorderBrush}"
+            <Border Grid.Column="1" Width="300" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="1,0,0,0" Visibility="{Binding IsReferenceDrawerOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="References" FontSize="16" FontWeight="SemiBold" Margin="14,12" />
-                    <TabControl Background="#F8F9FA" BorderThickness="0">
-                        <TabItem Header="Packages"><ListBox ItemsSource="{Binding PackageItems}" BorderThickness="0" Background="White" /></TabItem>
-                        <TabItem Header="Assemblies"><ListBox ItemsSource="{Binding ReferenceItems}" BorderThickness="0" Background="White" /></TabItem>
-                        <TabItem Header="Usings"><ListBox ItemsSource="{Binding UsingItems}" BorderThickness="0" Background="White" /></TabItem>
+                    <TextBlock DockPanel.Dock="Top" Text="Session" FontSize="16" FontWeight="SemiBold" Margin="14,12" />
+                    <TabControl Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0">
+                        <TabItem Header="Variables">
+                            <ListView ItemsSource="{Binding VariableItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="48" />
+                                        <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="90" />
+                                        <GridViewColumn Header="Type" DisplayMemberBinding="{Binding TypeName}" Width="120" />
+                                        <GridViewColumn Header="Value" DisplayMemberBinding="{Binding Value}" Width="180" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </TabItem>
+                        <TabItem Header="Packages"><ListBox ItemsSource="{Binding PackageItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
+                        <TabItem Header="Assemblies"><ListBox ItemsSource="{Binding ReferenceItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
+                        <TabItem Header="Usings"><ListBox ItemsSource="{Binding UsingItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
                         <TabItem Header="Session">
                             <StackPanel Margin="10">
                                 <TextBlock Text="{Binding SessionStatus}" TextWrapping="Wrap" />
-                                <TextBlock Text="Arbitrary C# runs with your Windows user permissions." Margin="0,12,0,0" TextWrapping="Wrap" Foreground="#B3261E" />
+                                <TextBlock Text="Execution key" Margin="0,14,0,4" FontWeight="SemiBold" />
+                                <ComboBox ItemsSource="{Binding ExecutionKeyModes}" SelectedItem="{Binding ExecutionKeyMode}"
+                                          HorizontalAlignment="Stretch" />
+                                <TextBlock Text="Theme" Margin="0,14,0,4" FontWeight="SemiBold" />
+                                <ComboBox ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding ThemeMode}"
+                                          HorizontalAlignment="Stretch" />
+                                <TextBlock Text="Arbitrary C# runs with your Windows user permissions." Margin="0,12,0,0" TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}" />
                             </StackPanel>
                         </TabItem>
                     </TabControl>
@@ -88,12 +140,12 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="2" Background="#F1F3F4" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="10,3">
+        <Border Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="10,3">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Right" Text="{Binding CursorStatus}" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock DockPanel.Dock="Right" Margin="18,0" Text="{Binding DiagnosticStatus}" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Text="{Binding Status}" Foreground="{StaticResource AccentBrush}" />
-                <TextBlock Text="{Binding SessionStatus}" Margin="18,0" Foreground="{StaticResource MutedBrush}" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding CursorStatus}" Foreground="{DynamicResource MutedBrush}" />
+                <TextBlock DockPanel.Dock="Right" Margin="18,0" Text="{Binding DiagnosticStatus}" Foreground="{DynamicResource MutedBrush}" />
+                <TextBlock Text="{Binding Status}" Foreground="{DynamicResource AccentBrush}" />
+                <TextBlock Text="{Binding SessionStatus}" Margin="18,0" Foreground="{DynamicResource MutedBrush}" />
             </DockPanel>
         </Border>
     </Grid>

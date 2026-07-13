@@ -42,6 +42,7 @@ public static class MessageKinds
     public const string Diagnostics = "diagnostics";
     public const string Result = "result";
     public const string RuntimeError = "runtime.error";
+    public const string Variables = "session.variables";
     public const string Completed = "execution.completed";
     public const string Cancelled = "execution.cancelled";
     public const string SessionChanged = "session.changed";
@@ -61,6 +62,7 @@ public sealed record ConsoleEvent(string Text);
 public sealed record DiagnosticsEvent(IReadOnlyList<DiagnosticInfo> Diagnostics);
 public sealed record ResultEvent(int SubmissionIndex, ResultSnapshot Snapshot);
 public sealed record RuntimeErrorEvent(ExceptionInfo Exception);
+public sealed record VariablesEvent(IReadOnlyList<VariableInfo> Variables);
 public sealed record ExecutionCompletedEvent(int SubmissionIndex, bool StateAccepted, long WorkerMemoryBytes);
 public sealed record CancelledEvent(bool Cooperative);
 public sealed record SessionChangedEvent(IReadOnlyList<string> References, IReadOnlyList<string> Usings);

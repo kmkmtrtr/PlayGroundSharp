@@ -9,8 +9,18 @@ using PlayGroundSharp.LanguageService;
 
 namespace PlayGroundSharp.App;
 
+public sealed record VariableItem(string Name, string TypeName, string Value, bool IsReadOnly)
+{
+    public string Kind => IsReadOnly ? "const" : "var";
+}
+
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
+    private static readonly string[] Commands =
+    [
+        ":help", ":clear", ":reset", ":using list", ":using add ",
+        ":reference list", ":reference add \"\"", ":package list", ":package add "
+    ];
     private readonly WorkerClient worker = new();
     private readonly CSharpLanguageService languageService = new();
     private readonly List<string> submissions = [];
@@ -29,11 +39,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string cursorStatus = "Ln 1, Col 1";
     [ObservableProperty] private bool isRunning;
     [ObservableProperty] private bool isReferenceDrawerOpen;
+    [ObservableProperty] private ExecutionKeyMode executionKeyMode = SettingsStore.Load().ExecutionKeyMode;
+    [ObservableProperty] private AppThemeMode themeMode = SettingsStore.Load().ThemeMode;
 
     public ObservableCollection<TranscriptLine> Transcript { get; } = [];
     public ObservableCollection<string> PackageItems { get; } = [];
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
+    public ObservableCollection<VariableItem> VariableItems { get; } = [];
+    public IReadOnlyList<ExecutionKeyMode> ExecutionKeyModes { get; } = Enum.GetValues<ExecutionKeyMode>();
+    public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();
     public IAsyncRelayCommand CancelCommand { get; }
     public IAsyncRelayCommand ResetCommand { get; }
     public IAsyncRelayCommand RestartWorkerCommand { get; }
@@ -52,6 +67,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             Status = "Worker disconnected";
             IsRunning = false;
+            VariableItems.Clear();
             Transcript.Add(TranscriptLine.System(message));
         });
     }
@@ -77,6 +93,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (IsRunning || string.IsNullOrWhiteSpace(code)) return;
         if (code.TrimStart().StartsWith(':'))
         {
+            InputText = string.Empty;
             try
             {
                 await ExecuteCommandAsync(code.Trim());
@@ -121,6 +138,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Status = "Ready";
         submissions.Clear();
         executingCode = null;
+        VariableItems.Clear();
         SessionStatus = "0 submissions — Worker state lost";
         Transcript.Add(TranscriptLine.System("Worker was terminated because cancellation did not complete. Session variables were lost; transcript and input history were preserved."));
     }
@@ -132,14 +150,70 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         return historyPosition == history.Count ? string.Empty : history[historyPosition];
     }
 
-    public Task<IReadOnlyList<CompletionCandidate>> GetCompletionsAsync(int position) =>
-        languageService.GetCompletionsAsync(Context, InputText, Math.Clamp(position, 0, InputText.Length));
+    public Task<IReadOnlyList<CompletionCandidate>> GetCompletionsAsync(int position)
+    {
+        var context = Context;
+        var code = InputText;
+        var offset = Math.Clamp(position, 0, code.Length);
+        if (code.TrimStart().StartsWith(':')) return GetCommandCompletionsAsync(context, code);
+        return Task.Run(() => languageService.GetCompletionsAsync(context, code, offset));
+    }
 
-    public Task<SignatureHelpResult?> GetSignatureHelpAsync(int position) =>
-        languageService.GetSignatureHelpAsync(Context, InputText, Math.Clamp(position, 0, InputText.Length));
+    private Task<IReadOnlyList<CompletionCandidate>> GetCommandCompletionsAsync(SessionContext context, string code) => Task.Run(() =>
+    {
+        var candidates = Commands.Select(static command => new CompletionCandidate(
+            command, command, command, ["Command"], command, ReplacementStart: 0)).ToList();
+        const string usingPrefix = ":using add ";
+        if (code.StartsWith(usingPrefix, StringComparison.Ordinal))
+        {
+            candidates.AddRange(languageService.GetReferenceNamespaces(context).Select(@namespace =>
+            {
+                var command = usingPrefix + @namespace;
+                return new CompletionCandidate(command, command, command, ["Namespace"], command, ReplacementStart: 0);
+            }));
+        }
+        return (IReadOnlyList<CompletionCandidate>)candidates;
+    });
 
-    public Task<QuickInfoResult?> GetQuickInfoAsync(int position) =>
-        languageService.GetQuickInfoAsync(Context, InputText, Math.Clamp(position, 0, InputText.Length));
+    public Task<string?> GetCompletionDescriptionAsync(int position, CompletionCandidate candidate, CancellationToken cancellationToken)
+    {
+        if (candidate.Tags.Contains("Command", StringComparer.Ordinal))
+            return Task.FromResult<string?>("PlayGroundSharp command");
+        if (candidate.Tags.Contains("Namespace", StringComparer.Ordinal))
+            return Task.FromResult<string?>("Namespace from an added assembly; Tab inserts the using command.");
+        var context = Context;
+        var code = InputText;
+        var offset = Math.Clamp(position, 0, code.Length);
+        return Task.Run(
+            () => languageService.GetCompletionDescriptionAsync(context, code, offset, candidate, cancellationToken),
+            cancellationToken);
+    }
+
+    public Task<SignatureHelpResult?> GetSignatureHelpAsync(int position)
+    {
+        var context = Context;
+        var code = InputText;
+        var offset = Math.Clamp(position, 0, code.Length);
+        return Task.Run(() => languageService.GetSignatureHelpAsync(context, code, offset));
+    }
+
+    public Task<QuickInfoResult?> GetQuickInfoAsync(int position)
+    {
+        var context = Context;
+        var code = InputText;
+        var offset = Math.Clamp(position, 0, code.Length);
+        return Task.Run(() => languageService.GetQuickInfoAsync(context, code, offset));
+    }
+
+    public async Task<bool> AddUsingAsync(string @namespace)
+    {
+        var value = @namespace.Trim();
+        if (imports.Contains(value, StringComparer.Ordinal)) return false;
+        await worker.AddUsingAsync(value);
+        imports.Add(value);
+        UsingItems.Add(value);
+        return true;
+    }
 
     partial void OnInputTextChanged(string value)
     {
@@ -149,6 +223,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _ = UpdateDiagnosticsAfterDelayAsync(value, diagnosticDelay.Token);
     }
 
+    partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SettingsStore.Save(new(value, ThemeMode));
+
+    partial void OnThemeModeChanged(AppThemeMode value)
+    {
+        SettingsStore.Save(new(ExecutionKeyMode, value));
+        App.ApplyTheme(value);
+        for (var index = 0; index < Transcript.Count; index++)
+            Transcript[index] = Transcript[index].WithCurrentTheme();
+    }
+
     private SessionContext Context => new([.. submissions], [.. imports], [.. references]);
 
     private async Task UpdateDiagnosticsAfterDelayAsync(string code, CancellationToken cancellationToken)
@@ -156,7 +240,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             await Task.Delay(250, cancellationToken);
-            var diagnostics = await languageService.GetDiagnosticsAsync(Context, code, cancellationToken);
+            var context = Context;
+            var diagnostics = await Task.Run(
+                () => languageService.GetDiagnosticsAsync(context, code, cancellationToken), cancellationToken);
             var errors = diagnostics.Count(static item => item.Level == DiagnosticLevel.Error);
             var warnings = diagnostics.Count(static item => item.Level == DiagnosticLevel.Warning);
             DiagnosticStatus = $"{errors} errors, {warnings} warnings";
@@ -183,11 +269,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 break;
             case MessageKinds.Result:
                 var result = envelope.ReadPayload<ResultEvent>();
-                Transcript.Add(TranscriptLine.Output(result.SubmissionIndex, FormatSnapshot(result.Snapshot)));
+                Transcript.Add(TranscriptLine.Output(result.SubmissionIndex, FormatSnapshot(result.Snapshot), result.Snapshot));
                 break;
             case MessageKinds.RuntimeError:
                 var exception = envelope.ReadPayload<RuntimeErrorEvent>().Exception;
                 Transcript.Add(TranscriptLine.Diagnostic($"{exception.TypeName}: {exception.Message}"));
+                break;
+            case MessageKinds.Variables:
+                VariableItems.Clear();
+                foreach (var variable in envelope.ReadPayload<VariablesEvent>().Variables)
+                    VariableItems.Add(new(variable.Name, variable.TypeName, FormatSnapshot(variable.Value), variable.IsReadOnly));
                 break;
             case MessageKinds.Completed:
                 var completed = envelope.ReadPayload<ExecutionCompletedEvent>();
@@ -233,6 +324,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (IsRunning) await CancelAsync();
         await worker.ResetAsync();
         submissions.Clear();
+        VariableItems.Clear();
         SessionStatus = "0 submissions";
         Transcript.Add(TranscriptLine.System("Session reset."));
     }
@@ -243,6 +335,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         await RestartAndRehydrateAsync();
         submissions.Clear();
         executingCode = null;
+        VariableItems.Clear();
         IsRunning = false;
         Status = "Ready";
         SessionStatus = "0 submissions — Worker restarted";
@@ -260,7 +353,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task ExecuteCommandAsync(string command)
     {
-        if (command == ":clear")
+        if (command == ":help")
+        {
+            Transcript.Add(TranscriptLine.System(string.Join(Environment.NewLine, Commands)));
+        }
+        else if (command == ":clear")
         {
             Transcript.Clear();
         }
@@ -275,13 +372,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         else if (command.StartsWith(":using add ", StringComparison.Ordinal))
         {
             var value = command[":using add ".Length..].Trim();
-            await worker.AddUsingAsync(value);
-            if (!imports.Contains(value, StringComparer.Ordinal))
-            {
-                imports.Add(value);
-                UsingItems.Add(value);
-            }
-            Transcript.Add(TranscriptLine.System($"Using added: {value}"));
+            var added = await AddUsingAsync(value);
+            Transcript.Add(TranscriptLine.System(added ? $"Using added: {value}" : $"Using already active: {value}"));
         }
         else if (command == ":reference list")
         {

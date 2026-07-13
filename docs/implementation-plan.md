@@ -17,7 +17,7 @@ Deliver a vertical .NET 10 WPF MVP: the UI sends incremental C# submissions over
 | 1.3 | Implement Worker session | Stateful execution, Last/Out, console, cancellation | Worker tests |
 | 1.4 | Implement process IPC | Named-pipe host/client and lifecycle | Integration tests |
 | 2.1 | Build MVVM shell | Transcript, editor, status bar | Build/manual check |
-| 2.2 | Wire execution flow | Ctrl+Enter, output, errors, reset/stop | AC-01/02/03/06/07 |
+| 2.2 | Wire execution flow | configurable Enter/Ctrl+Enter, output, errors, reset/stop | AC-01/02/03/06/07 |
 | 3.1 | Build Roslyn workspace | Shared history/references and completion | Language tests |
 | 3.2 | Add editor assistance | Completion, quick info, signature surface | AC-04/05 |
 | 4.1 | Parse commands | package/reference/using/reset/clear | Unit tests |
@@ -26,8 +26,8 @@ Deliver a vertical .NET 10 WPF MVP: the UI sends incremental C# submissions over
 | 5.1 | Harden value handling | Depth/cycle/item/string/output limits | Snapshot tests |
 | 5.2 | Harden lifecycle | Cancel, kill/restart, state-loss notice | AC-10 |
 | 5.3 | Document and validate | README, architecture, Debug/Release | Full validation |
-| 6.1 | Add theme selection (low priority) | User-selectable theme colors and persistence | Manual UI check |
-| 6.2 | Add result pop-out (low priority) | Detachable detailed result viewer | Manual UI check |
+| 6.1 | Add theme selection | User-selectable Light/Dark colors and persistence | AC-15 |
+| 6.2 | Add result pop-out | Detachable expandable snapshot viewer | AC-14 |
 
 ## Risks and mitigations
 

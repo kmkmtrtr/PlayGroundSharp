@@ -16,6 +16,10 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 10 | Submit `while (true) { }`, then Stop | App survives; Worker restarts; state-loss notice |
 | 11 | `JsonNode.Parse("{\"answer\":42}")` | formatted JSON result |
 | 12 | `Enumerable.Range(1, 101)` | 100 items and truncation marker |
+| 13 | Execute `var answer = 42`, open **Session > Variables** | `answer`, `System.Int32`, and `42` are shown |
+| 14 | Execute an object/sequence and click **Inspect** | a separate expandable snapshot tree opens |
+| 15 | Switch **Session > Theme** to Dark and restart | dark colors apply immediately and persist |
+| 16 | Add the fixture DLL, type `new Gree`, press `Ctrl+Space`, accept `Greeter` with `Tab` | the type is inserted and its namespace is added to Usings |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 

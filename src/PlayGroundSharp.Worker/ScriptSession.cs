@@ -19,6 +19,7 @@ public sealed record ScriptExecutionResult(
 /// <summary>Owns the mutable Roslyn ScriptState for one Worker session.</summary>
 public sealed class ScriptSession
 {
+    private const int MaximumVariableDisplayLength = 512;
     private readonly SessionGlobals globals = new();
     private readonly ResultSnapshotFactory snapshots = new();
     private readonly List<string> submissions = [];
@@ -37,6 +38,14 @@ public sealed class ScriptSession
 
     public SessionContext Context => new([.. submissions], [.. imports], [.. references]);
 
+    public IReadOnlyList<VariableInfo> GetVariables() => state?.Variables
+        .Select(variable => new VariableInfo(
+            variable.Name,
+            variable.Type.FullName ?? variable.Type.Name,
+            CreateVariableSnapshot(variable),
+            variable.IsReadOnly))
+        .ToArray() ?? [];
+
     public async Task<ScriptExecutionResult> ExecuteAsync(
         int submissionIndex,
         string code,
@@ -53,13 +62,14 @@ public sealed class ScriptSession
         Console.SetError(errorWriter);
         try
         {
+            var executableCode = PrepareSubmission(code);
             ScriptState<object?> candidate;
             try
             {
                 candidate = state is null
-                    ? await CSharpScript.Create<object?>(code, options, typeof(SessionGlobals))
+                    ? await CSharpScript.Create<object?>(executableCode, options, typeof(SessionGlobals))
                         .RunAsync(globals, static _ => true, cancellationToken).ConfigureAwait(false)
-                    : await state.ContinueWithAsync<object?>(code, options, static _ => true, cancellationToken).ConfigureAwait(false);
+                    : await state.ContinueWithAsync<object?>(executableCode, options, static _ => true, cancellationToken).ConfigureAwait(false);
             }
             catch (CompilationErrorException error)
             {
@@ -73,7 +83,7 @@ public sealed class ScriptSession
                 return new(true, false, null, null, [], ResultSnapshotFactory.CreateException(candidate.Exception));
             }
 
-            var hasReturnValue = HasTrailingExpression(code, candidate.Script.GetCompilation());
+            var hasReturnValue = HasTrailingValueExpression(candidate.Script.GetCompilation());
             if (hasReturnValue)
             {
                 globals.Last = candidate.ReturnValue;
@@ -137,14 +147,76 @@ public sealed class ScriptSession
         globals.Out.Clear();
     }
 
-    private static bool HasTrailingExpression(string code, Compilation compilation)
+    private ResultSnapshot CreateVariableSnapshot(ScriptVariable variable)
+    {
+        try
+        {
+            var snapshot = snapshots.Create(variable.Value);
+            var display = snapshot.Display;
+            var truncated = display?.Length > MaximumVariableDisplayLength;
+            return snapshot with
+            {
+                Display = truncated ? display![..MaximumVariableDisplayLength] : display,
+                Properties = null,
+                Items = null,
+                IsTruncated = snapshot.IsTruncated || truncated
+            };
+        }
+        catch (Exception error)
+        {
+            return new(SnapshotKind.Exception, $"{error.GetType().Name}: {error.Message}", variable.Type.FullName);
+        }
+    }
+
+    private static string PrepareSubmission(string code)
+    {
+        var tree = CSharpSyntaxTree.ParseText(code, new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script));
+        var root = tree.GetCompilationUnitRoot();
+        if (root.Members.LastOrDefault() is GlobalStatementSyntax
+            {
+                Statement: ExpressionStatementSyntax expression
+            })
+        {
+            return expression.SemicolonToken.IsMissing
+                ? code
+                : code.Remove(expression.SemicolonToken.SpanStart, expression.SemicolonToken.Span.Length);
+        }
+
+        var insertionPosition = root.EndOfFileToken.GetPreviousToken().Span.End;
+        var memberCompletion = CompleteMemberDeclaration(code, insertionPosition);
+        if (memberCompletion is not null) return memberCompletion;
+
+        var trailingToken = root.EndOfFileToken.GetPreviousToken(includeZeroWidth: true);
+        return trailingToken.IsMissing && trailingToken.IsKind(SyntaxKind.SemicolonToken)
+            ? code.Insert(trailingToken.SpanStart, ";")
+            : code;
+    }
+
+    private static string? CompleteMemberDeclaration(string code, int insertionPosition)
+    {
+        var candidate = code.Insert(insertionPosition, ";");
+        var member = SyntaxFactory.ParseMemberDeclaration(candidate,
+            options: new CSharpParseOptions(LanguageVersion.Latest));
+        return member is not null && !member.ContainsDiagnostics &&
+            member.GetLastToken().IsKind(SyntaxKind.SemicolonToken)
+            ? candidate
+            : null;
+    }
+
+    private static bool HasTrailingValueExpression(Compilation compilation)
     {
         var tree = compilation.SyntaxTrees.Last();
         var root = tree.GetCompilationUnitRoot();
-        return root.Members.LastOrDefault() is GlobalStatementSyntax
+        if (root.Members.LastOrDefault() is not GlobalStatementSyntax
         {
             Statement: ExpressionStatementSyntax expression
-        } && expression.SemicolonToken.IsMissing;
+        })
+        {
+            return false;
+        }
+
+        var type = compilation.GetSemanticModel(tree).GetTypeInfo(expression.Expression).Type;
+        return type?.SpecialType != SpecialType.System_Void;
     }
 
     private static DiagnosticInfo ToDiagnostic(Diagnostic diagnostic)

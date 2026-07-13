@@ -10,10 +10,14 @@
         <SolidColorBrush x:Key="ForegroundBrush" Color="#202124" />
         <SolidColorBrush x:Key="MutedBrush" Color="#5F6368" />
         <SolidColorBrush x:Key="AccentBrush" Color="#1967D2" />
+        <SolidColorBrush x:Key="InputBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="DrawerBrush" Color="#F8F9FA" />
+        <SolidColorBrush x:Key="ErrorBrush" Color="#B3261E" />
+        <SolidColorBrush x:Key="WarningBrush" Color="#8B6914" />
         <Style TargetType="Button">
-            <Setter Property="Background" Value="#FFFFFF" />
-            <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource InputBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="Padding" Value="12,5" />
             <Setter Property="Margin" Value="3,0" />
         </Style>

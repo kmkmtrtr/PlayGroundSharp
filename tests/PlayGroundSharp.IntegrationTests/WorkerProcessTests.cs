@@ -24,6 +24,8 @@ public sealed class WorkerProcessTests
 
             Assert.Contains(first, static envelope => envelope.Kind == MessageKinds.ConsoleOut && envelope.ReadPayload<ConsoleEvent>().Text.Contains("hello", StringComparison.Ordinal));
             Assert.Equal("42", first.Single(static envelope => envelope.Kind == MessageKinds.Result).ReadPayload<ResultEvent>().Snapshot.Display);
+            Assert.Contains(first.Single(static envelope => envelope.Kind == MessageKinds.Variables)
+                .ReadPayload<VariablesEvent>().Variables, static variable => variable.Name == "value" && variable.Value.Display == "40");
             Assert.Equal("80", second.Single(static envelope => envelope.Kind == MessageKinds.Result).ReadPayload<ResultEvent>().Snapshot.Display);
         }
         finally

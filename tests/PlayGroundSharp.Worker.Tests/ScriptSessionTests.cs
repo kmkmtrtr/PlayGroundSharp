@@ -20,6 +20,33 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task EvaluatesTrailingExpressionWithSemicolon()
+    {
+        var session = new ScriptSession();
+        var result = await session.ExecuteAsync(1, "\"fuga\".Any(x => x == 'f');");
+
+        Assert.True(result.HasReturnValue);
+        Assert.Equal("true", result.Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task CompletesOmittedTrailingSemicolons()
+    {
+        var session = new ScriptSession();
+
+        Assert.True((await session.ExecuteAsync(1, "var text = \"fuga\"")).StateAccepted);
+        Assert.True((await session.ExecuteAsync(2, "bool HasF(string value) => value.Contains('f')")).StateAccepted);
+        var recordResult = await session.ExecuteAsync(3, "record Entry(string Value) // semicolon omitted");
+        Assert.True(recordResult.StateAccepted,
+            string.Join(" | ", recordResult.Diagnostics.Select(static diagnostic => $"{diagnostic.Id}: {diagnostic.Message}")));
+        Assert.True((await session.ExecuteAsync(4, "using System.Text")).StateAccepted);
+
+        var result = await session.ExecuteAsync(5, "HasF(new StringBuilder(new Entry(text).Value).ToString())");
+        Assert.True(result.HasReturnValue);
+        Assert.Equal("true", result.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task ContinuesVariablesMethodsTypesAndAwait()
     {
         var session = new ScriptSession();
@@ -30,6 +57,27 @@ public sealed class ScriptSessionTests
         Assert.Equal("55", (await session.ExecuteAsync(4, "values.Sum()" )).Snapshot?.Display);
         Assert.Equal("true", (await session.ExecuteAsync(5, "IsAdult(new User(\"A\", 20))")).Snapshot?.Display);
         Assert.Equal("42", (await session.ExecuteAsync(6, "await Task.FromResult(42)")).Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task ReportsRetainedVariablesWithBoundedSnapshots()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "var number = 42; const string label = \"answer\"; var longText = new string('x', 600);");
+        await session.ExecuteAsync(2, "number = 100;");
+
+        var variables = session.GetVariables();
+
+        var number = Assert.Single(variables, static variable => variable.Name == "number");
+        Assert.Equal("System.Int32", number.TypeName);
+        Assert.Equal("100", number.Value.Display);
+        Assert.False(number.IsReadOnly);
+        var label = Assert.Single(variables, static variable => variable.Name == "label");
+        Assert.Equal("answer", label.Value.Display);
+        Assert.True(label.IsReadOnly);
+        var longText = Assert.Single(variables, static variable => variable.Name == "longText");
+        Assert.Equal(512, longText.Value.Display?.Length);
+        Assert.True(longText.Value.IsTruncated);
     }
 
     [Fact]

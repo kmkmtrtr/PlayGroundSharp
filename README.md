@@ -31,14 +31,18 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 
 ## Basic operation
 
-- `Ctrl+Enter`: execute the current submission
+- `Enter`: execute the current submission (default)
+- A trailing `;` may be omitted from declarations, expression-bodied methods, records and `using` directives
 - `Shift+Enter`: insert a newline
+- The execution key can be switched to `Ctrl+Enter` in **Session** settings
 - `Ctrl+Space`: show completion
+- `Tab`: accept the selected completion; added-library types can add their required `using` automatically
 - `Esc`: close completion; while running, request cancellation
 - `Up` / `Down`: move through single-line input history
 - Click a previous `In` line: copy it into the current prompt
 - **Stop**: request cancellation, then terminate/restart an unresponsive Worker after 1.5 seconds
-- **References**: open Packages, Assemblies, Usings and Session views
+- **Session**: open Variables, Packages, Assemblies, Usings and settings
+- **Inspect** on a result: open its bounded property/item tree in a separate window
 
 Examples:
 
@@ -59,6 +63,7 @@ The transcript follows a REPL layout: each submitted line starts with `>`, its v
 ## Commands
 
 ```text
+:help
 :package add <PackageId> [--version <Version>]
 :package list
 :reference add "<DLL path>"
@@ -71,11 +76,11 @@ The transcript follows a REPL layout: each submitted line starts with `>`, its v
 
 If package version is omitted, NuGet floating version `*` resolves the latest stable version and the exact selected version is shown. Package restore runs outside the UI thread and uses the normal NuGet cache. Assembly upgrades/removals and conflicting identities require a Worker restart.
 
+Typing `:` opens command completion. After adding a DLL or package, `:using add ` completion lists namespaces found in those assemblies. C# type completion can also show an unimported added-library type with its namespace; accepting it with `Tab` adds the required using to both execution and IntelliSense contexts.
+
 ## Current limitations
 
-- The default theme is Light; user-selectable theme colors are a low-priority follow-up.
-- Result pop-out/detached inspection is a low-priority follow-up.
-- Enter-to-execute with incomplete-syntax detection is not implemented; use `Ctrl+Enter`.
 - Package removal/upgrades and unloading an existing assembly identity are not supported in-place.
-- Result trees are currently rendered as compact text in the transcript rather than an expandable object inspector.
-- Quick Info uses mouse hover; signature help uses the same compact popup as completion.
+- NuGet package-ID completion does not perform online search; enter the package ID explicitly.
+- Variable values are preview snapshots and are truncated to 512 characters in the list.
+- Quick Info uses mouse hover; signature help and completion share the compact assistance popup.

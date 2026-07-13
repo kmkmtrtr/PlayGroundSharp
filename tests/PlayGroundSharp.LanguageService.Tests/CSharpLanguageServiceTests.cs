@@ -24,11 +24,35 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task CompletesMembersAfterSemicolonlessSubmission()
+    {
+        var context = new SessionContext(["var value = \"fuga\""], SessionContext.DefaultImports, []);
+
+        var items = await service.GetCompletionsAsync(context, "value.", "value.".Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "Length");
+        Assert.Contains(items, static item => item.DisplayText == "Contains");
+    }
+
+    [Fact]
     public async Task CompletesDefinedType()
     {
-        var context = new SessionContext(["record User(string Name, int Age);"], SessionContext.DefaultImports, []);
+        var context = new SessionContext(["record User(string Name, int Age)"], SessionContext.DefaultImports, []);
         var items = await service.GetCompletionsAsync(context, "new Us", "new Us".Length);
         Assert.Contains(items, static item => item.DisplayText == "User");
+    }
+
+    [Fact]
+    public async Task CompletesMembersFromSemicolonlessMethodAndType()
+    {
+        var context = new SessionContext(
+            ["record Entry(string Value)", "Entry Create(string value) => new(value)"],
+            SessionContext.DefaultImports,
+            []);
+
+        var items = await service.GetCompletionsAsync(context, "Create(\"fuga\").", "Create(\"fuga\").".Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "Value");
     }
 
     [Fact]
@@ -38,8 +62,23 @@ public sealed class CSharpLanguageServiceTests
         var diagnostics = await service.GetDiagnosticsAsync(SessionContext.Empty, "unknownName + 1");
 
         Assert.NotNull(signature);
-        Assert.Contains(signature.Signatures, static text => text.Contains("Join", StringComparison.Ordinal));
+        Assert.Contains(signature.Signatures, static item => item.DisplayText.Contains("Join", StringComparison.Ordinal));
+        Assert.Contains(signature.Signatures, static item => !string.IsNullOrWhiteSpace(item.Summary));
         Assert.Contains(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public async Task ReturnsDescriptionForCompletionCandidate()
+    {
+        const string code = "string.Empty.";
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+        var candidate = Assert.Single(items, static item => item.DisplayText == "Contains");
+
+        var description = await service.GetCompletionDescriptionAsync(
+            SessionContext.Empty, code, code.Length, candidate);
+
+        Assert.Contains("Contains", description, StringComparison.Ordinal);
+        Assert.Contains("specified", description, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -48,5 +87,29 @@ public sealed class CSharpLanguageServiceTests
         var context = new SessionContext([], SessionContext.DefaultImports, [typeof(Greeter).Assembly.Location]);
         var items = await service.GetCompletionsAsync(context, "new PlayGroundSharp.TestFixture.Gre", "new PlayGroundSharp.TestFixture.Gre".Length);
         Assert.Contains(items, static item => item.DisplayText == "Greeter");
+    }
+
+    [Fact]
+    public async Task SuggestsUnimportedTypeFromDynamicReference()
+    {
+        var context = new SessionContext([], SessionContext.DefaultImports, [typeof(Greeter).Assembly.Location]);
+        const string code = "new Gree";
+
+        var items = await service.GetCompletionsAsync(context, code, code.Length);
+
+        var candidate = Assert.Single(items, static item =>
+            item.TextToInsert == "Greeter" && item.RequiredNamespace == "PlayGroundSharp.TestFixture");
+        Assert.Contains("PlayGroundSharp.TestFixture", candidate.DisplayText, StringComparison.Ordinal);
+        Assert.DoesNotContain(items, static item => item.TextToInsert == "Greeter" && item.RequiredNamespace is null);
+    }
+
+    [Fact]
+    public void ReturnsNamespacesFromDynamicReferences()
+    {
+        var context = new SessionContext([], SessionContext.DefaultImports, [typeof(Greeter).Assembly.Location]);
+
+        var namespaces = service.GetReferenceNamespaces(context);
+
+        Assert.Contains("PlayGroundSharp.TestFixture", namespaces);
     }
 }

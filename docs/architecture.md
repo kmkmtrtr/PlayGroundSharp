@@ -13,7 +13,7 @@ The repository started empty. .NET SDK 10.0.109 and Windows Desktop Runtime 10.0
 
 ## IPC
 
-The App starts one child Worker with a random pipe name. A dedicated duplex named pipe carries newline-delimited JSON envelopes, so submitted `Console` output cannot corrupt IPC. Every envelope includes a protocol version, kind and correlation ID. Only neutral DTOs cross the boundary.
+The App starts one child Worker with a random pipe name. A dedicated duplex named pipe carries newline-delimited JSON envelopes, so submitted `Console` output cannot corrupt IPC. Every envelope includes a protocol version, kind and correlation ID. Only neutral DTOs cross the boundary. After each submission, the Worker also publishes bounded variable snapshots; the App never evaluates session variables or loads submitted assemblies into WPF.
 
 ## Script state
 
@@ -25,7 +25,7 @@ An `AdhocWorkspace` hosts a script-kind document composed from accepted submissi
 
 ## Result snapshots
 
-The Worker converts values into bounded `ResultSnapshot` trees. It detects cycles by reference identity, limits depth to 10, collections to 100 and strings to 1 MiB. JSON is formatted in the Worker. Live arbitrary objects never reach the UI.
+The Worker converts values into bounded `ResultSnapshot` trees. It detects cycles by reference identity, limits depth to 10, collections to 100 and strings to 1 MiB. JSON is formatted in the Worker. Live arbitrary objects never reach the UI. Transcript results retain these neutral trees so the detached Result Inspector can expand properties and sequence items without contacting the Worker again.
 
 ## NuGet strategy
 
@@ -38,6 +38,10 @@ Reference paths are added to Roslyn ScriptOptions and the language workspace. Th
 ## Security
 
 PlayGroundSharp is not a sandbox. Code runs with the current Windows user's authority and can access files, processes and networks. Process separation protects UI availability and permits crash/loop recovery. Untrusted code or packages must not be executed.
+
+## User settings
+
+Execution-key and Light/Dark theme preferences are stored under the user's local application data. Theme changes mutate shared WPF brush resources; language analysis and execution behavior are unaffected.
 
 ## Validation summary
 

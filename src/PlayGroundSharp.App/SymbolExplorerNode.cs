@@ -15,10 +15,12 @@ public sealed record SymbolExplorerNode(
     string Summary = "",
     IReadOnlyList<SymbolExplorerParameter>? Parameters = null,
     string Returns = "",
-    string AssemblyName = "")
+    string AssemblyName = "",
+    string? DocumentationPath = null)
 {
     public IReadOnlyList<SymbolExplorerParameter> ParameterItems => Parameters ?? [];
     public bool HasSummary => !string.IsNullOrWhiteSpace(Summary);
     public bool HasParameters => ParameterItems.Count > 0;
     public bool HasReturns => !string.IsNullOrWhiteSpace(Returns);
+    public bool HasOnlineDocumentation => !string.IsNullOrWhiteSpace(DocumentationPath);
 }

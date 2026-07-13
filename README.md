@@ -42,11 +42,15 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - Click a previous `In` line: copy it into the current prompt
 - **Stop**: request cancellation, then terminate/restart an unresponsive Worker after 1.5 seconds
 - **Types**: open a searchable namespace/type/method tree built from active usings, session declarations and dynamically added libraries; selecting a symbol shows its signature, XML `<summary>`, `<param>` and `<returns>` documentation
+- Hover a symbol for a compact signature/summary popup; click it to pin full details. Framework symbols can open their localized Microsoft Learn API page.
 - **Session**: open Variables, NuGet, Libraries, Usings and settings
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
 - **NuGet**: search nuget.org, review package metadata and install the displayed exact version
 - **Libraries**: list imported packages, local DLLs and package runtime assemblies with versions and sources
 - **Inspect** on a result: open its bounded property/item tree in a separate window
+- **File**: save or open a `.pgsworkspace` containing submissions, draft input, usings, DLL references and exact package versions
+- **Data**: insert bounded or streaming snippets for large text, byte, JSON-array and JSON Lines files
+- **Help** or `F1`: open the built-in guide for input, IntelliSense, symbols, workspaces, large files, dependencies and security
 
 Examples:
 
@@ -63,6 +67,23 @@ await Task.FromResult(42)
 ```
 
 The transcript follows a REPL layout: each submitted line starts with `>`, its value appears on the following line, and the next active `>` prompt follows immediately. `Last` contains the most recent original result object and `Out[index]` retrieves the original result for a submission.
+
+## Workspaces
+
+Workspace files do not serialize live objects or Roslyn state. Opening one starts a fresh Worker, restores packages/references/usings, and replays accepted submissions in order. This preserves a portable, inspectable format, but **side effects such as file writes or process launches run again**. Missing local DLLs are reported and skipped. Workspace files are limited to 16 MiB and 10,000 entries per section.
+
+## Large files and JSON
+
+`Data` is available in every Worker session:
+
+```csharp
+Data.Inspect(@"C:\data\large.json")
+Data.PreviewText(@"C:\data\large.log", 65536)
+Data.ReadLines(@"C:\data\large.csv").Take(100)
+await Data.ReadJsonArrayAsync(@"C:\data\large.json", take: 100)
+```
+
+`PreviewText` and `ReadBytes` are capped at 1 MiB per call. JSON arrays are streamed and retain only the requested items (maximum 10,000); JSON Lines is exposed as an `IAsyncEnumerable<JsonElement>`. The existing result snapshot limit still displays at most 100 collection items.
 
 ## Commands
 
@@ -89,4 +110,5 @@ Typing `:` opens command completion. After adding a DLL or package, `:using add 
 - Variable values are preview snapshots and are truncated to 512 characters in the list.
 - Quick Info uses mouse hover; signature help and completion share the compact assistance popup.
 - BenchmarkDotNet integration is deferred; the planned design uses a disposable benchmark Worker instead of running benchmarks inside the stateful interactive Worker.
-- Framework and package XML documentation is displayed in the language supplied by that library; switching the application language translates the UI labels, not third-party documentation text.
+- Framework and package XML documentation is displayed in the language supplied by that library; switching the application language translates the UI labels, not third-party documentation text. Framework entries link to localized Microsoft Learn instead of applying an unreliable automatic translation.
+- Workspace loading replays code rather than serializing live objects, so non-deterministic or side-effecting submissions may produce different state.

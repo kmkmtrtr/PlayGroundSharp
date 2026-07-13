@@ -1,3 +1,5 @@
+using PlayGroundSharp.Core;
+
 namespace PlayGroundSharp.Worker;
 
 /// <summary>Globals exposed to every script submission.</summary>
@@ -5,6 +7,7 @@ public sealed class SessionGlobals
 {
     public object? Last { get; internal set; }
     public ResultHistory Out { get; } = new();
+    public LargeDataAccess Data { get; } = new();
 }
 
 /// <summary>Retains original result objects by one-based submission index.</summary>

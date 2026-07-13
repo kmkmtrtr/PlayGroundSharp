@@ -118,4 +118,23 @@ public sealed class ScriptSessionTests
         var result = await session.ExecuteAsync(1, "PlayGroundSharp.TestFixture.Greeter.Message");
         Assert.Equal("hello from fixture", result.Snapshot?.Display);
     }
+
+    [Fact]
+    public async Task UsesBoundedLargeDataHelpersFromSessionGlobals()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(path, "abcdefghij");
+        try
+        {
+            var escapedPath = path.Replace("\"", "\"\"");
+            var result = await new ScriptSession().ExecuteAsync(1, $"Data.PreviewText(@\"{escapedPath}\", 5)");
+
+            Assert.True(result.StateAccepted);
+            Assert.Equal("abcde", result.Snapshot?.Display);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

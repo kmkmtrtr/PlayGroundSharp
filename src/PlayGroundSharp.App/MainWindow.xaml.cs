@@ -1,8 +1,12 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using ICSharpCode.AvalonEdit.Highlighting;
+using Microsoft.Win32;
+using PlayGroundSharp.Core;
 using PlayGroundSharp.LanguageService;
 
 namespace PlayGroundSharp.App;
@@ -50,6 +54,141 @@ public partial class MainWindow : Window
 
     private void TypeExplorerTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e) =>
         viewModel.SelectedExplorerNode = e.NewValue as SymbolExplorerNode;
+
+    private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.F1)
+        {
+            e.Handled = true;
+            OpenHelp();
+        }
+        else if (e.Key == Key.O && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            await OpenWorkspaceAsync();
+        }
+        else if (e.Key == Key.S && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            await SaveWorkspaceAsync();
+        }
+        else if (e.Key == Key.L && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            FocusEditor();
+        }
+    }
+
+    private async void SaveWorkspace_Click(object sender, RoutedEventArgs e) => await SaveWorkspaceAsync();
+
+    private async Task SaveWorkspaceAsync()
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = viewModel.Localize("Menu.SaveWorkspace"),
+            Filter = viewModel.Localize("Dialog.WorkspaceFilter"),
+            DefaultExt = ".pgsworkspace",
+            AddExtension = true,
+            FileName = $"PlayGroundSharp-{DateTime.Now:yyyyMMdd-HHmm}.pgsworkspace"
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            viewModel.SetLocalizedStatus("Status.SavingWorkspace");
+            await WorkspaceFile.SaveAsync(dialog.FileName, viewModel.CreateWorkspaceDocument());
+            viewModel.Transcript.Add(TranscriptLine.System(viewModel.Localize("Message.WorkspaceSaved", dialog.FileName)));
+            viewModel.SetLocalizedStatus("Status.Ready");
+        }
+        catch (Exception error)
+        {
+            viewModel.SetLocalizedStatus("Status.Ready");
+            ShowError(error);
+        }
+    }
+
+    private async void OpenWorkspace_Click(object sender, RoutedEventArgs e) => await OpenWorkspaceAsync();
+
+    private async Task OpenWorkspaceAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = viewModel.Localize("Dialog.WorkspaceLoadTitle"),
+            Filter = viewModel.Localize("Dialog.WorkspaceFilter"),
+            CheckFileExists = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        if (MessageBox.Show(this, viewModel.Localize("Dialog.WorkspaceLoadWarning"),
+                viewModel.Localize("Dialog.WorkspaceLoadTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) !=
+            MessageBoxResult.OK) return;
+        try
+        {
+            var document = await WorkspaceFile.LoadAsync(dialog.FileName);
+            await viewModel.LoadWorkspaceAsync(document);
+            Editor.Text = viewModel.InputText;
+            Editor.CaretOffset = Editor.Text.Length;
+            FocusEditor();
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
+    }
+
+    private void InsertDataSnippet_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string operation }) return;
+        var dialog = new OpenFileDialog
+        {
+            Title = viewModel.Localize("Menu.Data"),
+            Filter = viewModel.Localize("Dialog.DataFileFilter"),
+            CheckFileExists = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        var path = dialog.FileName.Replace("\"", "\"\"");
+        Editor.Text = operation switch
+        {
+            "Inspect" => $"Data.Inspect(@\"{path}\")",
+            "Preview" => $"Data.PreviewText(@\"{path}\", 65536)",
+            "Lines" => $"Data.ReadLines(@\"{path}\").Take(100)",
+            "JsonArray" => $"await Data.ReadJsonArrayAsync(@\"{path}\", take: 100)",
+            "JsonLines" => $"var rows = new List<JsonElement>();{Environment.NewLine}" +
+                           $"await foreach (var row in Data.ReadJsonLinesAsync(@\"{path}\")){Environment.NewLine}" +
+                           $"{{{Environment.NewLine}    rows.Add(row);{Environment.NewLine}" +
+                           $"    if (rows.Count == 100) break;{Environment.NewLine}}}{Environment.NewLine}rows",
+            _ => Editor.Text
+        };
+        Editor.CaretOffset = Editor.Text.Length;
+        FocusEditor();
+    }
+
+    private void OpenSymbolDocumentation_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SymbolExplorerNode { DocumentationPath: { } path } }) return;
+        var locale = viewModel.LanguageMode == AppLanguageMode.Japanese ? "ja-jp" : "en-us";
+        Process.Start(new ProcessStartInfo($"https://learn.microsoft.com/{locale}/dotnet/api/{path}?view=net-10.0")
+        {
+            UseShellExecute = true
+        });
+    }
+
+    private void OpenHelp_Click(object sender, RoutedEventArgs e) => OpenHelp();
+
+    private void OpenHelp() => new HelpWindow(viewModel.LanguageMode) { Owner = this }.Show();
+
+    private void About_Click(object sender, RoutedEventArgs e) =>
+        MessageBox.Show(this, viewModel.Localize("About.Message"), "PlayGroundSharp", MessageBoxButton.OK, MessageBoxImage.Information);
+
+    private void FocusInput_Click(object sender, RoutedEventArgs e) => FocusEditor();
+
+    private void FocusEditor() => Dispatcher.BeginInvoke(Editor.Focus);
+
+    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void ShowError(Exception error)
+    {
+        viewModel.Transcript.Add(TranscriptLine.Diagnostic(error.Message));
+        MessageBox.Show(this, error.Message, viewModel.Localize("Dialog.ErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+    }
 
     private async void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
     {

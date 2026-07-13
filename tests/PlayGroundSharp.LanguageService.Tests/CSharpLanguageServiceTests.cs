@@ -24,6 +24,18 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task CompletesLargeDataHelpers()
+    {
+        const string code = "Data.";
+
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "PreviewText");
+        Assert.Contains(items, static item => item.DisplayText == "ReadLines");
+        Assert.Contains(items, static item => item.DisplayText == "ReadJsonArrayAsync");
+    }
+
+    [Fact]
     public async Task CompletesMembersAfterSemicolonlessSubmission()
     {
         var context = new SessionContext(["var value = \"fuga\""], SessionContext.DefaultImports, []);

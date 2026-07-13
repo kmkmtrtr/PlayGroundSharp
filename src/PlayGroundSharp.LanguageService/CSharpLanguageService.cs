@@ -303,7 +303,9 @@ public sealed class CSharpLanguageService
             compilationOptions: compilationOptions, metadataReferences: references);
         workspace.AddProject(projectInfo);
         var usingDirectives = string.Join(Environment.NewLine, context.Imports.Select(static import => $"using {import};"));
-        var prefix = usingDirectives + Environment.NewLine + Environment.NewLine +
+        const string globals = "dynamic Last = default!; dynamic Out = default!; " +
+            "var Data = new PlayGroundSharp.Core.LargeDataAccess();";
+        var prefix = usingDirectives + Environment.NewLine + Environment.NewLine + globals + Environment.NewLine + Environment.NewLine +
             string.Join(Environment.NewLine + Environment.NewLine, context.Submissions.Select(NormalizeHistoricalSubmission));
         if (prefix.Length > 0) prefix += Environment.NewLine + Environment.NewLine;
         var document = workspace.AddDocument(projectId, "Current.csx", SourceText.From(prefix + currentCode));
@@ -322,7 +324,7 @@ public sealed class CSharpLanguageService
             if (documentationPath is null && assemblyName == "System.Private.CoreLib")
                 documentationPath = documentationPaths.GetValueOrDefault("System.Runtime");
             return CreateMetadataReference(path, documentationPath);
-        }).ToArray();
+        }).Append(CreateMetadataReference(typeof(SessionContext).Assembly.Location)).ToArray();
     }
 
     private static MetadataReference CreateMetadataReference(string path) =>

@@ -1,0 +1,105 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace PlayGroundSharp.App;
+
+/// <summary>Represents one section in an in-app help topic.</summary>
+public sealed record HelpSection(string Heading, string Body, string? Code = null);
+
+/// <summary>Represents one navigable in-app help topic.</summary>
+public sealed record HelpTopic(string Title, string Subtitle, IReadOnlyList<HelpSection> Sections);
+
+/// <summary>Provides localized help content without coupling it to the main view model.</summary>
+public sealed partial class HelpViewModel : ObservableObject
+{
+    public HelpViewModel(AppLanguageMode languageMode)
+    {
+        Topics = languageMode == AppLanguageMode.Japanese ? CreateJapaneseTopics() : CreateEnglishTopics();
+        selectedTopic = Topics[0];
+    }
+
+    public IReadOnlyList<HelpTopic> Topics { get; }
+    [ObservableProperty] private HelpTopic selectedTopic;
+
+    private static IReadOnlyList<HelpTopic> CreateJapaneseTopics() =>
+    [
+        new("はじめに", "状態を保持しながらC#を一行ずつ試せます。",
+        [
+            new("基本", "下端の > 行へ式を入力して実行します。変数、メソッド、型、usingは次の入力でも利用できます。", "var values = Enumerable.Range(1, 10).ToArray();\nvalues.Where(x => x % 2 == 0)"),
+            new("非同期", "トップレベルawaitをそのまま利用できます。", "await Task.FromResult(42)"),
+            new("前回結果", "Lastは直前の結果、Out[index]は指定Submissionの元オブジェクトを参照します。", "Last\nOut[1]")
+        ]),
+        new("入力と補完", "C#補完、シグネチャ、診断を現在のセッション状態から生成します。",
+        [
+            new("キー操作", "EnterまたはCtrl+Enterで実行します（設定で変更可能）。Ctrl+Spaceで補完、Tabで明示選択、Escで閉じます。Shift+EnterまたはEnterで改行します。"),
+            new("履歴", "一行入力で上下キーを押すと履歴を移動します。過去の入力行をクリックして現在の入力へコピーできます。"),
+            new("補完の確定", "候補は入力内容に応じて絞り込まれます。Enterでは候補を確定せず、Tabまたはダブルクリックだけで挿入します。")
+        ]),
+        new("シンボル", "名前空間、型、メソッドとドキュメントを探索します。",
+        [
+            new("ホバーと固定表示", "項目へマウスを置くと署名と概要をすばやく確認できます。クリックするとパラメーターや戻り値を左下へ固定表示します。"),
+            new("日本語ドキュメント", "アセンブリ付属のXMLコメントは通常英語です。内容を不正確に自動翻訳せず、.NET APIでは固定詳細からMicrosoft Learnの日本語ページを開けます。"),
+            new("検索", "名前空間、型、メソッド、コメント、アセンブリ名を横断検索します。")
+        ]),
+        new("ワークスペース", "セッションを保存し、後から再構築できます。",
+        [
+            new("保存内容", "Submission、入力途中のテキスト、using、DLL参照、NuGetパッケージの正確なバージョンを保存します。実行中オブジェクトそのものは保存しません。"),
+            new("読み込み方式", "新しいWorkerを起動し、依存関係を復元してからSubmissionを順番に再実行します。このためファイル書き込みなどの副作用も再実行されます。"),
+            new("利用方法", "ヘッダーの［ファイル］から.pgsworkspaceを保存または開きます。欠落したローカルDLLは警告してスキップします。")
+        ]),
+        new("大容量データ", "巨大なファイル全体を不用意にメモリへ載せないためのDataヘルパーです。",
+        [
+            new("確認とプレビュー", "Inspectは内容を読まずサイズを返します。PreviewTextとReadBytesは最大1 MiBに制限されます。", "Data.Inspect(@\"C:\\data\\large.json\")\nData.PreviewText(@\"C:\\data\\large.log\", 65536)"),
+            new("行ストリーム", "ReadLinesは遅延列挙です。Takeなどで件数を絞ってください。結果表示側も最大100件で打ち切ります。", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)"),
+            new("JSON配列", "トップレベル配列をストリーム解析し、指定件数だけ保持します。takeは最大10,000件です。", "await Data.ReadJsonArrayAsync(@\"C:\\data\\large.json\", take: 100)"),
+            new("JSON Lines", "一行一JSONを非同期列挙します。必要な件数でbreakしてください。", "var rows = new List<JsonElement>();\nawait foreach (var row in Data.ReadJsonLinesAsync(@\"C:\\data\\events.jsonl\"))\n{\n    rows.Add(row);\n    if (rows.Count == 100) break;\n}\nrows")
+        ]),
+        new("依存関係", "NuGet、DLL、usingを実行環境と補完環境へ反映します。",
+        [
+            new("NuGet", "右上の［セッション］→［NuGet］から検索・追加するか、コロンコマンドを使います。", ":package add Humanizer.Core --version 3.0.10\n:package list"),
+            new("DLLとusing", "ローカルDLLは絶対パスで追加します。", ":reference add \"C:\\Libraries\\Example.dll\"\n:using add Example.Namespace")
+        ]),
+        new("停止と安全性", "Worker分離は安定性のためであり、サンドボックスではありません。",
+        [
+            new("停止", "Escまたは停止ボタンで協調的に中断します。応答しない場合はWorkerを強制終了し、UIとTranscriptを保持します。Worker内の変数状態は失われます。"),
+            new("権限", "任意のC#コードとパッケージは現在のWindowsユーザー権限で動作します。信頼できないコード、DLL、パッケージを実行しないでください。")
+        ])
+    ];
+
+    private static IReadOnlyList<HelpTopic> CreateEnglishTopics() =>
+    [
+        new("Getting started", "Evaluate C# incrementally while preserving session state.",
+        [
+            new("Basics", "Enter code on the > line. Variables, methods, types, and usings remain available.", "var values = Enumerable.Range(1, 10).ToArray();\nvalues.Sum()"),
+            new("Async and results", "Top-level await is supported. Last and Out[index] retain original result objects.", "await Task.FromResult(42)\nLast\nOut[1]")
+        ]),
+        new("Input and IntelliSense", "Completion and diagnostics use the current session state.",
+        [
+            new("Keys", "Run with Enter or Ctrl+Enter as configured. Ctrl+Space opens completion, Tab explicitly accepts, and Esc closes it. Completion is never accepted by Enter."),
+            new("History", "Use Up and Down on a single line, or click a prior input to copy it into the editor.")
+        ]),
+        new("Symbol explorer", "Browse namespaces, types, methods, and XML documentation.",
+        [
+            new("Hover and pin", "Hover for a compact signature and summary. Click to pin parameters and return documentation in the lower pane."),
+            new("Localized docs", "Assembly XML documentation is commonly English. Framework symbols link to the localized Microsoft Learn API page rather than applying an unreliable automatic translation.")
+        ]),
+        new("Workspaces", "Save and reconstruct a session later.",
+        [
+            new("Contents", "Submissions, draft input, usings, DLL references, and exact package versions are saved. Live objects are not serialized."),
+            new("Replay", "Opening starts a fresh Worker, restores dependencies, and replays submissions. Side effects such as file writes run again.")
+        ]),
+        new("Large files and JSON", "Data helpers avoid loading entire files by default.",
+        [
+            new("Preview", "PreviewText and ReadBytes are bounded to 1 MiB.", "Data.Inspect(@\"C:\\data\\large.json\")\nData.PreviewText(@\"C:\\data\\large.log\")"),
+            new("Streaming", "ReadLines is lazy. JSON arrays and JSON Lines are parsed incrementally.", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)\nawait Data.ReadJsonArrayAsync(@\"C:\\data\\large.json\", 100)")
+        ]),
+        new("Dependencies", "Add NuGet packages, DLLs, and usings to execution and IntelliSense.",
+        [
+            new("Commands", "Use the Workspace panel or colon commands.", ":package add Humanizer.Core --version 3.0.10\n:reference add \"C:\\Libraries\\Example.dll\"\n:using add Example.Namespace")
+        ]),
+        new("Cancellation and security", "Worker isolation improves recovery; it is not a sandbox.",
+        [
+            new("Stop", "Press Esc or Stop. A non-responsive Worker can be terminated while the UI and transcript survive; Worker variables are lost."),
+            new("Permissions", "Submitted code and packages run with your current Windows user permissions. Never run untrusted code, DLLs, or packages.")
+        ])
+    ];
+}

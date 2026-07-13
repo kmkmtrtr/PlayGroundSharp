@@ -61,6 +61,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string packageSearchMessage = "Search packages on nuget.org";
     [ObservableProperty] private bool includePrereleasePackages;
     [ObservableProperty] private bool isPackageSearchBusy;
+    [ObservableProperty] private bool isWorkspaceBusy;
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = SettingsStore.Load().ExecutionKeyMode;
     [ObservableProperty] private AppThemeMode themeMode = SettingsStore.Load().ThemeMode;
     [ObservableProperty] private AppLanguageMode languageMode = SettingsStore.Load().LanguageMode;
@@ -125,6 +126,107 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public string Localize(string key, params object?[] arguments) =>
         AppLocalization.Text(LanguageMode, key, arguments);
+
+    public WorkspaceDocument CreateWorkspaceDocument() => new(
+        WorkspaceDocument.CurrentVersion,
+        DateTime.UtcNow,
+        [.. submissions],
+        [.. imports],
+        [.. references],
+        packages.Select(static package => new WorkspacePackage(package.Id, package.Version)).ToArray(),
+        InputText);
+
+    public async Task LoadWorkspaceAsync(WorkspaceDocument document, CancellationToken cancellationToken = default)
+    {
+        if (IsWorkspaceBusy) return;
+        IsWorkspaceBusy = true;
+        SetLocalizedStatus("Status.LoadingWorkspace");
+        try
+        {
+            if (IsRunning) await CancelAsync();
+            await worker.RestartAsync(cancellationToken);
+            submissions.Clear();
+            imports.Clear();
+            imports.AddRange(SessionContext.DefaultImports);
+            references.Clear();
+            packages.Clear();
+            history.Clear();
+            historyPosition = 0;
+            executingCode = null;
+            Transcript.Clear();
+            PackageItems.Clear();
+            ReferenceItems.Clear();
+            UsingItems.Clear();
+            foreach (var import in SessionContext.DefaultImports) UsingItems.Add(import);
+            VariableItems.Clear();
+            LibraryItems.Clear();
+            SelectedExplorerNode = null;
+
+            foreach (var package in document.Packages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await worker.AddPackageAsync(package.Id, package.Version, cancellationToken);
+            }
+
+            foreach (var path in document.References.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (references.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
+                if (!File.Exists(path))
+                {
+                    Transcript.Add(TranscriptLine.Diagnostic(Localize("Message.ReferenceMissing", path), false));
+                    continue;
+                }
+                await worker.AddReferenceAsync(path, cancellationToken);
+                references.Add(path);
+                ReferenceItems.Add(path);
+                AddAssemblyLibrary(path, "Workspace");
+            }
+
+            foreach (var import in document.Imports
+                         .Except(SessionContext.DefaultImports, StringComparer.Ordinal)
+                         .Distinct(StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await worker.AddUsingAsync(import, cancellationToken);
+                imports.Add(import);
+                UsingItems.Add(import);
+            }
+
+            foreach (var code in document.Submissions)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var expectedCount = submissions.Count + 1;
+                executingCode = code;
+                Transcript.Add(TranscriptLine.Input(expectedCount, code));
+                IsRunning = true;
+                SetLocalizedStatus("Status.ReplayingWorkspace", expectedCount, document.Submissions.Count);
+                await worker.ExecuteAsync(expectedCount, code, cancellationToken);
+                if (submissions.Count != expectedCount)
+                    throw new InvalidDataException(Localize("Message.ReplayFailed", expectedCount));
+                history.Add(code);
+            }
+
+            historyPosition = history.Count;
+            InputText = document.InputText;
+            IsRunning = false;
+            SetSessionStatus("Session.Count", submissions.Count);
+            SetLocalizedStatus("Status.WorkspaceLoaded");
+            Transcript.Add(TranscriptLine.System(Localize("Message.WorkspaceLoaded", submissions.Count)));
+            await RefreshTypeExplorerAsync();
+        }
+        catch
+        {
+            IsRunning = false;
+            executingCode = null;
+            SetLocalizedStatus("Status.WorkspaceLoadFailed");
+            throw;
+        }
+        finally
+        {
+            IsWorkspaceBusy = false;
+        }
+    }
 
     public void SetLocalizedStatus(string key, params object?[] arguments)
     {
@@ -379,7 +481,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 if (completed.StateAccepted && executingCode is not null)
                 {
                     submissions.Add(executingCode);
-                    _ = RefreshTypeExplorerAsync();
+                    if (!IsWorkspaceBusy) _ = RefreshTypeExplorerAsync();
                 }
                 executingCode = null;
                 IsRunning = false;
@@ -413,7 +515,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                         references.Add(path);
                         ReferenceItems.Add(path);
                     }
-                _ = RefreshTypeExplorerAsync();
+                if (!IsWorkspaceBusy) _ = RefreshTypeExplorerAsync();
                 Transcript.Add(TranscriptLine.System(Localize("Message.PackageAdded", package.PackageId, package.Version)));
                 break;
             case MessageKinds.PackageSearchResults:
@@ -757,7 +859,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 entry.Parameters.Select(static parameter =>
                     new SymbolExplorerParameter(parameter.Name, parameter.TypeName, parameter.Summary)).ToArray(),
                 entry.Returns,
-                entry.AssemblyName);
+                entry.AssemblyName,
+                CreateDocumentationPath(entry));
+
+        private static string? CreateDocumentationPath(SymbolExplorerEntry entry)
+        {
+            if (entry.AssemblyName == "Session" ||
+                !entry.AssemblyName.StartsWith("System", StringComparison.Ordinal) &&
+                !entry.AssemblyName.StartsWith("Microsoft", StringComparison.Ordinal)) return null;
+            var fullName = entry.Kind == "constructor"
+                ? string.Join('.', new[] { entry.Namespace, entry.ContainingType }.Where(static part => !string.IsNullOrEmpty(part)))
+                : entry.FullName;
+            return Regex.Replace(fullName, "<[^>]+>", string.Empty).ToLowerInvariant();
+        }
     }
 
     private static string FormatSnapshot(ResultSnapshot snapshot)

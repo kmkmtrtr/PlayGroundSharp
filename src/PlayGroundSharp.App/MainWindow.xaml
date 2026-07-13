@@ -4,8 +4,9 @@
         xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:local="clr-namespace:PlayGroundSharp.App"
         Title="PlayGroundSharp" Width="1200" Height="800" MinWidth="820" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
-        Loaded="Window_Loaded" Closing="Window_Closing">
+        Loaded="Window_Loaded" Closing="Window_Closing" PreviewKeyDown="Window_PreviewKeyDown">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="54" />
@@ -48,14 +49,43 @@
                     <Button Content="{DynamicResource Ui.Reset}" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ResetCommand}" />
                     <Button Content="{DynamicResource Ui.Clear}" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ClearCommand}" />
                 </StackPanel>
-                <Border Width="32" Height="32" CornerRadius="8" Background="{DynamicResource SelectionBrush}" Margin="0,0,10,0">
+                <Border DockPanel.Dock="Left" Width="32" Height="32" CornerRadius="8" Background="{DynamicResource SelectionBrush}" Margin="0,0,10,0">
                     <TextBlock Text=">_" Foreground="{DynamicResource AccentBrush}" FontFamily="Cascadia Mono,Consolas"
                                FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
-                <StackPanel VerticalAlignment="Center">
+                <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
                     <TextBlock Text="PlayGroundSharp" FontSize="16" FontWeight="SemiBold" />
                     <TextBlock Text="{DynamicResource Ui.AppSubtitle}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" />
                 </StackPanel>
+                <Menu DockPanel.Dock="Left" Style="{StaticResource HeaderMenuStyle}" Margin="18,0,0,0">
+                    <MenuItem Header="{DynamicResource Menu.File}" Style="{StaticResource HeaderMenuItemStyle}">
+                        <MenuItem Header="{DynamicResource Menu.SaveWorkspace}" Click="SaveWorkspace_Click" InputGestureText="Ctrl+Shift+S" />
+                        <MenuItem Header="{DynamicResource Menu.OpenWorkspace}" Click="OpenWorkspace_Click" InputGestureText="Ctrl+O" />
+                        <Separator />
+                        <MenuItem Header="{DynamicResource Menu.Exit}" Click="Exit_Click" />
+                    </MenuItem>
+                    <MenuItem Header="{DynamicResource Menu.Edit}" Style="{StaticResource HeaderMenuItemStyle}">
+                        <MenuItem Header="{DynamicResource Menu.FocusInput}" Click="FocusInput_Click" InputGestureText="Ctrl+L" />
+                        <MenuItem Header="{DynamicResource Menu.ClearTranscript}" Command="{Binding ClearCommand}" />
+                    </MenuItem>
+                    <MenuItem Header="{DynamicResource Menu.Data}" Style="{StaticResource HeaderMenuItemStyle}">
+                        <MenuItem Header="{DynamicResource Menu.InspectFile}" Tag="Inspect" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.PreviewText}" Tag="Preview" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.ReadLines}" Tag="Lines" Click="InsertDataSnippet_Click" />
+                        <Separator />
+                        <MenuItem Header="{DynamicResource Menu.ReadJsonArray}" Tag="JsonArray" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.ReadJsonLines}" Tag="JsonLines" Click="InsertDataSnippet_Click" />
+                    </MenuItem>
+                    <MenuItem Header="{DynamicResource Menu.View}" Style="{StaticResource HeaderMenuItemStyle}">
+                        <MenuItem Header="{DynamicResource Menu.SymbolExplorer}" Command="{Binding ToggleTypeExplorerCommand}" />
+                        <MenuItem Header="{DynamicResource Menu.Workspace}" Command="{Binding ToggleReferenceDrawerCommand}" />
+                    </MenuItem>
+                    <MenuItem Header="{DynamicResource Menu.Help}" Style="{StaticResource HeaderMenuItemStyle}">
+                        <MenuItem Header="{DynamicResource Menu.OpenHelp}" Click="OpenHelp_Click" InputGestureText="F1" />
+                        <Separator />
+                        <MenuItem Header="{DynamicResource Menu.About}" Click="About_Click" />
+                    </MenuItem>
+                </Menu>
             </DockPanel>
         </Border>
 
@@ -114,6 +144,9 @@
                                 <TextBlock Text="{Binding Returns}" FontSize="11.5" TextWrapping="Wrap"
                                            Visibility="{Binding HasReturns, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                 <TextBlock Text="{Binding AssemblyName}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,0" />
+                                <Button Content="{DynamicResource Docs.OpenJapanese}" Style="{StaticResource MiniButtonStyle}"
+                                        HorizontalAlignment="Left" Margin="-6,8,0,0" Click="OpenSymbolDocumentation_Click"
+                                        Visibility="{Binding HasOnlineDocumentation, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             </StackPanel>
                         </ScrollViewer>
                     </Border>
@@ -139,7 +172,29 @@
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged">
                                 <TreeView.Resources>
                                     <HierarchicalDataTemplate DataType="{x:Type local:SymbolExplorerNode}" ItemsSource="{Binding Children}">
-                                        <Grid Margin="0,1" ToolTip="{Binding Detail}">
+                                        <Grid Margin="0,1" ToolTipService.InitialShowDelay="550" ToolTipService.ShowDuration="15000">
+                                            <Grid.ToolTip>
+                                                <ToolTip Placement="Mouse" HorizontalOffset="12" VerticalOffset="8">
+                                                    <Border Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                                            BorderThickness="1" CornerRadius="7" Padding="11,9" MaxWidth="440">
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding Signature}" FontFamily="Cascadia Mono,Consolas"
+                                                                       FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                            <TextBlock Text="{Binding Summary}" FontSize="11.5" TextWrapping="Wrap" Margin="0,7,0,0"
+                                                                       Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                            <TextBlock Text="{DynamicResource Docs.HoverHint}" Foreground="{DynamicResource MutedBrush}"
+                                                                       FontSize="10.5" Margin="0,7,0,0" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <ToolTip.Style>
+                                                        <Style TargetType="ToolTip">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Signature}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ToolTip.Style>
+                                                </ToolTip>
+                                            </Grid.ToolTip>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                             <Border Width="20" Height="20" CornerRadius="4" Background="{DynamicResource SelectionBrush}" Margin="0,0,6,0">
                                                 <TextBlock Text="{Binding Glyph}" Foreground="{DynamicResource AccentBrush}" FontFamily="Cascadia Mono,Consolas"

@@ -44,7 +44,8 @@ public sealed record SymbolExplorerEntry(
     string Signature,
     string Summary,
     IReadOnlyList<ExplorerParameterInfo> Parameters,
-    string Returns)
+    string Returns,
+    IReadOnlyList<string> InheritedTypes)
 {
     public string FullName => string.Join('.', new[] { Namespace == "(session)" ? null : Namespace, ContainingType, Name }
         .Where(static part => !string.IsNullOrEmpty(part)));
@@ -526,7 +527,8 @@ public sealed class CSharpLanguageService
             type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
             documentation.Summary,
             [],
-            string.Empty));
+            string.Empty,
+            GetInheritedTypes(type)));
 
         foreach (var method in type.GetMembers().OfType<IMethodSymbol>()
                      .Where(static method =>
@@ -561,7 +563,18 @@ public sealed class CSharpLanguageService
             method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
             documentation.Summary,
             parameters,
-            documentation.Returns);
+            documentation.Returns,
+            []);
+    }
+
+    private static IReadOnlyList<string> GetInheritedTypes(INamedTypeSymbol type)
+    {
+        var inheritedTypes = new List<string>();
+        if (type.TypeKind == TypeKind.Class && type.BaseType is { SpecialType: not SpecialType.System_Object } baseType)
+            inheritedTypes.Add(baseType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+        inheritedTypes.AddRange(type.Interfaces.Select(static @interface =>
+            @interface.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
+        return inheritedTypes.Distinct(StringComparer.Ordinal).ToArray();
     }
 
     private static string GetMethodDisplayName(IMethodSymbol method)

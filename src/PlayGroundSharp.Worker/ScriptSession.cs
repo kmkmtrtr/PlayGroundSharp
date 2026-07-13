@@ -128,15 +128,20 @@ public sealed class ScriptSession
 
     public void AddUsing(string @namespace)
     {
-        if (string.IsNullOrWhiteSpace(@namespace) || !SyntaxFacts.IsValidIdentifier(@namespace.Replace(".", string.Empty, StringComparison.Ordinal)))
-        {
-            throw new ArgumentException("Namespace is invalid.", nameof(@namespace));
-        }
+        ValidateNamespace(@namespace);
         if (!imports.Contains(@namespace, StringComparer.Ordinal))
         {
             imports.Add(@namespace);
             options = options.AddImports(@namespace);
         }
+    }
+
+    public void RemoveUsing(string @namespace)
+    {
+        ValidateNamespace(@namespace);
+        if (state is not null)
+            throw new InvalidOperationException("Removing a using requires a fresh Worker session.");
+        if (imports.Remove(@namespace)) options = options.WithImports(imports);
     }
 
     public void Reset()
@@ -165,6 +170,15 @@ public sealed class ScriptSession
         catch (Exception error)
         {
             return new(SnapshotKind.Exception, $"{error.GetType().Name}: {error.Message}", variable.Type.FullName);
+        }
+    }
+
+    private static void ValidateNamespace(string @namespace)
+    {
+        if (string.IsNullOrWhiteSpace(@namespace) ||
+            @namespace.Split('.').Any(static segment => !SyntaxFacts.IsValidIdentifier(segment)))
+        {
+            throw new ArgumentException("Namespace is invalid.", nameof(@namespace));
         }
     }
 

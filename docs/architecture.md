@@ -19,13 +19,15 @@ The App starts one child Worker with a random pipe name. A dedicated duplex name
 
 The first submission uses `CSharpScript.RunAsync`; accepted submissions use `ContinueWithAsync`. Compilation failures do not replace state. Runtime-faulted states remain continuable. `SessionGlobals` exposes original values through `Last` and indexed `Out`.
 
+Imports can be added in place. Roslyn continuation states inherit imports, so removing one after a submission cannot mutate the existing state safely. The App confirms the state loss, starts a fresh Worker, reapplies the remaining imports and dependencies, and clears live variables/types/methods without replaying user code or its side effects. Before the first submission, removal is applied directly.
+
 `SessionGlobals.Data` exposes `LargeDataAccess` inside the Worker. Preview and byte APIs are bounded to 1 MiB, line enumeration is lazy, and JSON array/JSON Lines APIs parse incrementally. File content and arbitrary parser objects never cross IPC; only bounded result snapshots do.
 
 ## Language workspace
 
 An `AdhocWorkspace` hosts a script-kind document composed from accepted submissions and current input. It uses the same imports and metadata paths as execution. Completion, Quick Info and diagnostics come from that document. The left Symbol Explorer uses the same compilation to enumerate public types and declared public methods directly available from active namespaces, then merges top-level session methods, session-defined types and public metadata symbols from dynamic DLL/package references. XML documentation is read through Roslyn documentation providers, with source-trivia and adjacent XML-file fallbacks for script and dynamic assemblies. The UI receives neutral symbol/documentation records only and refreshes them asynchronously after accepted submissions and reference/import changes.
 
-Explorer interaction uses progressive disclosure: hover shows a lightweight signature/summary tooltip, while selection pins full parameter and return details. Library-authored XML is kept verbatim. For .NET framework symbols the App opens a fixed-host Microsoft Learn API URL using the selected UI locale; it does not machine-translate documentation.
+Explorer interaction uses progressive disclosure: every row carries a compact symbol-kind label, hover shows a lightweight signature/summary tooltip, and selection pins full parameter and return details. Type entries also carry their direct non-`object` base class and directly declared interfaces from Roslyn symbols. Library-authored XML is kept verbatim. For .NET framework symbols the App opens a fixed-host Microsoft Learn API URL using the selected UI locale; it does not machine-translate documentation.
 
 ## Workspace persistence
 

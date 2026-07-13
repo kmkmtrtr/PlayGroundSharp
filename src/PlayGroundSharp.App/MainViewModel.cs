@@ -22,7 +22,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private static readonly string[] Commands =
     [
-        ":help", ":clear", ":reset", ":using list", ":using add ",
+        ":help", ":clear", ":reset", ":using list", ":using add ", ":using remove ",
         ":reference list", ":reference add \"\"", ":package list", ":package add "
     ];
     private readonly WorkerClient worker = new();
@@ -62,6 +62,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private bool includePrereleasePackages;
     [ObservableProperty] private bool isPackageSearchBusy;
     [ObservableProperty] private bool isWorkspaceBusy;
+    [ObservableProperty] private string newUsingText = string.Empty;
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = SettingsStore.Load().ExecutionKeyMode;
     [ObservableProperty] private AppThemeMode themeMode = SettingsStore.Load().ThemeMode;
     [ObservableProperty] private AppLanguageMode languageMode = SettingsStore.Load().LanguageMode;
@@ -97,6 +98,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public IRelayCommand ToggleTypeExplorerCommand { get; }
     public IAsyncRelayCommand SearchPackagesCommand { get; }
     public IAsyncRelayCommand<NuGetPackageInfo> InstallPackageCommand { get; }
+    public IAsyncRelayCommand AddUsingFromGuiCommand { get; }
 
     public MainViewModel()
     {
@@ -114,6 +116,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         ToggleTypeExplorerCommand = new RelayCommand(() => IsTypeExplorerOpen = !IsTypeExplorerOpen);
         SearchPackagesCommand = new AsyncRelayCommand(SearchPackagesAsync);
         InstallPackageCommand = new AsyncRelayCommand<NuGetPackageInfo>(InstallPackageAsync);
+        AddUsingFromGuiCommand = new AsyncRelayCommand(AddUsingFromGuiAsync);
         worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEvent(envelope));
         worker.Disconnected += message => Application.Current.Dispatcher.Invoke(() =>
         {
@@ -147,7 +150,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             await worker.RestartAsync(cancellationToken);
             submissions.Clear();
             imports.Clear();
-            imports.AddRange(SessionContext.DefaultImports);
+            imports.AddRange(document.Imports.Distinct(StringComparer.Ordinal));
             references.Clear();
             packages.Clear();
             history.Clear();
@@ -157,10 +160,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             PackageItems.Clear();
             ReferenceItems.Clear();
             UsingItems.Clear();
-            foreach (var import in SessionContext.DefaultImports) UsingItems.Add(import);
+            foreach (var import in imports) UsingItems.Add(import);
             VariableItems.Clear();
             LibraryItems.Clear();
             SelectedExplorerNode = null;
+
+            await ConfigureWorkerImportsAsync(cancellationToken);
 
             foreach (var package in document.Packages)
             {
@@ -181,16 +186,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 references.Add(path);
                 ReferenceItems.Add(path);
                 AddAssemblyLibrary(path, "Workspace");
-            }
-
-            foreach (var import in document.Imports
-                         .Except(SessionContext.DefaultImports, StringComparer.Ordinal)
-                         .Distinct(StringComparer.Ordinal))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                await worker.AddUsingAsync(import, cancellationToken);
-                imports.Add(import);
-                UsingItems.Add(import);
             }
 
             foreach (var code in document.Submissions)
@@ -350,6 +345,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 return new CompletionCandidate(command, command, command, ["Namespace"], command, ReplacementStart: 0);
             }));
         }
+        const string removeUsingPrefix = ":using remove ";
+        if (code.StartsWith(removeUsingPrefix, StringComparison.Ordinal))
+        {
+            candidates.AddRange(context.Imports.Select(@namespace =>
+            {
+                var command = removeUsingPrefix + @namespace;
+                return new CompletionCandidate(command, command, command, ["Namespace"], command, ReplacementStart: 0);
+            }));
+        }
         return (IReadOnlyList<CompletionCandidate>)candidates;
     });
 
@@ -392,6 +396,61 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         UsingItems.Add(value);
         await RefreshTypeExplorerAsync();
         return true;
+    }
+
+    public bool HasSessionState => submissions.Count > 0;
+
+    public async Task<bool> RemoveUsingAsync(string? @namespace)
+    {
+        var value = @namespace?.Trim();
+        if (string.IsNullOrEmpty(value) || !imports.Contains(value, StringComparer.Ordinal)) return false;
+        if (IsRunning) return false;
+
+        var rebuildWorker = HasSessionState;
+        if (rebuildWorker)
+        {
+            imports.Remove(value);
+            UsingItems.Remove(value);
+            SetLocalizedStatus("Status.StartingWorker");
+            await RestartAndRehydrateAsync();
+            submissions.Clear();
+            executingCode = null;
+            VariableItems.Clear();
+            IsRunning = false;
+            SetSessionStatus("Session.Restarted");
+            Transcript.Add(TranscriptLine.System(Localize("Message.UsingRemovedWithRestart", value)));
+        }
+        else
+        {
+            await worker.RemoveUsingAsync(value);
+            imports.Remove(value);
+            UsingItems.Remove(value);
+            Transcript.Add(TranscriptLine.System(Localize("Message.UsingRemoved", value)));
+        }
+
+        SetLocalizedStatus("Status.RemovedUsing", value);
+        await RefreshTypeExplorerAsync();
+        return true;
+    }
+
+    private async Task AddUsingFromGuiAsync()
+    {
+        var value = NewUsingText.Trim();
+        if (value.Length == 0) return;
+        try
+        {
+            var added = await AddUsingAsync(value);
+            Transcript.Add(TranscriptLine.System(added
+                ? Localize("Message.UsingAdded", value)
+                : Localize("Message.UsingActive", value)));
+            if (added) SetLocalizedStatus("Status.AddedUsing", value);
+            NewUsingText = string.Empty;
+        }
+        catch (Exception error)
+        {
+            SetLocalizedStatus("Status.UsingFailed");
+            Transcript.Add(TranscriptLine.Diagnostic(error.Message));
+        }
     }
 
     partial void OnInputTextChanged(string value)
@@ -557,10 +616,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task RestartAndRehydrateAsync()
     {
         await worker.RestartAsync();
-        foreach (var import in imports.Except(SessionContext.DefaultImports, StringComparer.Ordinal))
-            await worker.AddUsingAsync(import);
+        await ConfigureWorkerImportsAsync();
         foreach (var reference in references)
             await worker.AddReferenceAsync(reference);
+    }
+
+    private async Task ConfigureWorkerImportsAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var import in SessionContext.DefaultImports.Except(imports, StringComparer.Ordinal))
+            await worker.RemoveUsingAsync(import, cancellationToken);
+        foreach (var import in imports.Except(SessionContext.DefaultImports, StringComparer.Ordinal))
+            await worker.AddUsingAsync(import, cancellationToken);
     }
 
     private async Task ExecuteCommandAsync(string command)
@@ -588,6 +654,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             Transcript.Add(TranscriptLine.System(added
                 ? Localize("Message.UsingAdded", value)
                 : Localize("Message.UsingActive", value)));
+        }
+        else if (command.StartsWith(":using remove ", StringComparison.Ordinal))
+        {
+            var value = command[":using remove ".Length..].Trim();
+            if (!await RemoveUsingAsync(value))
+                Transcript.Add(TranscriptLine.System(Localize("Message.UsingMissing", value)));
         }
         else if (command == ":reference list")
         {
@@ -860,7 +932,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     new SymbolExplorerParameter(parameter.Name, parameter.TypeName, parameter.Summary)).ToArray(),
                 entry.Returns,
                 entry.AssemblyName,
-                CreateDocumentationPath(entry));
+                CreateDocumentationPath(entry),
+                entry.InheritedTypes);
 
         private static string? CreateDocumentationPath(SymbolExplorerEntry entry)
         {

@@ -145,6 +145,21 @@
                                       PreviewMouseWheel="TypeExplorerTree_PreviewMouseWheel"
                                       PreviewKeyDown="TypeExplorerTree_PreviewKeyDown">
                                 <TreeView.Resources>
+                                    <Style x:Key="ExplorerKindTextStyle" TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Kind}" Value="namespace"><Setter Property="Foreground" Value="{DynamicResource ExplorerNamespaceBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="class"><Setter Property="Foreground" Value="{DynamicResource ExplorerClassBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="record"><Setter Property="Foreground" Value="{DynamicResource ExplorerRecordBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="record struct"><Setter Property="Foreground" Value="{DynamicResource ExplorerRecordBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="interface"><Setter Property="Foreground" Value="{DynamicResource ExplorerInterfaceBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="struct"><Setter Property="Foreground" Value="{DynamicResource ExplorerStructBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="enum"><Setter Property="Foreground" Value="{DynamicResource ExplorerEnumBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="delegate"><Setter Property="Foreground" Value="{DynamicResource ExplorerDelegateBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="method"><Setter Property="Foreground" Value="{DynamicResource ExplorerMethodBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="constructor"><Setter Property="Foreground" Value="{DynamicResource ExplorerMethodBrush}" /></DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
                                     <HierarchicalDataTemplate DataType="{x:Type local:SymbolExplorerNode}" ItemsSource="{Binding Children}">
                                         <Grid Margin="0,1" ToolTipService.InitialShowDelay="180" ToolTipService.ShowDuration="15000">
                                             <Grid.ToolTip>
@@ -154,6 +169,12 @@
                                                         <StackPanel>
                                                             <TextBlock Text="{Binding Signature}" FontFamily="Cascadia Mono,Consolas"
                                                                        FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                            <TextBlock Text="{DynamicResource Docs.Inheritance}" Foreground="{DynamicResource MutedBrush}"
+                                                                       FontSize="10.5" FontWeight="SemiBold" Margin="0,7,0,1"
+                                                                       Visibility="{Binding HasInheritance, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                            <TextBlock Text="{Binding InheritanceDisplay}" FontFamily="Cascadia Mono,Consolas"
+                                                                       FontSize="11" TextWrapping="Wrap"
+                                                                       Visibility="{Binding HasInheritance, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                             <TextBlock Text="{Binding Summary}" FontSize="11.5" TextWrapping="Wrap" Margin="0,7,0,0"
                                                                        Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                             <TextBlock Text="{DynamicResource Docs.HoverHint}" Foreground="{DynamicResource MutedBrush}"
@@ -169,12 +190,18 @@
                                                     </ToolTip.Style>
                                                 </ToolTip>
                                             </Grid.ToolTip>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <Border Width="20" Height="20" CornerRadius="4" Background="{DynamicResource SelectionBrush}" Margin="0,0,6,0">
-                                                <TextBlock Text="{Binding Glyph}" Foreground="{DynamicResource AccentBrush}" FontFamily="Cascadia Mono,Consolas"
+                                                <TextBlock Text="{Binding Glyph}" Style="{StaticResource ExplorerKindTextStyle}" FontFamily="Cascadia Mono,Consolas"
                                                            FontSize="10.5" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             </Border>
-                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ExplorerKindTextStyle}"
+                                                       FontSize="12.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <Border Grid.Column="2" Background="{DynamicResource InputBrush}" CornerRadius="4" Padding="5,1"
+                                                    Margin="7,0,2,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding KindLabel}" Style="{StaticResource ExplorerKindTextStyle}"
+                                                           FontSize="9.5" VerticalAlignment="Center" />
+                                            </Border>
                                         </Grid>
                                     </HierarchicalDataTemplate>
                                 </TreeView.Resources>
@@ -215,6 +242,10 @@
                         <StackPanel DataContext="{Binding SelectedExplorerNode}">
                             <TextBlock Text="{Binding Signature}" FontFamily="Cascadia Mono,Consolas" FontSize="12"
                                        FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{DynamicResource Docs.Inheritance}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,3"
+                                       Visibility="{Binding HasInheritance, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{Binding InheritanceDisplay}" FontFamily="Cascadia Mono,Consolas" FontSize="11.5" TextWrapping="Wrap" LineHeight="18"
+                                       Visibility="{Binding HasInheritance, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             <TextBlock Text="{DynamicResource Docs.Summary}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,3"
                                        Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             <TextBlock Text="{Binding Summary}" FontSize="11.5" TextWrapping="Wrap" LineHeight="18"
@@ -465,7 +496,34 @@
                                 </StackPanel>
                             </Grid>
                         </TabItem>
-                        <TabItem Header="{DynamicResource Tab.Usings}"><ListBox ItemsSource="{Binding UsingItems}" Margin="8" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
+                        <TabItem Header="{DynamicResource Tab.Usings}">
+                            <Grid Margin="10" TextElement.Foreground="{DynamicResource ForegroundBrush}">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding NewUsingText, UpdateSourceTrigger=PropertyChanged}" Height="32" Padding="9,4"
+                                             VerticalContentAlignment="Center" ToolTip="{DynamicResource Usings.InputTooltip}" />
+                                    <Button Grid.Column="1" Content="{DynamicResource Usings.Add}" Command="{Binding AddUsingFromGuiCommand}"
+                                            Style="{StaticResource AccentButtonStyle}" Margin="7,0,0,0" MinWidth="64" />
+                                </Grid>
+                                <ListBox Grid.Row="1" ItemsSource="{Binding UsingItems}" Margin="0,9,0,0" BorderThickness="0"
+                                         Background="Transparent" Foreground="{DynamicResource ForegroundBrush}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="2,2" MinWidth="220">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding}" FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding}" />
+                                                <Button Grid.Column="1" Content="×" Click="RemoveUsing_Click"
+                                                        Style="{StaticResource InlineRemoveButtonStyle}"
+                                                        ToolTip="{DynamicResource Usings.Remove}"
+                                                        AutomationProperties.Name="{DynamicResource Usings.Remove}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </TabItem>
                         <TabItem Header="{DynamicResource Tab.Settings}">
                             <StackPanel Margin="14" TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="12">

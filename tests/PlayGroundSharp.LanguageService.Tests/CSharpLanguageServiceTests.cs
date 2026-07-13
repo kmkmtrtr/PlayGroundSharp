@@ -132,6 +132,7 @@ public sealed class CSharpLanguageServiceTests
             [
                 "record User(string Name)",
                 "delegate int Transformer(int value)",
+                "interface IEntity { }\nclass EntityBase { }\nclass Customer : EntityBase, IEntity { }",
                 "/// <summary>Checks whether a user is an adult.</summary>\n/// <param name=\"user\">The user to inspect.</param>\nbool IsAdult(User user) => true"
             ],
             SessionContext.DefaultImports,
@@ -143,6 +144,9 @@ public sealed class CSharpLanguageServiceTests
         Assert.Contains(entries, static entry => entry.Namespace == "System.Linq" && entry.Name == "Enumerable" && entry.Kind == "class");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "User" && entry.Kind == "record");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "Transformer" && entry.Kind == "delegate");
+        var inheritedClass = Assert.Single(entries, static entry =>
+            entry.Namespace == "(session)" && entry.Name == "Customer" && entry.Kind == "class");
+        Assert.Equal(["EntityBase", "IEntity"], inheritedClass.InheritedTypes);
         Assert.Contains(entries, static entry =>
             entry.Namespace == "PlayGroundSharp.TestFixture" && entry.Name == "Greeter");
 

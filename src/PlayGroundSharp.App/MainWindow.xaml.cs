@@ -310,6 +310,23 @@ public partial class MainWindow : Window
 
     private void FocusInput_Click(object sender, RoutedEventArgs e) => FocusEditor();
 
+    private async void RemoveUsing_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: string @namespace }) return;
+        if (viewModel.HasSessionState && MessageBox.Show(this,
+                viewModel.Localize("Dialog.UsingRemoveWarning", @namespace),
+                viewModel.Localize("Dialog.UsingRemoveTitle"),
+                MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+        try
+        {
+            await viewModel.RemoveUsingAsync(@namespace);
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
+    }
+
     private void FocusEditor() => Dispatcher.BeginInvoke(Editor.Focus);
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();

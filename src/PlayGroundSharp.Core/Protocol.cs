@@ -35,6 +35,7 @@ public static class MessageKinds
     public const string Reset = "reset";
     public const string AddReference = "reference.add";
     public const string AddUsing = "using.add";
+    public const string RemoveUsing = "using.remove";
     public const string AddPackage = "package.add";
     public const string SearchPackages = "package.search";
     public const string Started = "execution.started";
@@ -58,6 +59,7 @@ public sealed record CancelRequest(Guid ExecutionId);
 public sealed record ResetRequest;
 public sealed record AddReferenceRequest(string Path);
 public sealed record AddUsingRequest(string Namespace);
+public sealed record RemoveUsingRequest(string Namespace);
 public sealed record AddPackageRequest(string PackageId, string? Version = null, string? Source = null);
 public sealed record SearchPackagesRequest(string Query, bool IncludePrerelease = false, int Take = 20);
 public sealed record ExecutionStartedEvent(int SubmissionIndex);

@@ -23,7 +23,11 @@ public partial class App : Application
                 ["InputBrush"] = "#18181B", ["DrawerBrush"] = "#252526",
                 ["ErrorBrush"] = "#F87171", ["WarningBrush"] = "#FBBF24",
                 ["HoverBrush"] = "#2D3440", ["SelectionBrush"] = "#1E3A5F",
-                ["AccentHoverBrush"] = "#3B82F6", ["OverlayBrush"] = "#2B2B2F"
+                ["AccentHoverBrush"] = "#3B82F6", ["OverlayBrush"] = "#2B2B2F",
+                ["ExplorerNamespaceBrush"] = "#C4B5FD", ["ExplorerClassBrush"] = "#93C5FD",
+                ["ExplorerRecordBrush"] = "#67E8F9", ["ExplorerInterfaceBrush"] = "#6EE7B7",
+                ["ExplorerStructBrush"] = "#FCD34D", ["ExplorerEnumBrush"] = "#D8B4FE",
+                ["ExplorerDelegateBrush"] = "#F9A8D4", ["ExplorerMethodBrush"] = "#5EEAD4"
             }
             : new Dictionary<string, string>
             {
@@ -33,7 +37,11 @@ public partial class App : Application
                 ["InputBrush"] = "#FFFFFF", ["DrawerBrush"] = "#F8F9FA",
                 ["ErrorBrush"] = "#B3261E", ["WarningBrush"] = "#8B6914",
                 ["HoverBrush"] = "#EDF3FF", ["SelectionBrush"] = "#DBEAFE",
-                ["AccentHoverBrush"] = "#1D4ED8", ["OverlayBrush"] = "#FFFFFF"
+                ["AccentHoverBrush"] = "#1D4ED8", ["OverlayBrush"] = "#FFFFFF",
+                ["ExplorerNamespaceBrush"] = "#7C3AED", ["ExplorerClassBrush"] = "#2563EB",
+                ["ExplorerRecordBrush"] = "#0891B2", ["ExplorerInterfaceBrush"] = "#059669",
+                ["ExplorerStructBrush"] = "#D97706", ["ExplorerEnumBrush"] = "#9333EA",
+                ["ExplorerDelegateBrush"] = "#DB2777", ["ExplorerMethodBrush"] = "#0F766E"
             };
         foreach (var (key, value) in colors)
             Current.Resources[key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(value));

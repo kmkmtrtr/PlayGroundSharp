@@ -41,9 +41,9 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Up` / `Down`: move through single-line input history
 - Click a previous `In` line: copy it into the current prompt
 - **Stop**: request cancellation, then terminate/restart an unresponsive Worker after 1.5 seconds
-- **Types**: open a searchable namespace/type/method tree built from active usings, session declarations and dynamically added libraries; selecting a symbol shows its signature, XML `<summary>`, `<param>` and `<returns>` documentation
+- **Types**: open a searchable, kind-colored namespace/type/method tree built from active usings, session declarations and dynamically added libraries; each row shows its kind, and type details include direct base classes/interfaces alongside the signature and XML documentation
 - Hover a symbol for a compact signature/summary popup; click it to pin full details. Framework symbols can open their localized Microsoft Learn API page.
-- **Session**: open Variables, NuGet, Libraries, Usings and settings
+- **Session**: open Variables, NuGet, Libraries, Usings and settings; the Usings page can add or remove namespaces
 - Drag the Explorer and Workspace dividers to resize either sidebar; use a horizontal wheel or `Shift+wheel` to scroll deep Explorer hierarchies
 - Drag the divider inside completion to resize the candidate and documentation panes
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
@@ -96,6 +96,7 @@ await Data.ReadJsonArrayAsync(@"C:\data\large.json", take: 100)
 :reference add "<DLL path>"
 :reference list
 :using add <Namespace>
+:using remove <Namespace>
 :using list
 :reset
 :clear
@@ -103,7 +104,7 @@ await Data.ReadJsonArrayAsync(@"C:\data\large.json", take: 100)
 
 If package version is omitted, NuGet floating version `*` resolves the latest stable version and the exact selected version is shown. Package restore runs outside the UI thread and uses the normal NuGet cache. Assembly upgrades/removals and conflicting identities require a Worker restart.
 
-Typing `:` opens command completion. After adding a DLL or package, `:using add ` completion lists namespaces found in those assemblies. C# type completion can also show an unimported added-library type with its namespace; accepting it with `Tab` adds the required using to both execution and IntelliSense contexts. The NuGet browser discovers the official V3 `SearchQueryService` endpoint from the nuget.org service index rather than relying on a fixed search host.
+Typing `:` opens command completion. After adding a DLL or package, `:using add ` completion lists namespaces found in those assemblies, while `:using remove ` lists active imports. C# type completion can also show an unimported added-library type with its namespace; accepting it with `Tab` adds the required using to both execution and IntelliSense contexts. Removing an import after code has run starts a fresh Worker because Roslyn script continuations inherit previous imports; current variables, methods and types are therefore cleared after confirmation, while transcript, history and dependencies remain. The NuGet browser discovers the official V3 `SearchQueryService` endpoint from the nuget.org service index rather than relying on a fixed search host.
 
 ## Current limitations
 

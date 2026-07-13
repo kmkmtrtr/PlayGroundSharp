@@ -120,6 +120,35 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task RemovesAndRestoresUsingForFutureSubmissions()
+    {
+        var session = new ScriptSession();
+        session.RemoveUsing("System.Linq");
+        var withoutUsing = await session.ExecuteAsync(1, "Enumerable.Range(1, 3).Sum()");
+
+        Assert.False(withoutUsing.StateAccepted);
+        Assert.DoesNotContain("System.Linq", session.Context.Imports);
+
+        session.AddUsing("System.Linq");
+        var restored = await session.ExecuteAsync(2, "Enumerable.Range(1, 3).Sum()");
+
+        Assert.True(restored.StateAccepted);
+        Assert.Equal("6", restored.Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task RejectsUsingRemovalAfterSessionStateExists()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "var marker = 1;");
+
+        var error = Assert.Throws<InvalidOperationException>(() => session.RemoveUsing("System.Linq"));
+
+        Assert.Contains("fresh Worker", error.Message, StringComparison.Ordinal);
+        Assert.Contains("System.Linq", session.Context.Imports);
+    }
+
+    [Fact]
     public async Task UsesBoundedLargeDataHelpersFromSessionGlobals()
     {
         var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.txt");

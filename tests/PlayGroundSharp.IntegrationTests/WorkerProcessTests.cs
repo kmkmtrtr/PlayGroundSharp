@@ -63,6 +63,36 @@ public sealed class WorkerProcessTests
     }
 
     [Fact]
+    public async Task WorkerProcessRemovesUsingBeforeSessionExecution()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-using-remove-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName);
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var transport = new PipeTransport(pipe);
+            var correlationId = Guid.NewGuid();
+            await transport.WriteAsync(PipeEnvelope.Create(
+                MessageKinds.RemoveUsing, correlationId, new RemoveUsingRequest("System.Linq")), timeout.Token);
+
+            var changed = await transport.ReadAsync(timeout.Token);
+            Assert.Equal(MessageKinds.SessionChanged, changed?.Kind);
+            Assert.DoesNotContain("System.Linq", changed!.ReadPayload<SessionChangedEvent>().Usings);
+
+            var execution = await ExecuteAsync(transport, 1, "Enumerable.Range(1, 3).Sum()", timeout.Token);
+            Assert.Contains(execution, static envelope => envelope.Kind == MessageKinds.Diagnostics);
+            Assert.DoesNotContain(execution, static envelope => envelope.Kind == MessageKinds.Result);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public async Task InfiniteSubmissionCanBeTerminatedAndWorkerReplaced()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));

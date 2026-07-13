@@ -54,6 +54,10 @@ public sealed class WorkerHost(string pipeName)
                     session.AddUsing(envelope.ReadPayload<AddUsingRequest>().Namespace);
                     await SendContextAsync(transport, envelope.CorrelationId, hostToken).ConfigureAwait(false);
                     break;
+                case MessageKinds.RemoveUsing:
+                    session.RemoveUsing(envelope.ReadPayload<RemoveUsingRequest>().Namespace);
+                    await SendContextAsync(transport, envelope.CorrelationId, hostToken).ConfigureAwait(false);
+                    break;
                 case MessageKinds.AddPackage:
                     await AddPackageAsync(transport, envelope, hostToken).ConfigureAwait(false);
                     break;

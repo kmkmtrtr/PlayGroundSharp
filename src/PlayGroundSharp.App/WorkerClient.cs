@@ -63,6 +63,9 @@ public sealed class WorkerClient : IAsyncDisposable
     public Task AddUsingAsync(string @namespace, CancellationToken cancellationToken = default) =>
         SendAndWaitAsync(MessageKinds.AddUsing, new AddUsingRequest(@namespace), cancellationToken);
 
+    public Task RemoveUsingAsync(string @namespace, CancellationToken cancellationToken = default) =>
+        SendAndWaitAsync(MessageKinds.RemoveUsing, new RemoveUsingRequest(@namespace), cancellationToken);
+
     public Task AddPackageAsync(string packageId, string? version, CancellationToken cancellationToken = default) =>
         SendAndWaitAsync(MessageKinds.AddPackage, new AddPackageRequest(packageId, version), cancellationToken);
 

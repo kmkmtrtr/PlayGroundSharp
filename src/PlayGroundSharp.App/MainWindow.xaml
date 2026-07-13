@@ -103,8 +103,9 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Border Grid.Column="0" Width="286" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="0,0,1,0" Visibility="{Binding IsTypeExplorerOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border x:Name="TypeExplorerPane" Grid.Column="0" Width="286" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,1,0" Visibility="{Binding IsTypeExplorerOpen, Converter={StaticResource BooleanToVisibilityConverter}}"
+                    IsVisibleChanged="TypeExplorerPane_IsVisibleChanged">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,12,12,10">
                         <Grid>
@@ -116,47 +117,6 @@
                             <TextBlock Grid.Column="1" Text="{Binding TypeExplorerStatus}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}"
                                        VerticalAlignment="Top" Margin="8,2,0,0" />
                         </Grid>
-                    </Border>
-                    <Border DockPanel.Dock="Bottom" MaxHeight="250" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
-                            Background="{DynamicResource InputBrush}" Padding="12,10">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Visibility" Value="Visible" />
-                                <Style.Triggers><DataTrigger Binding="{Binding SelectedExplorerNode}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <StackPanel DataContext="{Binding SelectedExplorerNode}">
-                                <TextBlock Text="{Binding Signature}" FontFamily="Cascadia Mono,Consolas" FontSize="11.5"
-                                           FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <TextBlock Text="{DynamicResource Docs.Summary}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,2"
-                                           Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <TextBlock Text="{Binding Summary}" FontSize="11.5" TextWrapping="Wrap"
-                                           Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <TextBlock Text="{DynamicResource Docs.Parameters}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,2"
-                                           Visibility="{Binding HasParameters, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <ItemsControl ItemsSource="{Binding ParameterItems}" Visibility="{Binding HasParameters, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="0,1,0,5">
-                                                <TextBlock FontFamily="Cascadia Mono,Consolas" FontSize="11">
-                                                    <Run Text="{Binding Name}" FontWeight="SemiBold"/><Run Text=" : "/><Run Text="{Binding TypeName}"/>
-                                                </TextBlock>
-                                                <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="8,1,0,0" />
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <TextBlock Text="{DynamicResource Docs.Returns}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,6,0,2"
-                                           Visibility="{Binding HasReturns, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <TextBlock Text="{Binding Returns}" FontSize="11.5" TextWrapping="Wrap"
-                                           Visibility="{Binding HasReturns, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <TextBlock Text="{Binding AssemblyName}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,0" />
-                                <Button Content="{DynamicResource Docs.OpenJapanese}" Style="{StaticResource MiniButtonStyle}"
-                                        HorizontalAlignment="Left" Margin="-6,8,0,0" Click="OpenSymbolDocumentation_Click"
-                                        Visibility="{Binding HasOnlineDocumentation, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                            </StackPanel>
-                        </ScrollViewer>
                     </Border>
                     <Grid Margin="10,10,8,8">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -175,12 +135,13 @@
                             </TextBlock>
                         </Grid>
                         <Grid Grid.Row="1" Margin="0,8,0,0">
-                            <TreeView ItemsSource="{Binding TypeExplorerItems}" AutomationProperties.Name="TypeExplorerTree"
+                            <TreeView x:Name="TypeExplorerTree" ItemsSource="{Binding TypeExplorerItems}" AutomationProperties.Name="TypeExplorerTree"
                                       Background="Transparent" BorderThickness="0" Foreground="{DynamicResource ForegroundBrush}"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged">
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged"
+                                      PreviewMouseLeftButtonUp="TypeExplorerTree_PreviewMouseLeftButtonUp">
                                 <TreeView.Resources>
                                     <HierarchicalDataTemplate DataType="{x:Type local:SymbolExplorerNode}" ItemsSource="{Binding Children}">
-                                        <Grid Margin="0,1" ToolTipService.InitialShowDelay="550" ToolTipService.ShowDuration="15000">
+                                        <Grid Margin="0,1" ToolTipService.InitialShowDelay="180" ToolTipService.ShowDuration="15000">
                                             <Grid.ToolTip>
                                                 <ToolTip Placement="Mouse" HorizontalOffset="12" VerticalOffset="8">
                                                     <Border Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}"
@@ -234,6 +195,47 @@
                     </Grid>
                 </DockPanel>
             </Border>
+            <Popup x:Name="SymbolDetailPopup" PlacementTarget="{Binding ElementName=TypeExplorerTree}" Placement="Right"
+                   HorizontalOffset="8" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                <Border Width="440" MaxHeight="560" Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="9" Padding="16,14">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.18" />
+                    </Border.Effect>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel DataContext="{Binding SelectedExplorerNode}">
+                            <TextBlock Text="{Binding Signature}" FontFamily="Cascadia Mono,Consolas" FontSize="12"
+                                       FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{DynamicResource Docs.Summary}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,3"
+                                       Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{Binding Summary}" FontSize="11.5" TextWrapping="Wrap" LineHeight="18"
+                                       Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{DynamicResource Docs.Parameters}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,3"
+                                       Visibility="{Binding HasParameters, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <ItemsControl ItemsSource="{Binding ParameterItems}" Visibility="{Binding HasParameters, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,1,0,7">
+                                            <TextBlock FontFamily="Cascadia Mono,Consolas" FontSize="11">
+                                                <Run Text="{Binding Name}" FontWeight="SemiBold"/><Run Text=" : "/><Run Text="{Binding TypeName}"/>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="8,2,0,0" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="{DynamicResource Docs.Returns}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,3"
+                                       Visibility="{Binding HasReturns, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{Binding Returns}" FontSize="11.5" TextWrapping="Wrap" LineHeight="18"
+                                       Visibility="{Binding HasReturns, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{Binding AssemblyName}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,12,0,0" />
+                            <Button Content="{DynamicResource Docs.OpenJapanese}" Style="{StaticResource MiniButtonStyle}"
+                                    HorizontalAlignment="Left" Margin="-6,9,0,0" Click="OpenSymbolDocumentation_Click"
+                                    Visibility="{Binding HasOnlineDocumentation, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Popup>
             <ScrollViewer x:Name="TranscriptScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="20,16,18,6"
                           AutomationProperties.Name="ConsoleSurface"
                           PreviewMouseLeftButtonDown="ConsoleSurface_PreviewMouseLeftButtonDown">

@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Highlighting;
 using Microsoft.Win32;
 using PlayGroundSharp.Core;
@@ -52,8 +53,34 @@ public partial class MainWindow : Window
         await viewModel.DisposeAsync();
     }
 
-    private void TypeExplorerTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e) =>
+    private void TypeExplorerTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+    {
         viewModel.SelectedExplorerNode = e.NewValue as SymbolExplorerNode;
+        SymbolDetailPopup.IsOpen = e.NewValue is SymbolExplorerNode { Signature.Length: > 0 };
+    }
+
+    private void TypeExplorerTree_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<TreeViewItem>(e.OriginalSource as DependencyObject)?.DataContext is not
+            SymbolExplorerNode { Signature.Length: > 0 } node) return;
+        viewModel.SelectedExplorerNode = node;
+        SymbolDetailPopup.IsOpen = true;
+    }
+
+    private void TypeExplorerPane_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is false) SymbolDetailPopup.IsOpen = false;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
+    {
+        while (current is not null)
+        {
+            if (current is T match) return match;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
 
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {

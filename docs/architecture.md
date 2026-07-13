@@ -21,7 +21,7 @@ The first submission uses `CSharpScript.RunAsync`; accepted submissions use `Con
 
 ## Language workspace
 
-An `AdhocWorkspace` hosts a script-kind document composed from accepted submissions and current input. It uses the same imports and metadata paths as execution. Completion, Quick Info and diagnostics come from that document.
+An `AdhocWorkspace` hosts a script-kind document composed from accepted submissions and current input. It uses the same imports and metadata paths as execution. Completion, Quick Info and diagnostics come from that document. The left Type Explorer uses the same compilation to enumerate public types directly available from active namespaces, then merges session-defined declarations and public metadata types from dynamic DLL/package references. It refreshes asynchronously after accepted submissions and reference/import changes, so WPF never reflects over user objects or blocks its UI thread.
 
 ## Result snapshots
 

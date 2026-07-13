@@ -30,6 +30,7 @@ Deliver a vertical .NET 10 WPF MVP: the UI sends incremental C# submissions over
 | 6.2 | Add result pop-out | Detachable expandable snapshot viewer | AC-14 |
 | 6.3 | Add NuGet browser | Worker-side V3 search and exact-version install | AC-17 |
 | 6.4 | Consolidate session inventory | Variables, imported libraries and usings | AC-13/18 |
+| 6.5 | Add symbol explorer | Searchable namespace/type tree synchronized with session references | Language/UI tests |
 | 7.1 | Prototype benchmark runner | Disposable BenchmarkDotNet Worker and neutral summary | Deferred |
 
 ## Risks and mitigations

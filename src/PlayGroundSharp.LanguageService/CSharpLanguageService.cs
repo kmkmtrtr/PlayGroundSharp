@@ -30,6 +30,12 @@ public sealed record QuickInfoResult(string Text);
 public sealed record SignatureInformation(string DisplayText, string Summary);
 public sealed record SignatureHelpResult(IReadOnlyList<SignatureInformation> Signatures, int ActiveParameter);
 
+/// <summary>Describes a type that can be shown in the session-aware type explorer.</summary>
+public sealed record TypeExplorerEntry(string Namespace, string Name, string Kind, string AssemblyName)
+{
+    public string FullName => Namespace == "(session)" ? Name : $"{Namespace}.{Name}";
+}
+
 /// <summary>Provides Roslyn editor services over the same session inputs used by execution.</summary>
 public sealed class CSharpLanguageService
 {
@@ -193,6 +199,68 @@ public sealed class CSharpLanguageService
             .ToArray();
     }
 
+    /// <summary>Builds the type inventory available from imports, session declarations and dynamic references.</summary>
+    public async Task<IReadOnlyList<TypeExplorerEntry>> GetTypeExplorerAsync(
+        SessionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        using var workspaceDocument = CreateDocument(context, string.Empty);
+        var semanticModel = await workspaceDocument.Document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+        if (semanticModel is null) return [];
+        var compilation = semanticModel.Compilation;
+        var entries = new List<TypeExplorerEntry>();
+
+        foreach (var import in context.Imports.Distinct(StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var @namespace = FindNamespace(compilation.GlobalNamespace, import);
+            if (@namespace is null) continue;
+            entries.AddRange(@namespace.GetTypeMembers()
+                .Where(static type => type.DeclaredAccessibility == Accessibility.Public)
+                .Select(type => new TypeExplorerEntry(
+                    import,
+                    GetTypeDisplayName(type),
+                    GetTypeKind(type),
+                    type.ContainingAssembly?.Name ?? string.Empty)));
+        }
+
+        var root = await workspaceDocument.Document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        if (root is not null)
+        {
+            entries.AddRange(root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>()
+                .Select(static declaration => new TypeExplorerEntry(
+                    "(session)",
+                    declaration.Identifier.ValueText,
+                    declaration switch
+                    {
+                        RecordDeclarationSyntax => "record",
+                        InterfaceDeclarationSyntax => "interface",
+                        StructDeclarationSyntax => "struct",
+                        EnumDeclarationSyntax => "enum",
+                        _ => "class"
+                    },
+                    "Session")));
+            entries.AddRange(root.DescendantNodes().OfType<DelegateDeclarationSyntax>()
+                .Select(static declaration => new TypeExplorerEntry(
+                    "(session)", declaration.Identifier.ValueText, "delegate", "Session")));
+        }
+
+        foreach (var path in context.ReferencePaths.Where(File.Exists))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            entries.AddRange(ReferencedTypeCache.GetOrAdd(Path.GetFullPath(path), ReadReferencedTypes)
+                .Select(static type => new TypeExplorerEntry(
+                    type.Namespace, type.Name, type.Kind, type.AssemblyName)));
+        }
+
+        return entries
+            .Where(static entry => entry.Name.Length > 0 && entry.Namespace.Length > 0)
+            .DistinctBy(static entry => (entry.Namespace, entry.Name, entry.AssemblyName))
+            .OrderBy(static entry => entry.Namespace, StringComparer.Ordinal)
+            .ThenBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static WorkspaceDocument CreateDocument(SessionContext context, string currentCode)
     {
         var workspace = new AdhocWorkspace(WorkspaceHost.Value);
@@ -334,16 +402,24 @@ public sealed class CSharpLanguageService
             using var peReader = new PEReader(stream);
             if (!peReader.HasMetadata) return [];
             var reader = peReader.GetMetadataReader();
+            var assemblyName = reader.IsAssembly
+                ? reader.GetString(reader.GetAssemblyDefinition().Name)
+                : Path.GetFileNameWithoutExtension(path);
             var types = new List<ReferencedType>();
             foreach (var handle in reader.TypeDefinitions)
             {
                 var definition = reader.GetTypeDefinition(handle);
                 var visibility = definition.Attributes & TypeAttributes.VisibilityMask;
                 if (visibility is not TypeAttributes.Public and not TypeAttributes.NestedPublic) continue;
-                var name = reader.GetString(definition.Name);
+                var metadataName = reader.GetString(definition.Name);
+                var aritySeparator = metadataName.IndexOf('`');
+                var name = aritySeparator < 0 ? metadataName : metadataName[..aritySeparator];
                 var @namespace = reader.GetString(definition.Namespace);
-                if (@namespace.Length == 0 || name.Contains('`') || !SyntaxFacts.IsValidIdentifier(name)) continue;
-                types.Add(new(name, @namespace));
+                if (@namespace.Length == 0 || !SyntaxFacts.IsValidIdentifier(name)) continue;
+                var kind = (definition.Attributes & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Interface
+                    ? "interface"
+                    : "type";
+                types.Add(new(name, @namespace, kind, assemblyName));
             }
             return types;
         }
@@ -360,6 +436,33 @@ public sealed class CSharpLanguageService
         .Distinct(StringComparer.Ordinal)
         .Order(StringComparer.Ordinal)
         .ToArray();
+
+    private static INamespaceSymbol? FindNamespace(INamespaceSymbol root, string fullName)
+    {
+        var current = root;
+        foreach (var segment in fullName.Split('.', StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = current.GetNamespaceMembers().FirstOrDefault(candidate => candidate.Name == segment);
+            if (current is null) return null;
+        }
+        return current;
+    }
+
+    private static string GetTypeDisplayName(INamedTypeSymbol type) => type.TypeParameters.Length == 0
+        ? type.Name
+        : $"{type.Name}<{string.Join(", ", type.TypeParameters.Select(static parameter => parameter.Name))}>";
+
+    private static string GetTypeKind(INamedTypeSymbol type) => type.TypeKind switch
+    {
+        TypeKind.Interface => "interface",
+        TypeKind.Struct when type.IsRecord => "record struct",
+        TypeKind.Struct => "struct",
+        TypeKind.Enum => "enum",
+        TypeKind.Delegate => "delegate",
+        TypeKind.Class when type.IsRecord => "record",
+        TypeKind.Class => "class",
+        _ => "type"
+    };
 
     private static string GetDocumentationSummary(ISymbol symbol, CancellationToken cancellationToken)
     {
@@ -446,5 +549,5 @@ public sealed class CSharpLanguageService
                 value.Namespace is null ? 0 : StringComparer.Ordinal.GetHashCode(value.Namespace));
     }
 
-    private sealed record ReferencedType(string Name, string Namespace);
+    private sealed record ReferencedType(string Name, string Namespace, string Kind, string AssemblyName);
 }

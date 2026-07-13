@@ -32,6 +32,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly List<(string Id, string Version)> packages = [];
     private readonly List<string> history = [];
     private CancellationTokenSource? diagnosticDelay;
+    private CancellationTokenSource? typeExplorerRefresh;
+    private IReadOnlyList<TypeExplorerEntry> typeExplorerEntries = [];
     private int historyPosition;
     private string? executingCode;
 
@@ -42,6 +44,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string cursorStatus = "Ln 1, Col 1";
     [ObservableProperty] private bool isRunning;
     [ObservableProperty] private bool isReferenceDrawerOpen;
+    [ObservableProperty] private bool isTypeExplorerOpen = true;
+    [ObservableProperty] private string typeExplorerSearchText = string.Empty;
+    [ObservableProperty] private string typeExplorerStatus = "Loading types…";
     [ObservableProperty] private string packageSearchText = string.Empty;
     [ObservableProperty] private string packageSearchMessage = "Search packages on nuget.org";
     [ObservableProperty] private bool includePrereleasePackages;
@@ -56,6 +61,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<VariableItem> VariableItems { get; } = [];
     public ObservableCollection<NuGetPackageInfo> PackageSearchItems { get; } = [];
     public ObservableCollection<LibraryItem> LibraryItems { get; } = [];
+    public ObservableCollection<SymbolExplorerNode> TypeExplorerItems { get; } = [];
     public IReadOnlyList<ExecutionKeyMode> ExecutionKeyModes { get; } = Enum.GetValues<ExecutionKeyMode>();
     public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();
     public IAsyncRelayCommand CancelCommand { get; }
@@ -63,6 +69,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public IAsyncRelayCommand RestartWorkerCommand { get; }
     public IRelayCommand ClearCommand { get; }
     public IRelayCommand ToggleReferenceDrawerCommand { get; }
+    public IRelayCommand ToggleTypeExplorerCommand { get; }
     public IAsyncRelayCommand SearchPackagesCommand { get; }
     public IAsyncRelayCommand<NuGetPackageInfo> InstallPackageCommand { get; }
 
@@ -73,6 +80,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         RestartWorkerCommand = new AsyncRelayCommand(RestartWorkerAsync);
         ClearCommand = new RelayCommand(Transcript.Clear);
         ToggleReferenceDrawerCommand = new RelayCommand(() => IsReferenceDrawerOpen = !IsReferenceDrawerOpen);
+        ToggleTypeExplorerCommand = new RelayCommand(() => IsTypeExplorerOpen = !IsTypeExplorerOpen);
         SearchPackagesCommand = new AsyncRelayCommand(SearchPackagesAsync);
         InstallPackageCommand = new AsyncRelayCommand<NuGetPackageInfo>(InstallPackageAsync);
         worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEvent(envelope));
@@ -92,6 +100,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             await worker.StartAsync();
             Status = "Ready";
             Transcript.Add(TranscriptLine.System("Worker connected. Do not execute untrusted code or packages."));
+            await RefreshTypeExplorerAsync();
         }
         catch (Exception error)
         {
@@ -225,6 +234,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         await worker.AddUsingAsync(value);
         imports.Add(value);
         UsingItems.Add(value);
+        await RefreshTypeExplorerAsync();
         return true;
     }
 
@@ -237,6 +247,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SettingsStore.Save(new(value, ThemeMode));
+
+    partial void OnTypeExplorerSearchTextChanged(string value) => RebuildTypeExplorer();
 
     partial void OnThemeModeChanged(AppThemeMode value)
     {
@@ -295,7 +307,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 break;
             case MessageKinds.Completed:
                 var completed = envelope.ReadPayload<ExecutionCompletedEvent>();
-                if (completed.StateAccepted && executingCode is not null) submissions.Add(executingCode);
+                if (completed.StateAccepted && executingCode is not null)
+                {
+                    submissions.Add(executingCode);
+                    _ = RefreshTypeExplorerAsync();
+                }
                 executingCode = null;
                 IsRunning = false;
                 Status = "Ready";
@@ -328,6 +344,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                         references.Add(path);
                         ReferenceItems.Add(path);
                     }
+                _ = RefreshTypeExplorerAsync();
                 Transcript.Add(TranscriptLine.System($"Package added: {package.PackageId} {package.Version}"));
                 break;
             case MessageKinds.PackageSearchResults:
@@ -349,6 +366,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         VariableItems.Clear();
         SessionStatus = "0 submissions";
         Transcript.Add(TranscriptLine.System("Session reset."));
+        await RefreshTypeExplorerAsync();
     }
 
     private async Task RestartWorkerAsync()
@@ -362,6 +380,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Status = "Ready";
         SessionStatus = "0 submissions — Worker restarted";
         Transcript.Add(TranscriptLine.System("Worker restarted. Variables and methods were lost; references and usings were restored."));
+        await RefreshTypeExplorerAsync();
     }
 
     private async Task RestartAndRehydrateAsync()
@@ -413,6 +432,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 ReferenceItems.Add(path);
                 AddAssemblyLibrary(path, "Local DLL");
             }
+            await RefreshTypeExplorerAsync();
             Transcript.Add(TranscriptLine.System($"Reference added: {path}"));
         }
         else if (command == ":package list")
@@ -520,6 +540,111 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private async Task RefreshTypeExplorerAsync()
+    {
+        typeExplorerRefresh?.Cancel();
+        typeExplorerRefresh?.Dispose();
+        var refresh = new CancellationTokenSource();
+        typeExplorerRefresh = refresh;
+        var context = Context;
+        TypeExplorerStatus = "Loading types…";
+
+        try
+        {
+            var entries = await Task.Run(
+                () => languageService.GetTypeExplorerAsync(context, refresh.Token), refresh.Token);
+            if (refresh.IsCancellationRequested) return;
+            typeExplorerEntries = entries;
+            RebuildTypeExplorer();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            if (!refresh.IsCancellationRequested) TypeExplorerStatus = "Type explorer unavailable";
+        }
+    }
+
+    private void RebuildTypeExplorer()
+    {
+        var query = TypeExplorerSearchText.Trim();
+        var filtered = string.IsNullOrEmpty(query)
+            ? typeExplorerEntries
+            : typeExplorerEntries.Where(entry =>
+                entry.FullName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                entry.Kind.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                entry.AssemblyName.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+
+        var root = new ExplorerNodeBuilder(string.Empty, string.Empty);
+        foreach (var entry in filtered)
+        {
+            var namespaceName = entry.Namespace == "(session)" ? "Session" : entry.Namespace;
+            var current = root;
+            var fullName = string.Empty;
+            foreach (var segment in namespaceName.Split('.', StringSplitOptions.RemoveEmptyEntries))
+            {
+                fullName = string.IsNullOrEmpty(fullName) ? segment : $"{fullName}.{segment}";
+                current = current.GetOrAddNamespace(segment, fullName);
+            }
+            current.Types.Add(entry);
+        }
+
+        TypeExplorerItems.Clear();
+        foreach (var item in root.Namespaces.Values
+                     .OrderBy(static item => item.FullName == "Session" ? 0 : 1)
+                     .ThenBy(static item => item.Name, StringComparer.OrdinalIgnoreCase))
+            TypeExplorerItems.Add(item.Build(!string.IsNullOrEmpty(query)));
+
+        TypeExplorerStatus = string.IsNullOrEmpty(query)
+            ? $"{typeExplorerEntries.Count:N0} types"
+            : $"{filtered.Count:N0} matches";
+    }
+
+    private static string GetTypeGlyph(string kind) => kind switch
+    {
+        "class" => "C",
+        "record" => "R",
+        "record struct" => "R",
+        "interface" => "I",
+        "struct" => "S",
+        "enum" => "E",
+        "delegate" => "D",
+        _ => "T"
+    };
+
+    private sealed class ExplorerNodeBuilder(string name, string fullName)
+    {
+        public string Name { get; } = name;
+        public string FullName { get; } = fullName;
+        public Dictionary<string, ExplorerNodeBuilder> Namespaces { get; } = new(StringComparer.Ordinal);
+        public List<TypeExplorerEntry> Types { get; } = [];
+
+        public ExplorerNodeBuilder GetOrAddNamespace(string namespaceName, string namespaceFullName)
+        {
+            if (Namespaces.TryGetValue(namespaceName, out var existing)) return existing;
+            var created = new ExplorerNodeBuilder(namespaceName, namespaceFullName);
+            Namespaces.Add(namespaceName, created);
+            return created;
+        }
+
+        public SymbolExplorerNode Build(bool expand)
+        {
+            var children = Namespaces.Values
+                .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(item => item.Build(expand))
+                .Concat(Types.OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(static item => new SymbolExplorerNode(
+                        item.Name,
+                        item.Kind,
+                        GetTypeGlyph(item.Kind),
+                        $"{item.Kind} · {item.AssemblyName}",
+                        [])))
+                .ToArray();
+            return new SymbolExplorerNode(Name, "namespace", "N", FullName, children, expand || FullName == "Session");
+        }
+    }
+
     private static string FormatSnapshot(ResultSnapshot snapshot)
     {
         var suffix = snapshot.IsTruncated ? " … (truncated)" : string.Empty;
@@ -530,6 +655,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         diagnosticDelay?.Cancel();
         diagnosticDelay?.Dispose();
+        typeExplorerRefresh?.Cancel();
+        typeExplorerRefresh?.Dispose();
         await worker.DisposeAsync();
     }
 }

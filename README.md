@@ -41,6 +41,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Up` / `Down`: move through single-line input history
 - Click a previous `In` line: copy it into the current prompt
 - **Stop**: request cancellation, then terminate/restart an unresponsive Worker after 1.5 seconds
+- **Types**: open a searchable namespace/type tree built from active usings, session-defined types and dynamically added libraries
 - **Session**: open Variables, NuGet, Libraries, Usings and settings
 - **NuGet**: search nuget.org, review package metadata and install the displayed exact version
 - **Libraries**: list imported packages, local DLLs and package runtime assemblies with versions and sources

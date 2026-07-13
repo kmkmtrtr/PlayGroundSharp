@@ -112,4 +112,22 @@ public sealed class CSharpLanguageServiceTests
 
         Assert.Contains("PlayGroundSharp.TestFixture", namespaces);
     }
+
+    [Fact]
+    public async Task BuildsTypeExplorerFromImportsSessionAndDynamicReferences()
+    {
+        var context = new SessionContext(
+            ["record User(string Name)", "delegate int Transformer(int value)"],
+            SessionContext.DefaultImports,
+            [typeof(Greeter).Assembly.Location]);
+
+        var entries = await service.GetTypeExplorerAsync(context);
+
+        Assert.Contains(entries, static entry => entry.Namespace == "System" && entry.Name == "String");
+        Assert.Contains(entries, static entry => entry.Namespace == "System.Linq" && entry.Name == "Enumerable");
+        Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "User" && entry.Kind == "record");
+        Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "Transformer" && entry.Kind == "delegate");
+        Assert.Contains(entries, static entry =>
+            entry.Namespace == "PlayGroundSharp.TestFixture" && entry.Name == "Greeter");
+    }
 }

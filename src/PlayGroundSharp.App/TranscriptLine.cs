@@ -12,6 +12,7 @@ public sealed record TranscriptLine(
     ResultSnapshot? Snapshot = null)
 {
     public bool IsInspectable => Snapshot is not null;
+    public bool IsInput => InputCode is not null;
 
     public static TranscriptLine Input(int index, string code) => new(">", code, Resource("AccentBrush"), Resource("ForegroundBrush"), code);
     public static TranscriptLine Output(int index, string text, ResultSnapshot snapshot) =>

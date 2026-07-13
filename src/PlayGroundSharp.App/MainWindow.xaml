@@ -2,36 +2,55 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
-        Title="PlayGroundSharp" Width="1120" Height="760" MinWidth="760" MinHeight="520"
+        Title="PlayGroundSharp" Width="1200" Height="800" MinWidth="820" MinHeight="560"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
         Loaded="Window_Loaded" Closing="Window_Closing">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="48" />
+            <RowDefinition Height="54" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="27" />
+            <RowDefinition Height="30" />
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-            <DockPanel Margin="12,7">
+            <DockPanel Margin="16,8">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="Session" Command="{Binding ToggleReferenceDrawerCommand}" />
-                    <Button Content="Stop" Command="{Binding CancelCommand}" IsEnabled="{Binding IsRunning}" />
-                    <Button Content="Restart Worker" Command="{Binding RestartWorkerCommand}" />
-                    <Button Content="Reset" Command="{Binding ResetCommand}" />
-                    <Button Content="Clear" Command="{Binding ClearCommand}" />
+                    <Button Content="Session" Command="{Binding ToggleReferenceDrawerCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsReferenceDrawerOpen}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Border Width="1" Height="20" Background="{DynamicResource BorderBrush}" Margin="7,0" />
+                    <Button Content="Stop" Style="{StaticResource DangerToolbarButtonStyle}" Command="{Binding CancelCommand}" IsEnabled="{Binding IsRunning}" />
+                    <Button Content="Restart" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding RestartWorkerCommand}" />
+                    <Button Content="Reset" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ResetCommand}" />
+                    <Button Content="Clear" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ClearCommand}" />
                 </StackPanel>
-                <TextBlock Text="PlayGroundSharp" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <TextBlock Text="  C# Interactive Console" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" />
+                <Border Width="32" Height="32" CornerRadius="8" Background="{DynamicResource SelectionBrush}" Margin="0,0,10,0">
+                    <TextBlock Text=">_" Foreground="{DynamicResource AccentBrush}" FontFamily="Cascadia Mono,Consolas"
+                               FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="PlayGroundSharp" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="C# interactive console" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" />
+                </StackPanel>
             </DockPanel>
         </Border>
 
         <Grid Grid.Row="1" Background="{DynamicResource BackgroundBrush}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <ScrollViewer x:Name="TranscriptScroll" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="16,12,16,4"
+            <ScrollViewer x:Name="TranscriptScroll" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="20,16,18,6"
                           AutomationProperties.Name="ConsoleSurface"
                           PreviewMouseLeftButtonDown="ConsoleSurface_PreviewMouseLeftButtonDown">
-                <Grid MinHeight="{Binding ActualHeight, ElementName=TranscriptScroll}">
+                <Grid MinHeight="{Binding ViewportHeight, ElementName=TranscriptScroll}">
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -40,37 +59,49 @@
                   <ItemsControl Grid.Row="0" ItemsSource="{Binding Transcript}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="0,2,0,7">
+                            <Grid Margin="0,1,0,5">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="28" />
+                                    <ColumnDefinition Width="24" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Prefix}" Foreground="{Binding PrefixBrush}" FontFamily="Cascadia Mono,Consolas" />
+                                <TextBlock Text="{Binding Prefix}" Foreground="{Binding PrefixBrush}" FontFamily="Cascadia Mono,Consolas"
+                                           FontSize="14" FontWeight="SemiBold" />
                                 <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" FontFamily="Cascadia Mono,Consolas"
-                                           Foreground="{Binding TextBrush}" MouseLeftButtonUp="TranscriptLine_MouseLeftButtonUp" Cursor="Hand" />
-                                <Button Grid.Column="2" Content="Inspect" Padding="7,2" Margin="8,0,0,0"
+                                           FontSize="14" LineHeight="20" Foreground="{Binding TextBrush}" MouseLeftButtonUp="TranscriptLine_MouseLeftButtonUp">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Cursor" Value="Arrow" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsInput}" Value="True"><Setter Property="Cursor" Value="Hand" /></DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <Button Grid.Column="2" Content="Inspect" Style="{StaticResource MiniButtonStyle}" Margin="8,0,0,0"
                                         Visibility="{Binding IsInspectable, Converter={StaticResource BooleanToVisibilityConverter}}"
                                         Click="InspectResult_Click" />
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                  <Grid Grid.Row="1" Margin="0,0,0,8">
+                  <Grid Grid.Row="1" Margin="0,2,0,8">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <TextBlock Grid.Row="1" Text=">" Foreground="{DynamicResource AccentBrush}" FontSize="16" FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" />
+                <Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Grid.Row="1" Text=">" Foreground="{DynamicResource AccentBrush}" FontSize="15" FontWeight="SemiBold"
+                           FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" Margin="0,2,0,0" />
                 <avalon:TextEditor x:Name="Editor" Grid.Row="1" Grid.Column="1" MinHeight="24" MaxHeight="280"
                                    AutomationProperties.Name="InputEditor"
                                    FontFamily="Cascadia Mono,Consolas" FontSize="14" ShowLineNumbers="False"
                                    Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" CaretOffset="0"
+                                   Padding="0,2" BorderThickness="0"
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                    PreviewKeyDown="Editor_PreviewKeyDown" TextChanged="Editor_TextChanged"
                                    MouseHover="Editor_MouseHover" />
                 <Popup x:Name="AssistPopup" Grid.Row="1" Grid.Column="1" PlacementTarget="{Binding ElementName=Editor}"
                        Placement="Top" VerticalOffset="-4" StaysOpen="True" AllowsTransparency="True"
                        PopupAnimation="Fade" Focusable="False">
-                    <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
+                    <Border Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8"
                             MaxHeight="340" MinWidth="360" MaxWidth="760">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -102,26 +133,44 @@
                   </Grid>
                 </Grid>
             </ScrollViewer>
-            <Border Grid.Column="1" Width="460" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
+            <Border Grid.Column="1" Width="470" Background="{DynamicResource DrawerBrush}" BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="1,0,0,0" Visibility="{Binding IsReferenceDrawerOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Session" FontSize="16" FontWeight="SemiBold" Margin="14,12" />
-                    <TabControl Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0">
+                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,12,14,10">
+                        <StackPanel>
+                            <TextBlock Text="Workspace" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock Text="Session state and dependencies" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <TabControl Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
+                                ItemContainerStyle="{StaticResource WorkspaceTabItemStyle}">
                         <TabItem Header="Variables">
-                            <ListView ItemsSource="{Binding VariableItems}" AutomationProperties.Name="VariableList" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="48" />
-                                        <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="90" />
-                                        <GridViewColumn Header="Type" DisplayMemberBinding="{Binding TypeName}" Width="120" />
-                                        <GridViewColumn Header="Value" DisplayMemberBinding="{Binding Value}" Width="180" />
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
+                            <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">
+                                <ListView ItemsSource="{Binding VariableItems}" AutomationProperties.Name="VariableList" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
+                                          ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="48" />
+                                            <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="90" />
+                                            <GridViewColumn Header="Type" DisplayMemberBinding="{Binding TypeName}" Width="120" />
+                                            <GridViewColumn Header="Value" DisplayMemberBinding="{Binding Value}" Width="180" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                    <TextBlock Text="No variables yet" Foreground="{DynamicResource ForegroundBrush}" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Text="Run a declaration to populate this view." Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,4,0,0" />
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers><DataTrigger Binding="{Binding VariableItems.Count}" Value="0"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                </StackPanel>
+                            </Grid>
                         </TabItem>
                         <TabItem Header="NuGet">
-                            <Grid Margin="10">
+                            <Grid Margin="12" TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
@@ -130,19 +179,21 @@
                                 </Grid.RowDefinitions>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBox Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="NuGetSearchText" Padding="7,5"
+                                    <TextBox Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="NuGetSearchText"
                                              ToolTip="Package ID, title, description or tag" />
-                                    <Button Grid.Column="1" Content="Search" AutomationProperties.Name="NuGetSearchButton" Command="{Binding SearchPackagesCommand}" Margin="6,0,0,0" />
+                                    <Button Grid.Column="1" Content="Search" Style="{StaticResource AccentButtonStyle}" AutomationProperties.Name="NuGetSearchButton"
+                                            Command="{Binding SearchPackagesCommand}" Margin="7,0,0,0" />
                                 </Grid>
                                 <CheckBox Grid.Row="1" Content="Include prerelease" IsChecked="{Binding IncludePrereleasePackages}" Margin="0,7,0,0" />
                                 <TextBlock Grid.Row="2" Text="{Binding PackageSearchMessage}" Margin="0,7" TextWrapping="Wrap"
                                            Foreground="{DynamicResource MutedBrush}" />
                                 <ListBox Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="NuGetSearchResults" BorderThickness="0"
-                                         Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
+                                         Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="4,8">
+                                            <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                    CornerRadius="7" Padding="10" Margin="0,0,0,8">
                                                 <Grid>
                                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -152,7 +203,7 @@
                                                         <TextBlock Text="  Verified" Foreground="{DynamicResource AccentBrush}"
                                                                    Visibility="{Binding IsVerified, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                     </StackPanel>
-                                                    <Button Grid.Column="1" Grid.RowSpan="2" Content="Install" Padding="9,4"
+                                                    <Button Grid.Column="1" Grid.RowSpan="2" Content="Install" Style="{StaticResource AccentButtonStyle}" Padding="10,4"
                                                             Command="{Binding DataContext.InstallPackageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                             CommandParameter="{Binding}" />
                                                     <TextBlock Grid.Row="1" Text="{Binding Description}" TextWrapping="Wrap" MaxHeight="42" Margin="0,4,8,0" />
@@ -167,29 +218,48 @@
                             </Grid>
                         </TabItem>
                         <TabItem Header="Libraries">
-                            <ListView ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="ImportedLibraryList" BorderThickness="0" Background="{DynamicResource InputBrush}"
-                                      Foreground="{DynamicResource ForegroundBrush}" ScrollViewer.HorizontalScrollBarVisibility="Auto">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="72" />
-                                        <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="150" />
-                                        <GridViewColumn Header="Version" DisplayMemberBinding="{Binding Version}" Width="92" />
-                                        <GridViewColumn Header="Source" DisplayMemberBinding="{Binding Source}" Width="160" />
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
+                            <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">
+                                <ListView ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="ImportedLibraryList" BorderThickness="0" Background="Transparent"
+                                          Foreground="{DynamicResource ForegroundBrush}" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="72" />
+                                            <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="150" />
+                                            <GridViewColumn Header="Version" DisplayMemberBinding="{Binding Version}" Width="92" />
+                                            <GridViewColumn Header="Source" DisplayMemberBinding="{Binding Source}" Width="160" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                    <TextBlock Text="No imported libraries" Foreground="{DynamicResource ForegroundBrush}" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Text="Install a package or add a DLL." Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,4,0,0" />
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers><DataTrigger Binding="{Binding LibraryItems.Count}" Value="0"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                </StackPanel>
+                            </Grid>
                         </TabItem>
-                        <TabItem Header="Usings"><ListBox ItemsSource="{Binding UsingItems}" BorderThickness="0" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
+                        <TabItem Header="Usings"><ListBox ItemsSource="{Binding UsingItems}" Margin="8" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
                         <TabItem Header="Settings">
-                            <StackPanel Margin="10">
-                                <TextBlock Text="{Binding SessionStatus}" TextWrapping="Wrap" />
+                            <StackPanel Margin="14" TextElement.Foreground="{DynamicResource ForegroundBrush}">
+                                <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="12">
+                                    <StackPanel>
+                                        <TextBlock Text="Session" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding SessionStatus}" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0" />
+                                    </StackPanel>
+                                </Border>
                                 <TextBlock Text="Execution key" Margin="0,14,0,4" FontWeight="SemiBold" />
                                 <ComboBox ItemsSource="{Binding ExecutionKeyModes}" SelectedItem="{Binding ExecutionKeyMode}"
                                           HorizontalAlignment="Stretch" />
                                 <TextBlock Text="Theme" Margin="0,14,0,4" FontWeight="SemiBold" />
                                 <ComboBox ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding ThemeMode}"
                                           HorizontalAlignment="Stretch" />
-                                <TextBlock Text="Arbitrary C# runs with your Windows user permissions." Margin="0,12,0,0" TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}" />
+                                <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="11" Margin="0,16,0,0">
+                                    <TextBlock Text="Arbitrary C# runs with your Windows user permissions." TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}" />
+                                </Border>
                             </StackPanel>
                         </TabItem>
                     </TabControl>
@@ -197,13 +267,18 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="10,3">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Right" Text="{Binding CursorStatus}" Foreground="{DynamicResource MutedBrush}" />
-                <TextBlock DockPanel.Dock="Right" Margin="18,0" Text="{Binding DiagnosticStatus}" Foreground="{DynamicResource MutedBrush}" />
-                <TextBlock Text="{Binding Status}" Foreground="{DynamicResource AccentBrush}" />
-                <TextBlock Text="{Binding SessionStatus}" Margin="18,0" Foreground="{DynamicResource MutedBrush}" />
-            </DockPanel>
+        <Border Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Ellipse Width="6" Height="6" Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,7,0" />
+                <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource ForegroundBrush}" FontSize="11.5" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding SessionStatus}" Margin="16,0" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding DiagnosticStatus}" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,18,0" />
+                <TextBlock Grid.Column="4" Text="{Binding CursorStatus}" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
+            </Grid>
         </Border>
     </Grid>
 </Window>

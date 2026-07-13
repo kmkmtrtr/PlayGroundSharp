@@ -376,7 +376,6 @@ public partial class MainWindow : Window
         completionDescriptionCancellation?.Dispose();
         completionDescriptionCancellation = null;
         AssistSummary.Text = string.Empty;
-        AssistSummaryPanel.Visibility = Visibility.Collapsed;
         AssistHint.Text = string.Empty;
         assistMode = AssistMode.None;
         if (!viewModel.IsRunning && wasCompletion) viewModel.SetLocalizedStatus("Status.Ready");
@@ -435,6 +434,7 @@ public partial class MainWindow : Window
 
         var cancellation = new CancellationTokenSource();
         completionDescriptionCancellation = cancellation;
+        ShowAssistSummary(viewModel.Localize("Assist.LoadingDocumentation"));
         try
         {
             var description = await viewModel.GetCompletionDescriptionAsync(Editor.CaretOffset, candidate, cancellation.Token);
@@ -446,8 +446,9 @@ public partial class MainWindow : Window
 
     private void ShowAssistSummary(string? text)
     {
-        AssistSummary.Text = text ?? string.Empty;
-        AssistSummaryPanel.Visibility = string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
+        AssistSummary.Text = string.IsNullOrWhiteSpace(text)
+            ? viewModel.Localize("Assist.NoDocumentation")
+            : text;
     }
 
     private static int FindCompletionStart(string text, int caretOffset)

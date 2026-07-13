@@ -290,17 +290,21 @@
                                    PreviewKeyDown="Editor_PreviewKeyDown" TextChanged="Editor_TextChanged"
                                    MouseHover="Editor_MouseHover" />
                 <Popup x:Name="AssistPopup" Grid.Row="1" Grid.Column="1" PlacementTarget="{Binding ElementName=Editor}"
-                       Placement="Top" VerticalOffset="-4" StaysOpen="True" AllowsTransparency="True"
-                       PopupAnimation="Fade" Focusable="False">
-                    <Border Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8"
-                            MaxHeight="340" MinWidth="360" MaxWidth="760">
+                       Placement="Bottom" VerticalOffset="4" StaysOpen="True" AllowsTransparency="False"
+                       Focusable="False">
+                    <Border Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                            Width="780" Height="310">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="30" />
                             </Grid.RowDefinitions>
-                            <ListBox x:Name="CompletionList" MaxHeight="210" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="390" />
+                                <ColumnDefinition Width="1" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ListBox x:Name="CompletionList" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
                                      FontFamily="Cascadia Mono,Consolas" Focusable="False"
                                      SelectionChanged="CompletionList_SelectionChanged"
                                      MouseDoubleClick="CompletionList_MouseDoubleClick">
@@ -310,14 +314,28 @@
                                     </Style>
                                 </ListBox.ItemContainerStyle>
                             </ListBox>
-                            <Border x:Name="AssistSummaryPanel" Grid.Row="1" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
-                                    Padding="8,6" Visibility="Collapsed">
-                                <ScrollViewer MaxHeight="90" VerticalScrollBarVisibility="Auto">
-                                    <TextBlock x:Name="AssistSummary" Foreground="{DynamicResource ForegroundBrush}" TextWrapping="Wrap"
-                                               FontFamily="Segoe UI" FontSize="12" />
-                                </ScrollViewer>
+                            <Border Grid.Column="1" Background="{DynamicResource BorderBrush}" />
+                            <Border x:Name="AssistSummaryPanel" Grid.Column="2" Background="{DynamicResource PanelBrush}" Padding="12,10">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="{DynamicResource Assist.Documentation}" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,7" />
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <TextBlock x:Name="AssistSummary" Foreground="{DynamicResource ForegroundBrush}" TextWrapping="Wrap"
+                                                   LineHeight="18" FontFamily="Segoe UI" FontSize="12" />
+                                    </ScrollViewer>
+                                    <TextBlock Grid.Row="2" Text="{DynamicResource Assist.DocumentationLanguageHint}"
+                                               Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="10.5"
+                                               Margin="0,8,0,0" />
+                                </Grid>
                             </Border>
-                            <TextBlock x:Name="AssistHint" Grid.Row="2" Margin="8,4" Foreground="{DynamicResource MutedBrush}" FontSize="11" />
+                            <Border Grid.Row="1" Grid.ColumnSpan="3" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+                                <TextBlock x:Name="AssistHint" Margin="8,5" Foreground="{DynamicResource MutedBrush}" FontSize="11" />
+                            </Border>
                         </Grid>
                     </Border>
                 </Popup>

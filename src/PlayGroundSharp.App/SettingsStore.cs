@@ -5,10 +5,12 @@ namespace PlayGroundSharp.App;
 
 public enum ExecutionKeyMode { Enter, ControlEnter }
 public enum AppThemeMode { Light, Dark }
+public enum AppLanguageMode { Japanese, English }
 
 internal sealed record AppSettings(
     ExecutionKeyMode ExecutionKeyMode = ExecutionKeyMode.Enter,
-    AppThemeMode ThemeMode = AppThemeMode.Light);
+    AppThemeMode ThemeMode = AppThemeMode.Light,
+    AppLanguageMode LanguageMode = AppLanguageMode.Japanese);
 
 internal static class SettingsStore
 {
@@ -24,7 +26,8 @@ internal static class SettingsStore
             var settings = File.Exists(SettingsPath)
                 ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)) ?? new()
                 : new();
-            return Enum.IsDefined(settings.ExecutionKeyMode) && Enum.IsDefined(settings.ThemeMode)
+            return Enum.IsDefined(settings.ExecutionKeyMode) && Enum.IsDefined(settings.ThemeMode) &&
+                Enum.IsDefined(settings.LanguageMode)
                 ? settings
                 : new();
         }

@@ -22,6 +22,8 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 16 | Add the fixture DLL, type `new Gree`, press `Ctrl+Space`, accept `Greeter` with `Tab` | the type is inserted and its namespace is added to Usings |
 | 17 | Open **Session > NuGet**, search `Humanizer.Core`, then click **Install** | results show package metadata; the exact displayed version is restored |
 | 18 | After package/DLL additions, open **Session > Libraries** | package and assembly names, versions and sources are listed |
+| 19 | Open **Types**, search `Contains(string value)`, then select the method | `System > String > Contains(string value)` and its Summary/Parameters documentation are shown |
+| 20 | Open **Session > Settings**, switch **Language** between Japanese and English | headers, controls, status and Explorer documentation labels update immediately and persist |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 
@@ -34,3 +36,4 @@ The Debug WPF application was launched and driven through its actual AvalonEdit 
 - AC-09: automated Worker and LanguageService tests confirm the built local fixture DLL works in execution and completion. The manual `:reference add` path flow was not separately UI-automated.
 - Startup/lifecycle: the window title was `PlayGroundSharp`, one Worker was connected, App exit code was 0, and no Worker remained after normal shutdown.
 - Public NuGet: `Humanizer.Core 3.0.10` restored through the UI; after `:using add Humanizer`, `"hello_world".Humanize()` returned `hello world`.
+- AC-19/20 (2026-07-14): UI Automation confirmed Japanese labels and the expanded `System > String > Contains(string value)` method result; LanguageService tests verify framework, session and dynamic-DLL Summary/Param extraction.

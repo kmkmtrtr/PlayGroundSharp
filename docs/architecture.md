@@ -21,7 +21,7 @@ The first submission uses `CSharpScript.RunAsync`; accepted submissions use `Con
 
 ## Language workspace
 
-An `AdhocWorkspace` hosts a script-kind document composed from accepted submissions and current input. It uses the same imports and metadata paths as execution. Completion, Quick Info and diagnostics come from that document. The left Type Explorer uses the same compilation to enumerate public types directly available from active namespaces, then merges session-defined declarations and public metadata types from dynamic DLL/package references. It refreshes asynchronously after accepted submissions and reference/import changes, so WPF never reflects over user objects or blocks its UI thread.
+An `AdhocWorkspace` hosts a script-kind document composed from accepted submissions and current input. It uses the same imports and metadata paths as execution. Completion, Quick Info and diagnostics come from that document. The left Symbol Explorer uses the same compilation to enumerate public types and declared public methods directly available from active namespaces, then merges top-level session methods, session-defined types and public metadata symbols from dynamic DLL/package references. XML documentation is read through Roslyn documentation providers, with source-trivia and adjacent XML-file fallbacks for script and dynamic assemblies. The UI receives neutral symbol/documentation records only and refreshes them asynchronously after accepted submissions and reference/import changes.
 
 ## Result snapshots
 
@@ -43,7 +43,7 @@ PlayGroundSharp is not a sandbox. Code runs with the current Windows user's auth
 
 ## User settings
 
-Execution-key and Light/Dark theme preferences are stored under the user's local application data. Theme changes mutate shared WPF brush resources; language analysis and execution behavior are unaffected.
+Execution-key, Light/Dark theme and Japanese/English UI preferences are stored under the user's local application data. Theme and language changes update shared WPF resources immediately; language analysis and execution behavior are unaffected. Library-supplied XML documentation remains in the language authored by that library.
 
 ## Benchmarking extension point
 

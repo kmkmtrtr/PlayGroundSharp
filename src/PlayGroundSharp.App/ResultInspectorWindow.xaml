@@ -1,7 +1,7 @@
 <Window x:Class="PlayGroundSharp.App.ResultInspectorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Result Inspector" Width="760" Height="560" MinWidth="480" MinHeight="340"
+        Title="{DynamicResource Inspector.Title}" Width="760" Height="560" MinWidth="480" MinHeight="340"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -10,7 +10,7 @@
             <RowDefinition Height="8" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <TextBlock Text="Snapshot captured in Worker" Foreground="{DynamicResource MutedBrush}" Margin="2,0,0,8" />
+        <TextBlock Text="{DynamicResource Inspector.Snapshot}" Foreground="{DynamicResource MutedBrush}" Margin="2,0,0,8" />
         <TreeView x:Name="SnapshotTree" Grid.Row="1" ItemsSource="{Binding Roots}"
                   Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                   BorderBrush="{DynamicResource BorderBrush}" SelectedItemChanged="SnapshotTree_SelectedItemChanged">

@@ -30,10 +30,24 @@ public sealed record QuickInfoResult(string Text);
 public sealed record SignatureInformation(string DisplayText, string Summary);
 public sealed record SignatureHelpResult(IReadOnlyList<SignatureInformation> Signatures, int ActiveParameter);
 
-/// <summary>Describes a type that can be shown in the session-aware type explorer.</summary>
-public sealed record TypeExplorerEntry(string Namespace, string Name, string Kind, string AssemblyName)
+/// <summary>Describes one documented parameter on an explorer method.</summary>
+public sealed record ExplorerParameterInfo(string Name, string TypeName, string Summary);
+
+/// <summary>Describes a type or method shown in the session-aware symbol explorer.</summary>
+public sealed record SymbolExplorerEntry(
+    string Namespace,
+    string Name,
+    string DisplayName,
+    string Kind,
+    string AssemblyName,
+    string? ContainingType,
+    string Signature,
+    string Summary,
+    IReadOnlyList<ExplorerParameterInfo> Parameters,
+    string Returns)
 {
-    public string FullName => Namespace == "(session)" ? Name : $"{Namespace}.{Name}";
+    public string FullName => string.Join('.', new[] { Namespace == "(session)" ? null : Namespace, ContainingType, Name }
+        .Where(static part => !string.IsNullOrEmpty(part)));
 }
 
 /// <summary>Provides Roslyn editor services over the same session inputs used by execution.</summary>
@@ -46,6 +60,8 @@ public sealed class CSharpLanguageService
         CreatePlatformReferences,
         LazyThreadSafetyMode.ExecutionAndPublication);
     private static readonly ConcurrentDictionary<string, IReadOnlyList<ReferencedType>> ReferencedTypeCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, DocumentationInfo>> DocumentationFileCache =
         new(StringComparer.OrdinalIgnoreCase);
 
     public async Task<IReadOnlyList<CompletionCandidate>> GetCompletionsAsync(
@@ -199,8 +215,8 @@ public sealed class CSharpLanguageService
             .ToArray();
     }
 
-    /// <summary>Builds the type inventory available from imports, session declarations and dynamic references.</summary>
-    public async Task<IReadOnlyList<TypeExplorerEntry>> GetTypeExplorerAsync(
+    /// <summary>Builds the documented type and method inventory available to the current session.</summary>
+    public async Task<IReadOnlyList<SymbolExplorerEntry>> GetSymbolExplorerAsync(
         SessionContext context,
         CancellationToken cancellationToken = default)
     {
@@ -208,55 +224,65 @@ public sealed class CSharpLanguageService
         var semanticModel = await workspaceDocument.Document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
         if (semanticModel is null) return [];
         var compilation = semanticModel.Compilation;
-        var entries = new List<TypeExplorerEntry>();
+        var entries = new List<SymbolExplorerEntry>();
 
         foreach (var import in context.Imports.Distinct(StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var @namespace = FindNamespace(compilation.GlobalNamespace, import);
             if (@namespace is null) continue;
-            entries.AddRange(@namespace.GetTypeMembers()
-                .Where(static type => type.DeclaredAccessibility == Accessibility.Public)
-                .Select(type => new TypeExplorerEntry(
-                    import,
-                    GetTypeDisplayName(type),
-                    GetTypeKind(type),
-                    type.ContainingAssembly?.Name ?? string.Empty)));
+            foreach (var type in @namespace.GetTypeMembers()
+                         .Where(static type => type.DeclaredAccessibility == Accessibility.Public))
+                AddTypeAndMethods(entries, type, import, cancellationToken);
         }
 
         var root = await workspaceDocument.Document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
         if (root is not null)
         {
-            entries.AddRange(root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>()
-                .Select(static declaration => new TypeExplorerEntry(
-                    "(session)",
-                    declaration.Identifier.ValueText,
-                    declaration switch
-                    {
-                        RecordDeclarationSyntax => "record",
-                        InterfaceDeclarationSyntax => "interface",
-                        StructDeclarationSyntax => "struct",
-                        EnumDeclarationSyntax => "enum",
-                        _ => "class"
-                    },
-                    "Session")));
-            entries.AddRange(root.DescendantNodes().OfType<DelegateDeclarationSyntax>()
-                .Select(static declaration => new TypeExplorerEntry(
-                    "(session)", declaration.Identifier.ValueText, "delegate", "Session")));
+            var sessionTypes = root.DescendantNodes()
+                .Where(static node => node is BaseTypeDeclarationSyntax or DelegateDeclarationSyntax)
+                .Select(node => semanticModel.GetDeclaredSymbol(node, cancellationToken))
+                .OfType<INamedTypeSymbol>()
+                .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+            foreach (var type in sessionTypes)
+                AddTypeAndMethods(entries, type, "(session)", cancellationToken);
+
+            var sessionMethods = root.DescendantNodes()
+                .Where(static node => node is MethodDeclarationSyntax or LocalFunctionStatementSyntax)
+                .Where(static node => !node.Ancestors().Any(static ancestor => ancestor is BaseTypeDeclarationSyntax))
+                .Select(node => semanticModel.GetDeclaredSymbol(node, cancellationToken))
+                .OfType<IMethodSymbol>()
+                .Distinct<IMethodSymbol>(SymbolEqualityComparer.Default);
+            foreach (var method in sessionMethods)
+                entries.Add(CreateMethodEntry(method, "(session)", null, cancellationToken));
         }
 
-        foreach (var path in context.ReferencePaths.Where(File.Exists))
+        var dynamicPaths = context.ReferencePaths
+            .Where(File.Exists)
+            .Select(Path.GetFullPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var reference in compilation.References.OfType<PortableExecutableReference>())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            entries.AddRange(ReferencedTypeCache.GetOrAdd(Path.GetFullPath(path), ReadReferencedTypes)
-                .Select(static type => new TypeExplorerEntry(
-                    type.Namespace, type.Name, type.Kind, type.AssemblyName)));
+            if (reference.FilePath is null || !dynamicPaths.Contains(Path.GetFullPath(reference.FilePath))) continue;
+            if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly) continue;
+            string? documentationPath = Path.ChangeExtension(reference.FilePath, ".xml");
+            if (!File.Exists(documentationPath)) documentationPath = null;
+            foreach (var type in EnumeratePublicTypes(assembly.GlobalNamespace))
+                AddTypeAndMethods(entries, type, type.ContainingNamespace.ToDisplayString(), cancellationToken, documentationPath);
         }
 
         return entries
             .Where(static entry => entry.Name.Length > 0 && entry.Namespace.Length > 0)
-            .DistinctBy(static entry => (entry.Namespace, entry.Name, entry.AssemblyName))
+            .GroupBy(static entry =>
+                (entry.Namespace, entry.ContainingType, entry.DisplayName, entry.Kind, entry.AssemblyName))
+            .Select(static group => group
+                .OrderByDescending(static entry => !string.IsNullOrWhiteSpace(entry.Summary))
+                .ThenByDescending(static entry => entry.Parameters.Count(static parameter => !string.IsNullOrWhiteSpace(parameter.Summary)))
+                .First())
             .OrderBy(static entry => entry.Namespace, StringComparer.Ordinal)
+            .ThenBy(static entry => entry.ContainingType ?? entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static entry => entry.ContainingType is null && entry.Kind != "method" ? 0 : 1)
             .ThenBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
@@ -289,8 +315,14 @@ public sealed class CSharpLanguageService
         var paths = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))?
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries) ?? [];
         var documentationPaths = GetReferenceDocumentationPaths();
-        return paths.Select(path => CreateMetadataReference(path,
-            documentationPaths.GetValueOrDefault(Path.GetFileNameWithoutExtension(path)))).ToArray();
+        return paths.Select(path =>
+        {
+            var assemblyName = Path.GetFileNameWithoutExtension(path);
+            var documentationPath = documentationPaths.GetValueOrDefault(assemblyName);
+            if (documentationPath is null && assemblyName == "System.Private.CoreLib")
+                documentationPath = documentationPaths.GetValueOrDefault("System.Runtime");
+            return CreateMetadataReference(path, documentationPath);
+        }).ToArray();
     }
 
     private static MetadataReference CreateMetadataReference(string path) =>
@@ -448,6 +480,106 @@ public sealed class CSharpLanguageService
         return current;
     }
 
+    private static IEnumerable<INamedTypeSymbol> EnumeratePublicTypes(INamespaceSymbol @namespace)
+    {
+        foreach (var type in @namespace.GetTypeMembers().Where(static type =>
+                     type.DeclaredAccessibility == Accessibility.Public))
+        {
+            yield return type;
+            foreach (var nested in EnumeratePublicNestedTypes(type)) yield return nested;
+        }
+        foreach (var child in @namespace.GetNamespaceMembers())
+            foreach (var type in EnumeratePublicTypes(child))
+                yield return type;
+    }
+
+    private static IEnumerable<INamedTypeSymbol> EnumeratePublicNestedTypes(INamedTypeSymbol containingType)
+    {
+        foreach (var type in containingType.GetTypeMembers().Where(static type =>
+                     type.DeclaredAccessibility == Accessibility.Public))
+        {
+            yield return type;
+            foreach (var nested in EnumeratePublicNestedTypes(type)) yield return nested;
+        }
+    }
+
+    private static void AddTypeAndMethods(
+        ICollection<SymbolExplorerEntry> entries,
+        INamedTypeSymbol type,
+        string namespaceName,
+        CancellationToken cancellationToken,
+        string? documentationPath = null)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var typeName = GetTypeDisplayName(type);
+        var documentation = GetDocumentation(type, cancellationToken, documentationPath);
+        var assemblyName = namespaceName == "(session)" ? "Session" : type.ContainingAssembly?.Name ?? string.Empty;
+        entries.Add(new(
+            namespaceName,
+            typeName,
+            typeName,
+            GetTypeKind(type),
+            assemblyName,
+            null,
+            type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            documentation.Summary,
+            [],
+            string.Empty));
+
+        foreach (var method in type.GetMembers().OfType<IMethodSymbol>()
+                     .Where(static method =>
+                         method.DeclaredAccessibility == Accessibility.Public &&
+                         !method.IsImplicitlyDeclared &&
+                         method.MethodKind is MethodKind.Ordinary or MethodKind.Constructor))
+            entries.Add(CreateMethodEntry(method, namespaceName, typeName, cancellationToken, documentationPath));
+    }
+
+    private static SymbolExplorerEntry CreateMethodEntry(
+        IMethodSymbol method,
+        string namespaceName,
+        string? containingType,
+        CancellationToken cancellationToken,
+        string? documentationPath = null)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var documentation = GetDocumentation(method, cancellationToken, documentationPath);
+        var displayName = GetMethodDisplayName(method);
+        var assemblyName = namespaceName == "(session)" ? "Session" : method.ContainingAssembly?.Name ?? string.Empty;
+        var parameters = method.Parameters.Select(parameter => new ExplorerParameterInfo(
+            parameter.Name,
+            parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            documentation.Parameters.GetValueOrDefault(parameter.Name) ?? string.Empty)).ToArray();
+        return new(
+            namespaceName,
+            method.Name,
+            displayName,
+            method.MethodKind == MethodKind.Constructor ? "constructor" : "method",
+            assemblyName,
+            containingType,
+            method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            documentation.Summary,
+            parameters,
+            documentation.Returns);
+    }
+
+    private static string GetMethodDisplayName(IMethodSymbol method)
+    {
+        var name = method.MethodKind == MethodKind.Constructor ? method.ContainingType.Name : method.Name;
+        if (method.TypeParameters.Length > 0)
+            name += $"<{string.Join(", ", method.TypeParameters.Select(static parameter => parameter.Name))}>";
+        var parameters = string.Join(", ", method.Parameters.Select(static parameter =>
+            $"{GetRefKindPrefix(parameter.RefKind)}{parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)} {parameter.Name}"));
+        return $"{name}({parameters})";
+    }
+
+    private static string GetRefKindPrefix(RefKind refKind) => refKind switch
+    {
+        RefKind.Ref => "ref ",
+        RefKind.Out => "out ",
+        RefKind.In => "in ",
+        _ => string.Empty
+    };
+
     private static string GetTypeDisplayName(INamedTypeSymbol type) => type.TypeParameters.Length == 0
         ? type.Name
         : $"{type.Name}<{string.Join(", ", type.TypeParameters.Select(static parameter => parameter.Name))}>";
@@ -464,21 +596,101 @@ public sealed class CSharpLanguageService
         _ => "type"
     };
 
-    private static string GetDocumentationSummary(ISymbol symbol, CancellationToken cancellationToken)
+    private static DocumentationInfo GetDocumentation(
+        ISymbol symbol,
+        CancellationToken cancellationToken,
+        string? documentationPath = null)
     {
         var xml = symbol.GetDocumentationCommentXml(expandIncludes: true, cancellationToken: cancellationToken);
-        if (string.IsNullOrWhiteSpace(xml)) return string.Empty;
+        if (string.IsNullOrWhiteSpace(xml) && documentationPath is not null &&
+            symbol.GetDocumentationCommentId() is { } documentationId)
+        {
+            var documentation = DocumentationFileCache.GetOrAdd(documentationPath, ReadDocumentationFile);
+            if (documentation.TryGetValue(documentationId, out var matched)) return matched;
+        }
+        if (string.IsNullOrWhiteSpace(xml)) xml = GetSourceDocumentationXml(symbol, cancellationToken);
+        if (string.IsNullOrWhiteSpace(xml)) return DocumentationInfo.Empty;
         try
         {
-            var summary = XElement.Parse(xml).Element("summary")?.Value;
-            return summary is null
-                ? string.Empty
-                : string.Join(' ', summary.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            return ParseDocumentationElement(XElement.Parse(xml));
         }
         catch (System.Xml.XmlException)
         {
-            return string.Empty;
+            return DocumentationInfo.Empty;
         }
+    }
+
+    private static IReadOnlyDictionary<string, DocumentationInfo> ReadDocumentationFile(string path)
+    {
+        try
+        {
+            return XDocument.Load(path).Descendants("member")
+                .Where(static element => element.Attribute("name")?.Value is { Length: > 0 })
+                .ToDictionary(
+                    static element => element.Attribute("name")!.Value,
+                    ParseDocumentationElement,
+                    StringComparer.Ordinal);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Xml.XmlException)
+        {
+            return new Dictionary<string, DocumentationInfo>(StringComparer.Ordinal);
+        }
+    }
+
+    private static DocumentationInfo ParseDocumentationElement(XElement root)
+    {
+        var parameters = root.Elements("param")
+            .Where(static element => element.Attribute("name")?.Value is { Length: > 0 })
+            .ToDictionary(
+                static element => element.Attribute("name")!.Value,
+                GetDocumentationText,
+                StringComparer.Ordinal);
+        return new(
+            GetDocumentationText(root.Element("summary")),
+            parameters,
+            GetDocumentationText(root.Element("returns")));
+    }
+
+    private static string? GetSourceDocumentationXml(ISymbol symbol, CancellationToken cancellationToken)
+    {
+        foreach (var reference in symbol.DeclaringSyntaxReferences)
+        {
+            var syntax = reference.GetSyntax(cancellationToken);
+            var documentation = syntax.GetLeadingTrivia()
+                .Select(static trivia => trivia.GetStructure())
+                .OfType<DocumentationCommentTriviaSyntax>()
+                .FirstOrDefault();
+            if (documentation is null) continue;
+            var content = string.Concat(documentation.ToFullString()
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                .Select(static line =>
+                {
+                    var trimmed = line.TrimStart();
+                    if (!trimmed.StartsWith("///", StringComparison.Ordinal)) return trimmed;
+                    trimmed = trimmed[3..];
+                    return trimmed.StartsWith(' ') ? trimmed[1..] : trimmed;
+                }));
+            return $"<member>{content}</member>";
+        }
+        return null;
+    }
+
+    private static string GetDocumentationSummary(ISymbol symbol, CancellationToken cancellationToken) =>
+        GetDocumentation(symbol, cancellationToken).Summary;
+
+    private static string GetDocumentationText(XElement? element)
+    {
+        if (element is null) return string.Empty;
+        var copy = new XElement(element);
+        foreach (var see in copy.Descendants("see").ToArray())
+        {
+            var reference = see.Attribute("cref")?.Value;
+            if (reference is { Length: > 2 } && reference[1] == ':') reference = reference[2..];
+            see.ReplaceWith(reference ?? see.Attribute("langword")?.Value ?? see.Value);
+        }
+        foreach (var parameter in copy.Descendants("paramref").ToArray())
+            parameter.ReplaceWith(parameter.Attribute("name")?.Value ?? parameter.Value);
+        return string.Join(' ', copy.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
     private static async Task<string?> GetSymbolDocumentationSummaryAsync(
@@ -547,6 +759,17 @@ public sealed class CSharpLanguageService
         public int GetHashCode((string Text, string? Namespace) value) =>
             HashCode.Combine(StringComparer.Ordinal.GetHashCode(value.Text),
                 value.Namespace is null ? 0 : StringComparer.Ordinal.GetHashCode(value.Namespace));
+    }
+
+    private sealed record DocumentationInfo(
+        string Summary,
+        IReadOnlyDictionary<string, string> Parameters,
+        string Returns)
+    {
+        public static DocumentationInfo Empty { get; } = new(
+            string.Empty,
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            string.Empty);
     }
 
     private sealed record ReferencedType(string Name, string Namespace, string Kind, string AssemblyName);

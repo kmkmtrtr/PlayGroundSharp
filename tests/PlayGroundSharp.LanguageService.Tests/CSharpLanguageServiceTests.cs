@@ -117,17 +117,37 @@ public sealed class CSharpLanguageServiceTests
     public async Task BuildsTypeExplorerFromImportsSessionAndDynamicReferences()
     {
         var context = new SessionContext(
-            ["record User(string Name)", "delegate int Transformer(int value)"],
+            [
+                "record User(string Name)",
+                "delegate int Transformer(int value)",
+                "/// <summary>Checks whether a user is an adult.</summary>\n/// <param name=\"user\">The user to inspect.</param>\nbool IsAdult(User user) => true"
+            ],
             SessionContext.DefaultImports,
             [typeof(Greeter).Assembly.Location]);
 
-        var entries = await service.GetTypeExplorerAsync(context);
+        var entries = await service.GetSymbolExplorerAsync(context);
 
-        Assert.Contains(entries, static entry => entry.Namespace == "System" && entry.Name == "String");
-        Assert.Contains(entries, static entry => entry.Namespace == "System.Linq" && entry.Name == "Enumerable");
+        Assert.Contains(entries, static entry => entry.Namespace == "System" && entry.Name == "String" && entry.Kind == "class");
+        Assert.Contains(entries, static entry => entry.Namespace == "System.Linq" && entry.Name == "Enumerable" && entry.Kind == "class");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "User" && entry.Kind == "record");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "Transformer" && entry.Kind == "delegate");
         Assert.Contains(entries, static entry =>
             entry.Namespace == "PlayGroundSharp.TestFixture" && entry.Name == "Greeter");
+
+        var sessionMethod = Assert.Single(entries, static entry =>
+            entry.Namespace == "(session)" && entry.Name == "IsAdult" && entry.Kind == "method");
+        Assert.Contains("adult", sessionMethod.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("The user to inspect.", Assert.Single(sessionMethod.Parameters).Summary);
+
+        var frameworkMethod = Assert.Single(entries, static entry =>
+            entry.Namespace == "System" && entry.ContainingType == "String" &&
+            entry.Name == "Contains" && entry.Parameters.Count == 1 && entry.Parameters[0].TypeName == "string");
+        Assert.NotEmpty(frameworkMethod.Summary);
+        Assert.NotEmpty(frameworkMethod.Parameters[0].Summary);
+
+        var dynamicMethod = Assert.Single(entries, static entry =>
+            entry.Namespace == "PlayGroundSharp.TestFixture" && entry.ContainingType == "Greeter" && entry.Name == "Greet");
+        Assert.Equal("Creates a greeting for the specified person.", dynamicMethod.Summary);
+        Assert.Equal("The person to greet.", Assert.Single(dynamicMethod.Parameters).Summary);
     }
 }

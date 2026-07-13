@@ -16,6 +16,7 @@ public sealed record VariableItem(string Name, string TypeName, string Value, bo
 }
 
 public sealed record LibraryItem(string Kind, string Name, string Version, string Source, string? Path);
+public sealed record UiOption<T>(T Value, string Label) where T : struct, Enum;
 
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
@@ -33,7 +34,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly List<string> history = [];
     private CancellationTokenSource? diagnosticDelay;
     private CancellationTokenSource? typeExplorerRefresh;
-    private IReadOnlyList<TypeExplorerEntry> typeExplorerEntries = [];
+    private IReadOnlyList<SymbolExplorerEntry> typeExplorerEntries = [];
+    private int diagnosticErrorCount;
+    private int diagnosticWarningCount;
+    private int cursorLine = 1;
+    private int cursorColumn = 1;
+    private string statusLocalizationKey = "Status.StartingWorker";
+    private object?[] statusLocalizationArguments = [];
+    private string sessionLocalizationKey = "Session.Count";
+    private object?[] sessionLocalizationArguments = [0];
     private int historyPosition;
     private string? executingCode;
 
@@ -47,12 +56,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private bool isTypeExplorerOpen = true;
     [ObservableProperty] private string typeExplorerSearchText = string.Empty;
     [ObservableProperty] private string typeExplorerStatus = "Loading types…";
+    [ObservableProperty] private SymbolExplorerNode? selectedExplorerNode;
     [ObservableProperty] private string packageSearchText = string.Empty;
     [ObservableProperty] private string packageSearchMessage = "Search packages on nuget.org";
     [ObservableProperty] private bool includePrereleasePackages;
     [ObservableProperty] private bool isPackageSearchBusy;
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = SettingsStore.Load().ExecutionKeyMode;
     [ObservableProperty] private AppThemeMode themeMode = SettingsStore.Load().ThemeMode;
+    [ObservableProperty] private AppLanguageMode languageMode = SettingsStore.Load().LanguageMode;
 
     public ObservableCollection<TranscriptLine> Transcript { get; } = [];
     public ObservableCollection<string> PackageItems { get; } = [];
@@ -62,8 +73,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<NuGetPackageInfo> PackageSearchItems { get; } = [];
     public ObservableCollection<LibraryItem> LibraryItems { get; } = [];
     public ObservableCollection<SymbolExplorerNode> TypeExplorerItems { get; } = [];
-    public IReadOnlyList<ExecutionKeyMode> ExecutionKeyModes { get; } = Enum.GetValues<ExecutionKeyMode>();
-    public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();
+    public IReadOnlyList<UiOption<ExecutionKeyMode>> ExecutionKeyOptions =>
+    [
+        new(ExecutionKeyMode.Enter, "Enter"),
+        new(ExecutionKeyMode.ControlEnter, "Ctrl+Enter")
+    ];
+    public IReadOnlyList<UiOption<AppThemeMode>> ThemeOptions =>
+    [
+        new(AppThemeMode.Light, LanguageMode == AppLanguageMode.Japanese ? "ライト" : "Light"),
+        new(AppThemeMode.Dark, LanguageMode == AppLanguageMode.Japanese ? "ダーク" : "Dark")
+    ];
+    public IReadOnlyList<UiOption<AppLanguageMode>> LanguageOptions =>
+    [
+        new(AppLanguageMode.Japanese, "日本語"),
+        new(AppLanguageMode.English, "English")
+    ];
     public IAsyncRelayCommand CancelCommand { get; }
     public IAsyncRelayCommand ResetCommand { get; }
     public IAsyncRelayCommand RestartWorkerCommand { get; }
@@ -75,6 +99,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public MainViewModel()
     {
+        SetLocalizedStatus("Status.StartingWorker");
+        SetSessionStatus("Session.Count", 0);
+        DiagnosticStatus = Localize("Diagnostics.Count", 0, 0);
+        CursorStatus = Localize("Cursor.Position", 1, 1);
+        TypeExplorerStatus = Localize("Explorer.Loading");
+        PackageSearchMessage = Localize("Package.SearchPrompt");
         CancelCommand = new AsyncRelayCommand(CancelAsync);
         ResetCommand = new AsyncRelayCommand(ResetAsync);
         RestartWorkerCommand = new AsyncRelayCommand(RestartWorkerAsync);
@@ -86,11 +116,35 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEvent(envelope));
         worker.Disconnected += message => Application.Current.Dispatcher.Invoke(() =>
         {
-            Status = "Worker disconnected";
+            SetLocalizedStatus("Status.WorkerDisconnected");
             IsRunning = false;
             VariableItems.Clear();
             Transcript.Add(TranscriptLine.System(message));
         });
+    }
+
+    public string Localize(string key, params object?[] arguments) =>
+        AppLocalization.Text(LanguageMode, key, arguments);
+
+    public void SetLocalizedStatus(string key, params object?[] arguments)
+    {
+        statusLocalizationKey = key;
+        statusLocalizationArguments = arguments;
+        Status = Localize(key, arguments);
+    }
+
+    public void UpdateCursorPosition(int line, int column)
+    {
+        cursorLine = line;
+        cursorColumn = column;
+        CursorStatus = Localize("Cursor.Position", line, column);
+    }
+
+    private void SetSessionStatus(string key, params object?[] arguments)
+    {
+        sessionLocalizationKey = key;
+        sessionLocalizationArguments = arguments;
+        SessionStatus = Localize(key, arguments);
     }
 
     public async Task InitializeAsync()
@@ -98,13 +152,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             await worker.StartAsync();
-            Status = "Ready";
-            Transcript.Add(TranscriptLine.System("Worker connected. Do not execute untrusted code or packages."));
+            SetLocalizedStatus("Status.Ready");
+            Transcript.Add(TranscriptLine.System(Localize("Message.WorkerConnected")));
             await RefreshTypeExplorerAsync();
         }
         catch (Exception error)
         {
-            Status = "Worker disconnected";
+            SetLocalizedStatus("Status.WorkerDisconnected");
             Transcript.Add(TranscriptLine.Diagnostic(error.Message));
         }
     }
@@ -122,7 +176,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }
             catch (Exception error)
             {
-                Status = "Ready";
+                SetLocalizedStatus("Status.Ready");
                 Transcript.Add(TranscriptLine.Diagnostic(error.Message));
             }
             return;
@@ -135,7 +189,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Transcript.Add(TranscriptLine.Input(index, code));
         InputText = string.Empty;
         IsRunning = true;
-        Status = "Compiling";
+        SetLocalizedStatus("Status.Compiling");
         try
         {
             await worker.ExecuteAsync(index, code);
@@ -143,7 +197,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         catch (Exception error)
         {
             Transcript.Add(TranscriptLine.Diagnostic(error.Message));
-            Status = "Worker disconnected";
+            SetLocalizedStatus("Status.WorkerDisconnected");
             IsRunning = false;
         }
     }
@@ -151,18 +205,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task CancelAsync()
     {
         if (!IsRunning) return;
-        Status = "Cancelling";
+        SetLocalizedStatus("Status.Cancelling");
         await worker.CancelAsync();
         await Task.Delay(TimeSpan.FromSeconds(1.5));
         if (!IsRunning) return;
         await RestartAndRehydrateAsync();
         IsRunning = false;
-        Status = "Ready";
+        SetLocalizedStatus("Status.Ready");
         submissions.Clear();
         executingCode = null;
         VariableItems.Clear();
-        SessionStatus = "0 submissions — Worker state lost";
-        Transcript.Add(TranscriptLine.System("Worker was terminated because cancellation did not complete. Session variables were lost; transcript and input history were preserved."));
+        SetSessionStatus("Session.StateLost");
+        Transcript.Add(TranscriptLine.System(Localize("Message.ForcedRestart")));
     }
 
     public string? MoveHistory(int delta)
@@ -200,9 +254,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public Task<string?> GetCompletionDescriptionAsync(int position, CompletionCandidate candidate, CancellationToken cancellationToken)
     {
         if (candidate.Tags.Contains("Command", StringComparer.Ordinal))
-            return Task.FromResult<string?>("PlayGroundSharp command");
+            return Task.FromResult<string?>(Localize("Completion.Command"));
         if (candidate.Tags.Contains("Namespace", StringComparer.Ordinal))
-            return Task.FromResult<string?>("Namespace from an added assembly; Tab inserts the using command.");
+            return Task.FromResult<string?>(Localize("Completion.Namespace"));
         var context = Context;
         var code = InputText;
         var offset = Math.Clamp(position, 0, code.Length);
@@ -246,16 +300,29 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _ = UpdateDiagnosticsAfterDelayAsync(value, diagnosticDelay.Token);
     }
 
-    partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SettingsStore.Save(new(value, ThemeMode));
+    partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SettingsStore.Save(new(value, ThemeMode, LanguageMode));
 
     partial void OnTypeExplorerSearchTextChanged(string value) => RebuildTypeExplorer();
 
     partial void OnThemeModeChanged(AppThemeMode value)
     {
-        SettingsStore.Save(new(ExecutionKeyMode, value));
+        SettingsStore.Save(new(ExecutionKeyMode, value, LanguageMode));
         App.ApplyTheme(value);
         for (var index = 0; index < Transcript.Count; index++)
             Transcript[index] = Transcript[index].WithCurrentTheme();
+    }
+
+    partial void OnLanguageModeChanged(AppLanguageMode value)
+    {
+        SettingsStore.Save(new(ExecutionKeyMode, ThemeMode, value));
+        App.ApplyLanguage(value);
+        OnPropertyChanged(nameof(ThemeOptions));
+        OnPropertyChanged(nameof(LanguageOptions));
+        Status = Localize(statusLocalizationKey, statusLocalizationArguments);
+        SessionStatus = Localize(sessionLocalizationKey, sessionLocalizationArguments);
+        DiagnosticStatus = Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
+        CursorStatus = Localize("Cursor.Position", cursorLine, cursorColumn);
+        RebuildTypeExplorer();
     }
 
     private SessionContext Context => new([.. submissions], [.. imports], [.. references]);
@@ -270,7 +337,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 () => languageService.GetDiagnosticsAsync(context, code, cancellationToken), cancellationToken);
             var errors = diagnostics.Count(static item => item.Level == DiagnosticLevel.Error);
             var warnings = diagnostics.Count(static item => item.Level == DiagnosticLevel.Warning);
-            DiagnosticStatus = $"{errors} errors, {warnings} warnings";
+            diagnosticErrorCount = errors;
+            diagnosticWarningCount = warnings;
+            DiagnosticStatus = Localize("Diagnostics.Count", errors, warnings);
         }
         catch (OperationCanceledException) { }
     }
@@ -280,7 +349,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         switch (envelope.Kind)
         {
             case MessageKinds.Started:
-                Status = "Running";
+                SetLocalizedStatus("Status.Running");
                 break;
             case MessageKinds.ConsoleOut:
                 Transcript.Add(TranscriptLine.Console(envelope.ReadPayload<ConsoleEvent>().Text, false));
@@ -314,21 +383,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 }
                 executingCode = null;
                 IsRunning = false;
-                Status = "Ready";
-                SessionStatus = $"{submissions.Count} submissions — Worker {completed.WorkerMemoryBytes / 1024 / 1024:N0} MiB";
+                SetLocalizedStatus("Status.Ready");
+                SetSessionStatus("Session.Memory", submissions.Count, completed.WorkerMemoryBytes / 1024 / 1024);
                 break;
             case MessageKinds.Cancelled:
                 IsRunning = false;
-                Status = "Ready";
-                Transcript.Add(TranscriptLine.System("Execution cancelled."));
+                SetLocalizedStatus("Status.Ready");
+                Transcript.Add(TranscriptLine.System(Localize("Message.ExecutionCancelled")));
                 break;
             case MessageKinds.Error:
                 Transcript.Add(TranscriptLine.Diagnostic(envelope.ReadPayload<WorkerErrorEvent>().Message));
                 IsRunning = false;
-                Status = "Ready";
+                SetLocalizedStatus("Status.Ready");
                 break;
             case MessageKinds.PackageProgress:
-                Status = "Restoring package";
+                SetLocalizedStatus("Status.RestoringPackage");
                 Transcript.Add(TranscriptLine.System(envelope.ReadPayload<PackageProgressEvent>().Message));
                 break;
             case MessageKinds.PackageAdded:
@@ -345,15 +414,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                         ReferenceItems.Add(path);
                     }
                 _ = RefreshTypeExplorerAsync();
-                Transcript.Add(TranscriptLine.System($"Package added: {package.PackageId} {package.Version}"));
+                Transcript.Add(TranscriptLine.System(Localize("Message.PackageAdded", package.PackageId, package.Version)));
                 break;
             case MessageKinds.PackageSearchResults:
                 var searchResults = envelope.ReadPayload<PackageSearchResultsEvent>();
                 PackageSearchItems.Clear();
                 foreach (var item in searchResults.Packages) PackageSearchItems.Add(item);
                 PackageSearchMessage = searchResults.TotalHits == 0
-                    ? "No packages found."
-                    : $"{searchResults.TotalHits:N0} packages found — showing {searchResults.Packages.Count}";
+                    ? Localize("Package.NoneFound")
+                    : Localize("Package.Found", searchResults.TotalHits, searchResults.Packages.Count);
                 break;
         }
     }
@@ -364,22 +433,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         await worker.ResetAsync();
         submissions.Clear();
         VariableItems.Clear();
-        SessionStatus = "0 submissions";
-        Transcript.Add(TranscriptLine.System("Session reset."));
+        SetSessionStatus("Session.Count", 0);
+        Transcript.Add(TranscriptLine.System(Localize("Message.SessionReset")));
         await RefreshTypeExplorerAsync();
     }
 
     private async Task RestartWorkerAsync()
     {
-        Status = "Starting Worker";
+        SetLocalizedStatus("Status.StartingWorker");
         await RestartAndRehydrateAsync();
         submissions.Clear();
         executingCode = null;
         VariableItems.Clear();
         IsRunning = false;
-        Status = "Ready";
-        SessionStatus = "0 submissions — Worker restarted";
-        Transcript.Add(TranscriptLine.System("Worker restarted. Variables and methods were lost; references and usings were restored."));
+        SetLocalizedStatus("Status.Ready");
+        SetSessionStatus("Session.Restarted");
+        Transcript.Add(TranscriptLine.System(Localize("Message.WorkerRestarted")));
         await RefreshTypeExplorerAsync();
     }
 
@@ -414,11 +483,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             var value = command[":using add ".Length..].Trim();
             var added = await AddUsingAsync(value);
-            Transcript.Add(TranscriptLine.System(added ? $"Using added: {value}" : $"Using already active: {value}"));
+            Transcript.Add(TranscriptLine.System(added
+                ? Localize("Message.UsingAdded", value)
+                : Localize("Message.UsingActive", value)));
         }
         else if (command == ":reference list")
         {
-            Transcript.Add(TranscriptLine.System(references.Count == 0 ? "No dynamic references." : string.Join(Environment.NewLine, references)));
+            Transcript.Add(TranscriptLine.System(references.Count == 0
+                ? Localize("Message.NoReferences")
+                : string.Join(Environment.NewLine, references)));
         }
         else if (command.StartsWith(":reference add ", StringComparison.Ordinal))
         {
@@ -433,11 +506,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 AddAssemblyLibrary(path, "Local DLL");
             }
             await RefreshTypeExplorerAsync();
-            Transcript.Add(TranscriptLine.System($"Reference added: {path}"));
+            Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceAdded", path)));
         }
         else if (command == ":package list")
         {
-            Transcript.Add(TranscriptLine.System(packages.Count == 0 ? "No packages." :
+            Transcript.Add(TranscriptLine.System(packages.Count == 0 ? Localize("Message.NoPackages") :
                 string.Join(Environment.NewLine, packages.Select(static item => $"{item.Id} {item.Version}"))));
         }
         else if (command.StartsWith(":package add ", StringComparison.Ordinal))
@@ -449,7 +522,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         else
         {
-            Transcript.Add(TranscriptLine.Diagnostic($"Unknown command: {command}"));
+            Transcript.Add(TranscriptLine.Diagnostic(Localize("Message.UnknownCommand", command)));
         }
         InputText = string.Empty;
     }
@@ -458,17 +531,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (IsPackageSearchBusy) return;
         IsPackageSearchBusy = true;
-        PackageSearchMessage = "Searching nuget.org…";
-        Status = "Searching packages";
+        PackageSearchMessage = Localize("Package.Searching");
+        SetLocalizedStatus("Status.SearchingPackages");
         try
         {
             await worker.SearchPackagesAsync(PackageSearchText, IncludePrereleasePackages);
-            Status = "Ready";
+            SetLocalizedStatus("Status.Ready");
         }
         catch (Exception error)
         {
             PackageSearchMessage = error.Message;
-            Status = "Package search failed";
+            SetLocalizedStatus("Status.PackageSearchFailed");
         }
         finally
         {
@@ -486,25 +559,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (version is not null && packages.Any(item =>
             item.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase) && item.Version == version))
         {
-            PackageSearchMessage = $"{packageId} {version} is already installed.";
+            PackageSearchMessage = Localize("Package.AlreadyInstalled", packageId, version);
             return;
         }
 
         IsPackageSearchBusy = true;
-        Status = "Restoring package";
-        PackageSearchMessage = $"Installing {packageId} {version ?? "latest stable"}…";
+        SetLocalizedStatus("Status.RestoringPackage");
+        PackageSearchMessage = Localize("Package.Installing", packageId,
+            version ?? Localize("Package.LatestStable"));
         try
         {
             await worker.AddPackageAsync(packageId, version);
-            Status = "Ready";
+            SetLocalizedStatus("Status.Ready");
             var installed = packages.FirstOrDefault(item => item.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase));
             PackageSearchMessage = installed == default
-                ? $"Installed {packageId}."
-                : $"Installed {installed.Id} {installed.Version}.";
+                ? Localize("Package.Installed", packageId)
+                : Localize("Package.InstalledVersion", installed.Id, installed.Version);
         }
         catch (Exception error)
         {
-            Status = "Package install failed";
+            SetLocalizedStatus("Status.PackageInstallFailed");
             PackageSearchMessage = error.Message;
         }
         finally
@@ -547,12 +621,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var refresh = new CancellationTokenSource();
         typeExplorerRefresh = refresh;
         var context = Context;
-        TypeExplorerStatus = "Loading types…";
+        TypeExplorerStatus = Localize("Explorer.Loading");
 
         try
         {
             var entries = await Task.Run(
-                () => languageService.GetTypeExplorerAsync(context, refresh.Token), refresh.Token);
+                () => languageService.GetSymbolExplorerAsync(context, refresh.Token), refresh.Token);
             if (refresh.IsCancellationRequested) return;
             typeExplorerEntries = entries;
             RebuildTypeExplorer();
@@ -562,19 +636,32 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception)
         {
-            if (!refresh.IsCancellationRequested) TypeExplorerStatus = "Type explorer unavailable";
+            if (!refresh.IsCancellationRequested) TypeExplorerStatus = Localize("Explorer.Unavailable");
         }
     }
 
     private void RebuildTypeExplorer()
     {
         var query = TypeExplorerSearchText.Trim();
-        var filtered = string.IsNullOrEmpty(query)
+        var matched = string.IsNullOrEmpty(query)
             ? typeExplorerEntries
             : typeExplorerEntries.Where(entry =>
                 entry.FullName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                entry.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 entry.Kind.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                entry.AssemblyName.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+                entry.AssemblyName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                entry.Summary.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                entry.Parameters.Any(parameter =>
+                    parameter.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    parameter.Summary.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
+        var parentKeys = matched
+            .Where(static entry => entry.ContainingType is not null)
+            .Select(static entry => (entry.Namespace, TypeName: entry.ContainingType!, entry.AssemblyName))
+            .ToHashSet();
+        var filtered = matched.Concat(typeExplorerEntries.Where(entry =>
+                entry.ContainingType is null && parentKeys.Contains((entry.Namespace, entry.Name, entry.AssemblyName))))
+            .Distinct()
+            .ToArray();
 
         var root = new ExplorerNodeBuilder(string.Empty, string.Empty);
         foreach (var entry in filtered)
@@ -587,7 +674,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 fullName = string.IsNullOrEmpty(fullName) ? segment : $"{fullName}.{segment}";
                 current = current.GetOrAddNamespace(segment, fullName);
             }
-            current.Types.Add(entry);
+            current.Symbols.Add(entry);
         }
 
         TypeExplorerItems.Clear();
@@ -597,8 +684,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             TypeExplorerItems.Add(item.Build(!string.IsNullOrEmpty(query)));
 
         TypeExplorerStatus = string.IsNullOrEmpty(query)
-            ? $"{typeExplorerEntries.Count:N0} types"
-            : $"{filtered.Count:N0} matches";
+            ? Localize("Explorer.Count",
+                typeExplorerEntries.Count(static entry => entry.ContainingType is null && entry.Kind != "method"),
+                typeExplorerEntries.Count(static entry => entry.Kind is "method" or "constructor"))
+            : Localize("Explorer.Matches", matched.Count);
     }
 
     private static string GetTypeGlyph(string kind) => kind switch
@@ -610,6 +699,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         "struct" => "S",
         "enum" => "E",
         "delegate" => "D",
+        "method" => "M",
+        "constructor" => "M",
         _ => "T"
     };
 
@@ -618,7 +709,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         public string Name { get; } = name;
         public string FullName { get; } = fullName;
         public Dictionary<string, ExplorerNodeBuilder> Namespaces { get; } = new(StringComparer.Ordinal);
-        public List<TypeExplorerEntry> Types { get; } = [];
+        public List<SymbolExplorerEntry> Symbols { get; } = [];
 
         public ExplorerNodeBuilder GetOrAddNamespace(string namespaceName, string namespaceFullName)
         {
@@ -630,19 +721,43 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         public SymbolExplorerNode Build(bool expand)
         {
-            var children = Namespaces.Values
+            var namespaceNodes = Namespaces.Values
                 .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(item => item.Build(expand))
-                .Concat(Types.OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
-                    .Select(static item => new SymbolExplorerNode(
-                        item.Name,
-                        item.Kind,
-                        GetTypeGlyph(item.Kind),
-                        $"{item.Kind} · {item.AssemblyName}",
-                        [])))
-                .ToArray();
+                .Select(item => item.Build(expand));
+            var typeNodes = Symbols
+                .Where(static item => item.ContainingType is null && item.Kind is not "method" and not "constructor")
+                .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(type => CreateSymbolNode(type, Symbols
+                    .Where(method => method.ContainingType == type.Name)
+                    .OrderBy(static method => method.Name, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(static method => method.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .Select(static method => CreateSymbolNode(method, []))
+                    .ToArray(), expand));
+            var sessionMethods = Symbols
+                .Where(static item => item.ContainingType is null && item.Kind is "method" or "constructor")
+                .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .Select(static item => CreateSymbolNode(item, []));
+            var children = namespaceNodes.Concat(typeNodes).Concat(sessionMethods).ToArray();
             return new SymbolExplorerNode(Name, "namespace", "N", FullName, children, expand || FullName == "Session");
         }
+
+        private static SymbolExplorerNode CreateSymbolNode(
+            SymbolExplorerEntry entry,
+            IReadOnlyList<SymbolExplorerNode> children,
+            bool isExpanded = false) => new(
+                entry.DisplayName,
+                entry.Kind,
+                GetTypeGlyph(entry.Kind),
+                $"{entry.Signature}{Environment.NewLine}{entry.AssemblyName}",
+                children,
+                isExpanded,
+                entry.Signature,
+                entry.Summary,
+                entry.Parameters.Select(static parameter =>
+                    new SymbolExplorerParameter(parameter.Name, parameter.TypeName, parameter.Summary)).ToArray(),
+                entry.Returns,
+                entry.AssemblyName);
     }
 
     private static string FormatSnapshot(ResultSnapshot snapshot)

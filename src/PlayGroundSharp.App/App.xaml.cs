@@ -5,6 +5,12 @@ namespace PlayGroundSharp.App;
 
 public partial class App : Application
 {
+    public static void ApplyLanguage(AppLanguageMode mode)
+    {
+        if (Current is null) return;
+        foreach (var (key, value) in AppLocalization.Resources(mode)) Current.Resources[key] = value;
+    }
+
     public static void ApplyTheme(AppThemeMode mode)
     {
         if (Current is null) return;

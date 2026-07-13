@@ -16,7 +16,7 @@
         <Border Grid.Row="0" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel Margin="16,8">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="Types" Command="{Binding ToggleTypeExplorerCommand}">
+                    <Button Content="{DynamicResource Ui.Types}" Command="{Binding ToggleTypeExplorerCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
                                 <Style.Triggers>
@@ -29,7 +29,7 @@
                             </Style>
                         </Button.Style>
                     </Button>
-                    <Button Content="Session" Command="{Binding ToggleReferenceDrawerCommand}">
+                    <Button Content="{DynamicResource Ui.Session}" Command="{Binding ToggleReferenceDrawerCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
                                 <Style.Triggers>
@@ -43,10 +43,10 @@
                         </Button.Style>
                     </Button>
                     <Border Width="1" Height="20" Background="{DynamicResource BorderBrush}" Margin="7,0" />
-                    <Button Content="Stop" Style="{StaticResource DangerToolbarButtonStyle}" Command="{Binding CancelCommand}" IsEnabled="{Binding IsRunning}" />
-                    <Button Content="Restart" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding RestartWorkerCommand}" />
-                    <Button Content="Reset" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ResetCommand}" />
-                    <Button Content="Clear" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ClearCommand}" />
+                    <Button Content="{DynamicResource Ui.Stop}" Style="{StaticResource DangerToolbarButtonStyle}" Command="{Binding CancelCommand}" IsEnabled="{Binding IsRunning}" />
+                    <Button Content="{DynamicResource Ui.Restart}" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding RestartWorkerCommand}" />
+                    <Button Content="{DynamicResource Ui.Reset}" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ResetCommand}" />
+                    <Button Content="{DynamicResource Ui.Clear}" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ClearCommand}" />
                 </StackPanel>
                 <Border Width="32" Height="32" CornerRadius="8" Background="{DynamicResource SelectionBrush}" Margin="0,0,10,0">
                     <TextBlock Text=">_" Foreground="{DynamicResource AccentBrush}" FontFamily="Cascadia Mono,Consolas"
@@ -54,7 +54,7 @@
                 </Border>
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="PlayGroundSharp" FontSize="16" FontWeight="SemiBold" />
-                    <TextBlock Text="C# interactive console" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" />
+                    <TextBlock Text="{DynamicResource Ui.AppSubtitle}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -72,20 +72,58 @@
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <StackPanel>
-                                <TextBlock Text="Type Explorer" FontSize="14" FontWeight="SemiBold" />
-                                <TextBlock Text="Namespaces and available types" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
+                                <TextBlock Text="{DynamicResource Explorer.Title}" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="{DynamicResource Explorer.Subtitle}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
                             </StackPanel>
                             <TextBlock Grid.Column="1" Text="{Binding TypeExplorerStatus}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}"
                                        VerticalAlignment="Top" Margin="8,2,0,0" />
                         </Grid>
                     </Border>
+                    <Border DockPanel.Dock="Bottom" MaxHeight="250" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
+                            Background="{DynamicResource InputBrush}" Padding="12,10">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers><DataTrigger Binding="{Binding SelectedExplorerNode}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel DataContext="{Binding SelectedExplorerNode}">
+                                <TextBlock Text="{Binding Signature}" FontFamily="Cascadia Mono,Consolas" FontSize="11.5"
+                                           FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock Text="{DynamicResource Docs.Summary}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,2"
+                                           Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <TextBlock Text="{Binding Summary}" FontSize="11.5" TextWrapping="Wrap"
+                                           Visibility="{Binding HasSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <TextBlock Text="{DynamicResource Docs.Parameters}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,2"
+                                           Visibility="{Binding HasParameters, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <ItemsControl ItemsSource="{Binding ParameterItems}" Visibility="{Binding HasParameters, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,1,0,5">
+                                                <TextBlock FontFamily="Cascadia Mono,Consolas" FontSize="11">
+                                                    <Run Text="{Binding Name}" FontWeight="SemiBold"/><Run Text=" : "/><Run Text="{Binding TypeName}"/>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="8,1,0,0" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="{DynamicResource Docs.Returns}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" Margin="0,6,0,2"
+                                           Visibility="{Binding HasReturns, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <TextBlock Text="{Binding Returns}" FontSize="11.5" TextWrapping="Wrap"
+                                           Visibility="{Binding HasReturns, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <TextBlock Text="{Binding AssemblyName}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,0" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
                     <Grid Margin="10,10,8,8">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                         <Grid>
                             <TextBox Text="{Binding TypeExplorerSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                     AutomationProperties.Name="TypeExplorerSearch" ToolTip="Filter by namespace, type, kind or assembly"
+                                     AutomationProperties.Name="TypeExplorerSearch" ToolTip="{DynamicResource Explorer.FilterTooltip}"
                                      Height="32" Padding="9,4" VerticalContentAlignment="Center" />
-                            <TextBlock Text="Filter types…" Foreground="{DynamicResource MutedBrush}" Margin="10,0,0,0"
+                            <TextBlock Text="{DynamicResource Explorer.Filter}" Foreground="{DynamicResource MutedBrush}" Margin="10,0,0,0"
                                        VerticalAlignment="Center" IsHitTestVisible="False">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
@@ -98,7 +136,7 @@
                         <Grid Grid.Row="1" Margin="0,8,0,0">
                             <TreeView ItemsSource="{Binding TypeExplorerItems}" AutomationProperties.Name="TypeExplorerTree"
                                       Background="Transparent" BorderThickness="0" Foreground="{DynamicResource ForegroundBrush}"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged">
                                 <TreeView.Resources>
                                     <HierarchicalDataTemplate DataType="{x:Type local:SymbolExplorerNode}" ItemsSource="{Binding Children}">
                                         <Grid Margin="0,1" ToolTip="{Binding Detail}">
@@ -120,8 +158,8 @@
                                 </TreeView.ItemContainerStyle>
                             </TreeView>
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                <TextBlock Text="No matching types" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                                <TextBlock Text="Try another namespace or type name." Foreground="{DynamicResource MutedBrush}" FontSize="10.5" Margin="0,4,0,0" />
+                                <TextBlock Text="{DynamicResource Explorer.Empty}" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                <TextBlock Text="{DynamicResource Explorer.EmptyHint}" Foreground="{DynamicResource MutedBrush}" FontSize="10.5" Margin="0,4,0,0" />
                                 <StackPanel.Style>
                                     <Style TargetType="StackPanel">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -164,7 +202,7 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <Button Grid.Column="2" Content="Inspect" Style="{StaticResource MiniButtonStyle}" Margin="8,0,0,0"
+                                <Button Grid.Column="2" Content="{DynamicResource Ui.Inspect}" Style="{StaticResource MiniButtonStyle}" Margin="8,0,0,0"
                                         Visibility="{Binding IsInspectable, Converter={StaticResource BooleanToVisibilityConverter}}"
                                         Click="InspectResult_Click" />
                             </Grid>
@@ -224,28 +262,28 @@
                 <DockPanel>
                     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,12,14,10">
                         <StackPanel>
-                            <TextBlock Text="Workspace" FontSize="16" FontWeight="SemiBold" />
-                            <TextBlock Text="Session state and dependencies" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
+                            <TextBlock Text="{DynamicResource Workspace.Title}" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock Text="{DynamicResource Workspace.Subtitle}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
                         </StackPanel>
                     </Border>
                     <TabControl Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
                                 ItemContainerStyle="{StaticResource WorkspaceTabItemStyle}">
-                        <TabItem Header="Variables">
+                        <TabItem Header="{DynamicResource Tab.Variables}">
                             <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <ListView ItemsSource="{Binding VariableItems}" AutomationProperties.Name="VariableList" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
                                           ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                     <ListView.View>
                                         <GridView>
-                                            <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="48" />
-                                            <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="90" />
-                                            <GridViewColumn Header="Type" DisplayMemberBinding="{Binding TypeName}" Width="120" />
-                                            <GridViewColumn Header="Value" DisplayMemberBinding="{Binding Value}" Width="180" />
+                                            <GridViewColumn Header="{DynamicResource Column.Kind}" DisplayMemberBinding="{Binding Kind}" Width="48" />
+                                            <GridViewColumn Header="{DynamicResource Column.Name}" DisplayMemberBinding="{Binding Name}" Width="90" />
+                                            <GridViewColumn Header="{DynamicResource Column.Type}" DisplayMemberBinding="{Binding TypeName}" Width="120" />
+                                            <GridViewColumn Header="{DynamicResource Column.Value}" DisplayMemberBinding="{Binding Value}" Width="180" />
                                         </GridView>
                                     </ListView.View>
                                 </ListView>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                    <TextBlock Text="No variables yet" Foreground="{DynamicResource ForegroundBrush}" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                                    <TextBlock Text="Run a declaration to populate this view." Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,4,0,0" />
+                                    <TextBlock Text="{DynamicResource Variables.Empty}" Foreground="{DynamicResource ForegroundBrush}" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Text="{DynamicResource Variables.EmptyHint}" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,4,0,0" />
                                     <StackPanel.Style>
                                         <Style TargetType="StackPanel">
                                             <Setter Property="Visibility" Value="Collapsed" />
@@ -255,7 +293,7 @@
                                 </StackPanel>
                             </Grid>
                         </TabItem>
-                        <TabItem Header="NuGet">
+                        <TabItem Header="{DynamicResource Tab.NuGet}">
                             <Grid Margin="12" TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
@@ -266,11 +304,11 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBox Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="NuGetSearchText"
-                                             ToolTip="Package ID, title, description or tag" />
-                                    <Button Grid.Column="1" Content="Search" Style="{StaticResource AccentButtonStyle}" AutomationProperties.Name="NuGetSearchButton"
+                                             ToolTip="{DynamicResource NuGet.SearchTooltip}" />
+                                    <Button Grid.Column="1" Content="{DynamicResource NuGet.Search}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.Name="NuGetSearchButton"
                                             Command="{Binding SearchPackagesCommand}" Margin="7,0,0,0" />
                                 </Grid>
-                                <CheckBox Grid.Row="1" Content="Include prerelease" IsChecked="{Binding IncludePrereleasePackages}" Margin="0,7,0,0" />
+                                <CheckBox Grid.Row="1" Content="{DynamicResource NuGet.IncludePrerelease}" IsChecked="{Binding IncludePrereleasePackages}" Margin="0,7,0,0" />
                                 <TextBlock Grid.Row="2" Text="{Binding PackageSearchMessage}" Margin="0,7" TextWrapping="Wrap"
                                            Foreground="{DynamicResource MutedBrush}" />
                                 <ListBox Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="NuGetSearchResults" BorderThickness="0"
@@ -286,15 +324,15 @@
                                                     <StackPanel Orientation="Horizontal">
                                                         <TextBlock Text="{Binding PackageId}" FontWeight="SemiBold" />
                                                         <TextBlock Text="{Binding Version, StringFormat={}  {0}}" Foreground="{DynamicResource MutedBrush}" />
-                                                        <TextBlock Text="  Verified" Foreground="{DynamicResource AccentBrush}"
+                                                        <TextBlock Text="{DynamicResource NuGet.Verified}" Foreground="{DynamicResource AccentBrush}"
                                                                    Visibility="{Binding IsVerified, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                     </StackPanel>
-                                                    <Button Grid.Column="1" Grid.RowSpan="2" Content="Install" Style="{StaticResource AccentButtonStyle}" Padding="10,4"
+                                                    <Button Grid.Column="1" Grid.RowSpan="2" Content="{DynamicResource NuGet.Install}" Style="{StaticResource AccentButtonStyle}" Padding="10,4"
                                                             Command="{Binding DataContext.InstallPackageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                             CommandParameter="{Binding}" />
                                                     <TextBlock Grid.Row="1" Text="{Binding Description}" TextWrapping="Wrap" MaxHeight="42" Margin="0,4,8,0" />
                                                     <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}">
-                                                        <Run Text="{Binding Authors}"/><Run Text=" · "/><Run Text="{Binding TotalDownloads, StringFormat={}{0:N0} downloads}"/>
+                                                        <Run Text="{Binding Authors}"/><Run Text=" · "/><Run Text="{Binding TotalDownloads, StringFormat={}{0:N0}}"/><Run Text="{DynamicResource NuGet.DownloadsSuffix}"/>
                                                     </TextBlock>
                                                 </Grid>
                                             </Border>
@@ -303,22 +341,22 @@
                                 </ListBox>
                             </Grid>
                         </TabItem>
-                        <TabItem Header="Libraries">
+                        <TabItem Header="{DynamicResource Tab.Libraries}">
                             <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <ListView ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="ImportedLibraryList" BorderThickness="0" Background="Transparent"
                                           Foreground="{DynamicResource ForegroundBrush}" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                     <ListView.View>
                                         <GridView>
-                                            <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="72" />
-                                            <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="150" />
-                                            <GridViewColumn Header="Version" DisplayMemberBinding="{Binding Version}" Width="92" />
-                                            <GridViewColumn Header="Source" DisplayMemberBinding="{Binding Source}" Width="160" />
+                                            <GridViewColumn Header="{DynamicResource Column.Kind}" DisplayMemberBinding="{Binding Kind}" Width="72" />
+                                            <GridViewColumn Header="{DynamicResource Column.Name}" DisplayMemberBinding="{Binding Name}" Width="150" />
+                                            <GridViewColumn Header="{DynamicResource Column.Version}" DisplayMemberBinding="{Binding Version}" Width="92" />
+                                            <GridViewColumn Header="{DynamicResource Column.Source}" DisplayMemberBinding="{Binding Source}" Width="160" />
                                         </GridView>
                                     </ListView.View>
                                 </ListView>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                    <TextBlock Text="No imported libraries" Foreground="{DynamicResource ForegroundBrush}" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                                    <TextBlock Text="Install a package or add a DLL." Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,4,0,0" />
+                                    <TextBlock Text="{DynamicResource Libraries.Empty}" Foreground="{DynamicResource ForegroundBrush}" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Text="{DynamicResource Libraries.EmptyHint}" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,4,0,0" />
                                     <StackPanel.Style>
                                         <Style TargetType="StackPanel">
                                             <Setter Property="Visibility" Value="Collapsed" />
@@ -328,23 +366,26 @@
                                 </StackPanel>
                             </Grid>
                         </TabItem>
-                        <TabItem Header="Usings"><ListBox ItemsSource="{Binding UsingItems}" Margin="8" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
-                        <TabItem Header="Settings">
+                        <TabItem Header="{DynamicResource Tab.Usings}"><ListBox ItemsSource="{Binding UsingItems}" Margin="8" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}" /></TabItem>
+                        <TabItem Header="{DynamicResource Tab.Settings}">
                             <StackPanel Margin="14" TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="12">
                                     <StackPanel>
-                                        <TextBlock Text="Session" FontWeight="SemiBold" />
+                                        <TextBlock Text="{DynamicResource Ui.Session}" FontWeight="SemiBold" />
                                         <TextBlock Text="{Binding SessionStatus}" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0" />
                                     </StackPanel>
                                 </Border>
-                                <TextBlock Text="Execution key" Margin="0,14,0,4" FontWeight="SemiBold" />
-                                <ComboBox ItemsSource="{Binding ExecutionKeyModes}" SelectedItem="{Binding ExecutionKeyMode}"
-                                          HorizontalAlignment="Stretch" />
-                                <TextBlock Text="Theme" Margin="0,14,0,4" FontWeight="SemiBold" />
-                                <ComboBox ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding ThemeMode}"
-                                          HorizontalAlignment="Stretch" />
+                                <TextBlock Text="{DynamicResource Settings.ExecutionKey}" Margin="0,14,0,4" FontWeight="SemiBold" />
+                                <ComboBox ItemsSource="{Binding ExecutionKeyOptions}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          SelectedValue="{Binding ExecutionKeyMode}" HorizontalAlignment="Stretch" />
+                                <TextBlock Text="{DynamicResource Settings.Theme}" Margin="0,14,0,4" FontWeight="SemiBold" />
+                                <ComboBox ItemsSource="{Binding ThemeOptions}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          SelectedValue="{Binding ThemeMode}" HorizontalAlignment="Stretch" />
+                                <TextBlock Text="{DynamicResource Settings.Language}" Margin="0,14,0,4" FontWeight="SemiBold" />
+                                <ComboBox ItemsSource="{Binding LanguageOptions}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          SelectedValue="{Binding LanguageMode}" HorizontalAlignment="Stretch" />
                                 <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="11" Margin="0,16,0,0">
-                                    <TextBlock Text="Arbitrary C# runs with your Windows user permissions." TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}" />
+                                    <TextBlock Text="{DynamicResource Settings.Security}" TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}" />
                                 </Border>
                             </StackPanel>
                         </TabItem>

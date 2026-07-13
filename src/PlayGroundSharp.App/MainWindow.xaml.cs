@@ -17,6 +17,7 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        App.ApplyLanguage(viewModel.LanguageMode);
         InitializeComponent();
         DataContext = viewModel;
         App.ApplyTheme(viewModel.ThemeMode);
@@ -31,7 +32,7 @@ public partial class MainWindow : Window
             if (args.Text == ")" && assistMode == AssistMode.Signature) HideAssist();
         };
         Editor.TextArea.Caret.PositionChanged += (_, _) =>
-            viewModel.CursorStatus = $"Ln {Editor.TextArea.Caret.Line}, Col {Editor.TextArea.Caret.Column}";
+            viewModel.UpdateCursorPosition(Editor.TextArea.Caret.Line, Editor.TextArea.Caret.Column);
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -46,6 +47,9 @@ public partial class MainWindow : Window
         completionDescriptionCancellation?.Dispose();
         await viewModel.DisposeAsync();
     }
+
+    private void TypeExplorerTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e) =>
+        viewModel.SelectedExplorerNode = e.NewValue as SymbolExplorerNode;
 
     private async void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -116,7 +120,7 @@ public partial class MainWindow : Window
         CompletionList.IsHitTestVisible = true;
         CompletionList.DisplayMemberPath = nameof(CompletionCandidate.DisplayText);
         assistMode = items.Count > 0 ? AssistMode.Completion : AssistMode.None;
-        AssistHint.Text = "Tab: complete  ↑↓: select  Esc: close";
+        AssistHint.Text = viewModel.Localize("Assist.CompletionHint");
         ApplyCompletionFilter();
     }
 
@@ -134,7 +138,7 @@ public partial class MainWindow : Window
         CompletionList.DisplayMemberPath = nameof(SignatureInformation.DisplayText);
         CompletionList.SelectedItem = help.Signatures.FirstOrDefault(item => item.DisplayText == selectedSignature?.DisplayText);
         if (CompletionList.SelectedIndex < 0) CompletionList.SelectedIndex = 0;
-        AssistHint.Text = $"{help.Signatures.Count} overload(s)  ·  parameter {help.ActiveParameter + 1}  ·  ↑↓: switch";
+        AssistHint.Text = viewModel.Localize("Assist.SignatureHint", help.Signatures.Count, help.ActiveParameter + 1);
         AssistPopup.IsOpen = true;
         assistMode = AssistMode.Signature;
         UpdateAssistSummary();
@@ -160,11 +164,11 @@ public partial class MainWindow : Window
             try
             {
                 if (await viewModel.AddUsingAsync(requiredNamespace))
-                    viewModel.Status = $"Added using {requiredNamespace}";
+                    viewModel.SetLocalizedStatus("Status.AddedUsing", requiredNamespace);
             }
             catch (Exception error)
             {
-                viewModel.Status = "Using import failed";
+                viewModel.SetLocalizedStatus("Status.UsingFailed");
                 viewModel.Transcript.Add(TranscriptLine.Diagnostic(error.Message));
             }
         }
@@ -173,6 +177,7 @@ public partial class MainWindow : Window
 
     private void HideAssist()
     {
+        var wasCompletion = assistMode == AssistMode.Completion;
         AssistPopup.IsOpen = false;
         CompletionList.ItemsSource = null;
         allCompletionItems = [];
@@ -183,7 +188,7 @@ public partial class MainWindow : Window
         AssistSummaryPanel.Visibility = Visibility.Collapsed;
         AssistHint.Text = string.Empty;
         assistMode = AssistMode.None;
-        if (!viewModel.IsRunning && viewModel.Status.EndsWith(" completions", StringComparison.Ordinal)) viewModel.Status = "Ready";
+        if (!viewModel.IsRunning && wasCompletion) viewModel.SetLocalizedStatus("Status.Ready");
     }
 
     private void ApplyCompletionFilter()
@@ -215,7 +220,7 @@ public partial class MainWindow : Window
             HideAssist();
             return;
         }
-        viewModel.Status = $"{filtered.Length} completions";
+        viewModel.SetLocalizedStatus("Status.Completions", filtered.Length);
     }
 
     private void CompletionList_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateAssistSummary();

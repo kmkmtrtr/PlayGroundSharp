@@ -6,21 +6,37 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <StartupObject>PlayGroundSharp.App.Program</StartupObject>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PlayGroundSharp.Core\PlayGroundSharp.Core.csproj" />
     <ProjectReference Include="..\PlayGroundSharp.LanguageService\PlayGroundSharp.LanguageService.csproj" />
-    <ProjectReference Include="..\PlayGroundSharp.Worker\PlayGroundSharp.Worker.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\PlayGroundSharp.Worker\PlayGroundSharp.Worker.csproj" />
     <PackageReference Include="AvalonEdit" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
 
-  <Target Name="CopyWorker" AfterTargets="Build">
+  <Target Name="RemoveStandaloneWorkerPublishArtifacts"
+          BeforeTargets="GenerateSingleFileBundle"
+          DependsOnTargets="PrepareForBundle"
+          Condition="'$(PublishSingleFile)' == 'true'">
     <ItemGroup>
-      <WorkerFiles Include="..\PlayGroundSharp.Worker\bin\$(Configuration)\net10.0\**\*" />
+      <FilesToBundle Remove="@(FilesToBundle)"
+                     Condition="'%(FilesToBundle.Extension)' == '.pdb' or
+                                '%(FilesToBundle.RelativePath)' == 'PlayGroundSharp.Worker.exe' or
+                                '%(FilesToBundle.RelativePath)' == 'PlayGroundSharp.Worker.deps.json' or
+                                '%(FilesToBundle.RelativePath)' == 'PlayGroundSharp.Worker.runtimeconfig.json'" />
     </ItemGroup>
-    <Copy SourceFiles="@(WorkerFiles)" DestinationFiles="@(WorkerFiles->'$(OutDir)Worker\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

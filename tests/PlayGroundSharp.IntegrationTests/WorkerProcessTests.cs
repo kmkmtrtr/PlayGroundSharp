@@ -125,6 +125,21 @@ public sealed class WorkerProcessTests
 
     private static Process StartWorker(string pipeName)
     {
+        var publishedHost = Environment.GetEnvironmentVariable("PLAYGROUNDSHARP_WORKER_HOST");
+        if (!string.IsNullOrWhiteSpace(publishedHost))
+        {
+            var startInfo = new ProcessStartInfo(publishedHost)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(publishedHost)!
+            };
+            startInfo.ArgumentList.Add("--worker");
+            startInfo.ArgumentList.Add("--pipe");
+            startInfo.ArgumentList.Add(pipeName);
+            return Process.Start(startInfo) ?? throw new InvalidOperationException("Published Worker host failed to start.");
+        }
+
         var workerDll = typeof(WorkerHost).Assembly.Location;
         return Process.Start(new ProcessStartInfo("dotnet", $"\"{workerDll}\" --pipe {pipeName}")
         {

@@ -7,7 +7,7 @@ PlayGroundSharp is a Windows C# interactive console inspired by Chrome DevTools 
 ## Requirements
 
 - Windows 10/11
-- .NET 10 SDK
+- .NET 10 SDK for building; the published executable requires the .NET 10 Desktop Runtime (x64)
 
 ## Build and run
 
@@ -17,7 +17,15 @@ dotnet build PlayGroundSharp.slnx -c Debug
 dotnet run --project src/PlayGroundSharp.App/PlayGroundSharp.App.csproj -c Debug
 ```
 
-The App build copies the Worker and its dependencies into the App output's `Worker` directory. User code always runs in that child process, not in WPF.
+The App starts the same executable in hidden `--worker` mode as a separate child process. User code always runs in that child process, not in WPF.
+
+## Publish
+
+```powershell
+dotnet publish src/PlayGroundSharp.App/PlayGroundSharp.App.csproj -c Release
+```
+
+Release publishing is configured in the App project for `win-x64`, framework-dependent, single-file output. The result is one `PlayGroundSharp.App.exe` under `bin/Release/net10.0-windows/win-x64/publish`. Roslyn requires physical metadata files, so .NET extracts the bundled managed content to its per-user single-file cache at startup; no separate Worker executable is distributed. Install the .NET 10 Desktop Runtime on the destination machine.
 
 ## Test
 

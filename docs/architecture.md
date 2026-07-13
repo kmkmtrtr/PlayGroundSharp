@@ -13,7 +13,9 @@ The repository started empty. .NET SDK 10.0.109 and Windows Desktop Runtime 10.0
 
 ## IPC
 
-The App starts one child Worker with a random pipe name. A dedicated duplex named pipe carries newline-delimited JSON envelopes, so submitted `Console` output cannot corrupt IPC. Every envelope includes a protocol version, kind and correlation ID. Only neutral DTOs cross the boundary. After each submission, the Worker also publishes bounded variable snapshots; the App never evaluates session variables or loads submitted assemblies into WPF.
+The App starts its own executable in `--worker --pipe <name>` mode as a child process. The custom entry point enters `WorkerHost` without constructing WPF, so single-file publishing needs no separate Worker executable while process isolation remains intact. A dedicated duplex named pipe carries newline-delimited JSON envelopes, so submitted `Console` output cannot corrupt IPC. Every envelope includes a protocol version, kind and correlation ID. Only neutral DTOs cross the boundary. After each submission, the Worker also publishes bounded variable snapshots; the App never evaluates session variables or loads submitted assemblies into WPF.
+
+Release publish targets framework-dependent `win-x64` single-file output. All managed content is configured for .NET bundle extraction because Roslyn scripting and workspace metadata APIs require physical assembly locations. Standalone Worker apphost/config artifacts and PDBs are removed before bundling, leaving one distributable executable; the target machine supplies the .NET 10 Desktop Runtime.
 
 ## Script state
 

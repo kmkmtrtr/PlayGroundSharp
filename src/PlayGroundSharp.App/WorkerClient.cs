@@ -25,15 +25,17 @@ public sealed class WorkerClient : IAsyncDisposable
     {
         await StopAsync().ConfigureAwait(false);
         var pipeName = $"PlayGroundSharp-{Guid.NewGuid():N}";
-        var workerDirectory = Path.Combine(AppContext.BaseDirectory, "Worker");
-        var executable = Path.Combine(workerDirectory, "PlayGroundSharp.Worker.exe");
-        var dll = Path.Combine(workerDirectory, "PlayGroundSharp.Worker.dll");
-        var startInfo = File.Exists(executable)
-            ? new ProcessStartInfo(executable, $"--pipe {pipeName}")
-            : new ProcessStartInfo("dotnet", $"\"{dll}\" --pipe {pipeName}");
-        startInfo.UseShellExecute = false;
-        startInfo.CreateNoWindow = true;
-        startInfo.WorkingDirectory = workerDirectory;
+        var processPath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("The application executable path is unavailable.");
+        var startInfo = new ProcessStartInfo(processPath)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = AppContext.BaseDirectory
+        };
+        startInfo.ArgumentList.Add("--worker");
+        startInfo.ArgumentList.Add("--pipe");
+        startInfo.ArgumentList.Add(pipeName);
         process = Process.Start(startInfo) ?? throw new InvalidOperationException("Worker process could not be started.");
         process.EnableRaisingEvents = true;
         var startedProcess = process;

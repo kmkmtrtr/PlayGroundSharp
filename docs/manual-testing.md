@@ -26,6 +26,7 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 20 | Open **Session > Settings**, switch **Language** between Japanese and English | headers, controls, status and Explorer documentation labels update immediately and persist |
 | 21 | Open **Session > Usings**, add a namespace, then remove it | the list and completion update; after prior execution, removal warns that session variables/types will be cleared and restarts the Worker |
 | 22 | Open **Types** and expand namespaces containing classes, interfaces, structs, enums and methods; select a derived class | rows show compact kind labels with distinct theme-appropriate colors, and the tooltip/detail panel lists its direct base class and interfaces |
+| 23 | Run `dotnet publish src/PlayGroundSharp.App/PlayGroundSharp.App.csproj -c Release`, then start the published executable | the publish directory contains only `PlayGroundSharp.App.exe`; the GUI connects to a separate process of the same executable in Worker mode |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 

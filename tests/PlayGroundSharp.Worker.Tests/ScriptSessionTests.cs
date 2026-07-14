@@ -110,6 +110,17 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task CapturesLargeArrayBeyondTheFormerPreviewLimit()
+    {
+        var result = await new ScriptSession().ExecuteAsync(1, "Enumerable.Range(1, 1000).ToArray()");
+
+        Assert.True(result.StateAccepted);
+        Assert.Equal(1000, result.Snapshot?.TotalCount);
+        Assert.Equal(1000, result.Snapshot?.Items?.Count);
+        Assert.False(result.Snapshot?.IsTruncated);
+    }
+
+    [Fact]
     public async Task AddsLocalDllReferences()
     {
         var session = new ScriptSession();

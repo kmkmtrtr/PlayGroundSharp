@@ -3,9 +3,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ICSharpCode.AvalonEdit.Highlighting;
 using Microsoft.Win32;
 using PlayGroundSharp.Core;
@@ -18,7 +20,10 @@ public partial class MainWindow : Window
     private const int WmMouseHorizontalWheel = 0x020E;
     private readonly MainViewModel viewModel = new();
     private IReadOnlyList<CompletionCandidate> allCompletionItems = [];
+    private CancellationTokenSource? completionCancellation;
     private CancellationTokenSource? completionDescriptionCancellation;
+    private CancellationTokenSource? signatureHelpCancellation;
+    private readonly DispatcherTimer signatureHelpTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
     private AssistMode assistMode;
     private int completionStart;
     private GridLength typeExplorerWidth = new(286);
@@ -42,7 +47,15 @@ public partial class MainWindow : Window
             if (args.Text == ")" && assistMode == AssistMode.Signature) HideAssist();
         };
         Editor.TextArea.Caret.PositionChanged += (_, _) =>
+        {
             viewModel.UpdateCursorPosition(Editor.TextArea.Caret.Line, Editor.TextArea.Caret.Column);
+            if (assistMode == AssistMode.Signature) ScheduleSignatureHelpRefresh();
+        };
+        signatureHelpTimer.Tick += async (_, _) =>
+        {
+            signatureHelpTimer.Stop();
+            await ShowSignatureHelpAsync();
+        };
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -57,8 +70,12 @@ public partial class MainWindow : Window
     {
         windowSource?.RemoveHook(WindowMessageHook);
         windowSource = null;
+        completionCancellation?.Cancel();
+        completionCancellation?.Dispose();
         completionDescriptionCancellation?.Cancel();
         completionDescriptionCancellation?.Dispose();
+        signatureHelpCancellation?.Cancel();
+        signatureHelpCancellation?.Dispose();
         await viewModel.DisposeAsync();
     }
 
@@ -280,6 +297,7 @@ public partial class MainWindow : Window
             "Inspect" => $"Data.Inspect(@\"{path}\")",
             "Preview" => $"Data.PreviewText(@\"{path}\", 65536)",
             "Lines" => $"Data.ReadLines(@\"{path}\").Take(100)",
+            "Json" => $"await Data.ReadJsonAsync(@\"{path}\")",
             "JsonArray" => $"await Data.ReadJsonArrayAsync(@\"{path}\", take: 100)",
             "JsonLines" => $"var rows = new List<JsonElement>();{Environment.NewLine}" +
                            $"await foreach (var row in Data.ReadJsonLinesAsync(@\"{path}\")){Environment.NewLine}" +
@@ -290,6 +308,120 @@ public partial class MainWindow : Window
         Editor.CaretOffset = Editor.Text.Length;
         FocusEditor();
     }
+
+    private void Editor_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = TryGetDroppedPaths(e.Data, out _) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void Editor_PreviewDrop(object sender, DragEventArgs e)
+    {
+        if (!TryGetDroppedPaths(e.Data, out var paths))
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
+        if (Editor.GetPositionFromPoint(e.GetPosition(Editor)) is { } position)
+            Editor.CaretOffset = Editor.Document.GetOffset(position.Location);
+        e.Effects = DragDropEffects.Copy;
+        e.Handled = true;
+        HideAssist();
+        Editor.Focus();
+
+        if (paths.Length > 1)
+        {
+            InsertDroppedSnippet(DataSnippetBuilder.CreatePathArray(paths));
+            viewModel.SetLocalizedStatus("Status.DroppedPaths", paths.Length);
+            return;
+        }
+        ShowDropActionMenu(paths[0]);
+    }
+
+    private void ShowDropActionMenu(string path)
+    {
+        var literal = DataSnippetBuilder.ToVerbatimStringLiteral(path);
+        var menu = new ContextMenu
+        {
+            PlacementTarget = Editor,
+            Placement = PlacementMode.MousePoint
+        };
+        menu.Items.Add(CreateDropAction("Drop.InsertPath", literal));
+        menu.Items.Add(new Separator());
+
+        if (Directory.Exists(path))
+        {
+            menu.Items.Add(CreateDropAction(
+                "Drop.EnumerateFiles",
+                $"System.IO.Directory.EnumerateFiles({literal})"));
+            menu.Items.Add(CreateDropAction(
+                "Drop.EnumerateFilesRecursive",
+                $"System.IO.Directory.EnumerateFiles({literal}, \"*\", System.IO.SearchOption.AllDirectories)"));
+        }
+        else
+        {
+            menu.Items.Add(CreateDropAction("Drop.FileInfo", $"Data.Inspect({literal})"));
+            var extension = Path.GetExtension(path);
+            if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                menu.Items.Add(CreateDropAction("Drop.ReadJson", $"await Data.ReadJsonAsync({literal})"));
+                menu.Items.Add(CreateDropAction("Drop.ReadJsonArray", $"await Data.ReadJsonArrayAsync({literal}, take: 100)"));
+            }
+            else if (extension.Equals(".jsonl", StringComparison.OrdinalIgnoreCase) ||
+                     extension.Equals(".ndjson", StringComparison.OrdinalIgnoreCase))
+            {
+                menu.Items.Add(CreateDropAction("Drop.ReadJsonLines", DataSnippetBuilder.CreateJsonLines(path)));
+            }
+
+            if (IsTextFile(extension))
+            {
+                menu.Items.Add(CreateDropAction("Drop.TextPreview", $"Data.PreviewText({literal}, 65536)"));
+                menu.Items.Add(CreateDropAction("Drop.ReadLines", $"Data.ReadLines({literal}).Take(100)"));
+            }
+            else
+            {
+                menu.Items.Add(CreateDropAction("Drop.ReadBytes", $"Data.ReadBytes({literal}, count: 65536)"));
+            }
+        }
+
+        menu.IsOpen = true;
+        viewModel.SetLocalizedStatus("Status.DropChooseAction");
+    }
+
+    private MenuItem CreateDropAction(string localizationKey, string snippet)
+    {
+        var item = new MenuItem { Header = viewModel.Localize(localizationKey) };
+        item.Click += (_, _) =>
+        {
+            InsertDroppedSnippet(snippet);
+            viewModel.SetLocalizedStatus("Status.DroppedPath");
+        };
+        return item;
+    }
+
+    private void InsertDroppedSnippet(string snippet)
+    {
+        var start = Editor.SelectionStart;
+        Editor.Document.Replace(start, Editor.SelectionLength, snippet);
+        Editor.CaretOffset = start + snippet.Length;
+        Editor.Focus();
+    }
+
+    private static bool TryGetDroppedPaths(IDataObject data, out string[] paths)
+    {
+        paths = data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] dropped
+            ? dropped.Where(static path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [];
+        return paths.Length > 0;
+    }
+
+    private static bool IsTextFile(string extension) => extension.ToLowerInvariant() is
+        ".txt" or ".log" or ".csv" or ".tsv" or ".md" or ".xml" or ".yaml" or ".yml" or
+        ".json" or ".jsonl" or ".ndjson" or ".cs" or ".csx";
 
     private void OpenSymbolDocumentation_Click(object sender, RoutedEventArgs e)
     {
@@ -397,14 +529,33 @@ public partial class MainWindow : Window
     {
         viewModel.InputText = Editor.Text;
         if (assistMode == AssistMode.Signature && !HasOpenArgumentList(Editor.Text, Editor.CaretOffset)) HideAssist();
+        else if (assistMode == AssistMode.Signature) ScheduleSignatureHelpRefresh();
         else if (assistMode == AssistMode.Completion) ApplyCompletionFilter();
     }
 
     private async Task ShowCompletionAsync()
     {
+        CancelSignatureHelpRefresh();
+        CancelCompletionRequest();
+        assistMode = AssistMode.None;
+        AssistPopup.IsOpen = false;
+        var cancellation = new CancellationTokenSource();
+        completionCancellation = cancellation;
         var requestText = Editor.Text;
         var requestOffset = Editor.CaretOffset;
-        var items = await viewModel.GetCompletionsAsync(requestOffset);
+        IReadOnlyList<CompletionCandidate> items;
+        try
+        {
+            items = await viewModel.GetCompletionsAsync(requestOffset, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        if (cancellation.IsCancellationRequested ||
+            Editor.CaretOffset < requestOffset ||
+            !Editor.Text.StartsWith(requestText, StringComparison.Ordinal))
+            return;
         allCompletionItems = items;
         completionStart = items.Select(static item => item.ReplacementStart).Distinct().SingleOrDefault()
             ?? FindCompletionStart(requestText, requestOffset);
@@ -417,22 +568,59 @@ public partial class MainWindow : Window
 
     private async Task ShowSignatureHelpAsync()
     {
-        var help = await viewModel.GetSignatureHelpAsync(Editor.CaretOffset);
+        CancelCompletionRequest();
+        signatureHelpTimer.Stop();
+        signatureHelpCancellation?.Cancel();
+        signatureHelpCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        signatureHelpCancellation = cancellation;
+        var requestText = Editor.Text;
+        var requestOffset = Editor.CaretOffset;
+        SignatureHelpResult? help;
+        try
+        {
+            help = await viewModel.GetSignatureHelpAsync(requestOffset, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        if (cancellation.IsCancellationRequested || requestText != Editor.Text || requestOffset != Editor.CaretOffset)
+            return;
         if (help is null)
         {
             HideAssist();
             return;
         }
-        var selectedSignature = CompletionList.SelectedItem as SignatureInformation;
+        assistMode = AssistMode.Signature;
         CompletionList.ItemsSource = help.Signatures;
         CompletionList.IsHitTestVisible = true;
         CompletionList.DisplayMemberPath = nameof(SignatureInformation.DisplayText);
-        CompletionList.SelectedItem = help.Signatures.FirstOrDefault(item => item.DisplayText == selectedSignature?.DisplayText);
-        if (CompletionList.SelectedIndex < 0) CompletionList.SelectedIndex = 0;
-        AssistHint.Text = viewModel.Localize("Assist.SignatureHint", help.Signatures.Count, help.ActiveParameter + 1);
+        CompletionList.SelectedIndex = Math.Clamp(help.SelectedSignature, 0, help.Signatures.Count - 1);
         AssistPopup.IsOpen = true;
-        assistMode = AssistMode.Signature;
         UpdateAssistSummary();
+    }
+
+    private void ScheduleSignatureHelpRefresh()
+    {
+        signatureHelpCancellation?.Cancel();
+        signatureHelpTimer.Stop();
+        signatureHelpTimer.Start();
+    }
+
+    private void CancelSignatureHelpRefresh()
+    {
+        signatureHelpTimer.Stop();
+        signatureHelpCancellation?.Cancel();
+        signatureHelpCancellation?.Dispose();
+        signatureHelpCancellation = null;
+    }
+
+    private void CancelCompletionRequest()
+    {
+        completionCancellation?.Cancel();
+        completionCancellation?.Dispose();
+        completionCancellation = null;
     }
 
     private async void CompletionList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -472,9 +660,11 @@ public partial class MainWindow : Window
         AssistPopup.IsOpen = false;
         CompletionList.ItemsSource = null;
         allCompletionItems = [];
+        CancelCompletionRequest();
         completionDescriptionCancellation?.Cancel();
         completionDescriptionCancellation?.Dispose();
         completionDescriptionCancellation = null;
+        CancelSignatureHelpRefresh();
         AssistSummary.Text = string.Empty;
         AssistHint.Text = string.Empty;
         assistMode = AssistMode.None;
@@ -523,7 +713,7 @@ public partial class MainWindow : Window
 
         if (assistMode == AssistMode.Signature && CompletionList.SelectedItem is SignatureInformation signature)
         {
-            ShowAssistSummary(signature.Summary);
+            ShowSignatureDocumentation(signature);
             return;
         }
         if (assistMode != AssistMode.Completion || CompletionList.SelectedItem is not CompletionCandidate candidate)
@@ -549,6 +739,34 @@ public partial class MainWindow : Window
         AssistSummary.Text = string.IsNullOrWhiteSpace(text)
             ? viewModel.Localize("Assist.NoDocumentation")
             : text;
+    }
+
+    private void ShowSignatureDocumentation(SignatureInformation signature)
+    {
+        if (signature.ActiveParameter < 0 || signature.ActiveParameter >= signature.Parameters.Count)
+        {
+            AssistHint.Text = viewModel.Localize("Assist.SignatureHintNoParameter", CompletionList.Items.Count);
+            ShowAssistSummary(signature.Summary);
+            return;
+        }
+
+        var parameter = signature.Parameters[signature.ActiveParameter];
+        AssistHint.Text = viewModel.Localize(
+            "Assist.SignatureHint",
+            CompletionList.Items.Count,
+            signature.ActiveParameter + 1,
+            signature.Parameters.Count,
+            parameter.Name);
+        var parameterDocumentation = string.IsNullOrWhiteSpace(parameter.Summary)
+            ? viewModel.Localize("Assist.NoParameterDocumentation")
+            : parameter.Summary;
+        var parts = new[]
+        {
+            signature.Summary,
+            viewModel.Localize("Assist.ActiveParameter", parameter.TypeName, parameter.Name),
+            parameterDocumentation
+        }.Where(static part => !string.IsNullOrWhiteSpace(part));
+        ShowAssistSummary(string.Join(Environment.NewLine + Environment.NewLine, parts));
     }
 
     private static int FindCompletionStart(string text, int caretOffset)
@@ -607,6 +825,19 @@ public partial class MainWindow : Window
     {
         if (sender is FrameworkElement { DataContext: TranscriptLine { Snapshot: { } snapshot } })
             new ResultInspectorWindow(snapshot) { Owner = this }.Show();
+    }
+
+    private async void CopyTranscriptLine_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TranscriptLine line }) return;
+        try
+        {
+            Clipboard.SetText(await Task.Run(() => line.CopyText));
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
     }
 
     private void ConsoleSurface_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>

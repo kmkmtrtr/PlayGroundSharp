@@ -329,16 +329,23 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         return historyPosition == history.Count ? string.Empty : history[historyPosition];
     }
 
-    public Task<IReadOnlyList<CompletionCandidate>> GetCompletionsAsync(int position)
+    public Task<IReadOnlyList<CompletionCandidate>> GetCompletionsAsync(
+        int position,
+        CancellationToken cancellationToken = default)
     {
         var context = Context;
         var code = InputText;
         var offset = Math.Clamp(position, 0, code.Length);
-        if (code.TrimStart().StartsWith(':')) return GetCommandCompletionsAsync(context, code);
-        return Task.Run(() => languageService.GetCompletionsAsync(context, code, offset));
+        if (code.TrimStart().StartsWith(':')) return GetCommandCompletionsAsync(context, code, cancellationToken);
+        return Task.Run(
+            () => languageService.GetCompletionsAsync(context, code, offset, cancellationToken),
+            cancellationToken);
     }
 
-    private Task<IReadOnlyList<CompletionCandidate>> GetCommandCompletionsAsync(SessionContext context, string code) => Task.Run(() =>
+    private Task<IReadOnlyList<CompletionCandidate>> GetCommandCompletionsAsync(
+        SessionContext context,
+        string code,
+        CancellationToken cancellationToken) => Task.Run(() =>
     {
         var candidates = Commands.Select(static command => new CompletionCandidate(
             command, command, command, ["Command"], command, ReplacementStart: 0)).ToList();
@@ -361,7 +368,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }));
         }
         return (IReadOnlyList<CompletionCandidate>)candidates;
-    });
+    }, cancellationToken);
 
     public Task<string?> GetCompletionDescriptionAsync(int position, CompletionCandidate candidate, CancellationToken cancellationToken)
     {
@@ -377,12 +384,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             cancellationToken);
     }
 
-    public Task<SignatureHelpResult?> GetSignatureHelpAsync(int position)
+    public Task<SignatureHelpResult?> GetSignatureHelpAsync(int position, CancellationToken cancellationToken = default)
     {
         var context = Context;
         var code = InputText;
         var offset = Math.Clamp(position, 0, code.Length);
-        return Task.Run(() => languageService.GetSignatureHelpAsync(context, code, offset));
+        return Task.Run(
+            () => languageService.GetSignatureHelpAsync(context, code, offset, cancellationToken),
+            cancellationToken);
     }
 
     public Task<QuickInfoResult?> GetQuickInfoAsync(int position)
@@ -535,7 +544,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 break;
             case MessageKinds.Result:
                 var result = envelope.ReadPayload<ResultEvent>();
-                Transcript.Add(TranscriptLine.Output(result.SubmissionIndex, FormatSnapshot(result.Snapshot), result.Snapshot));
+                Transcript.Add(TranscriptLine.Output(result.SubmissionIndex, FormatResultSnapshot(result.Snapshot), result.Snapshot));
                 break;
             case MessageKinds.RuntimeError:
                 var exception = envelope.ReadPayload<RuntimeErrorEvent>().Exception;
@@ -958,10 +967,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private string FormatResultSnapshot(ResultSnapshot snapshot)
+    {
+        var preview = SnapshotTextFormatter.FormatPreview(snapshot);
+        var notices = new List<string>();
+        if (preview.IsLimited) notices.Add(Localize("Output.PreviewLimited"));
+        if (snapshot.IsTruncated) notices.Add(Localize("Output.CaptureLimited"));
+        return notices.Count == 0
+            ? preview.Text
+            : preview.Text + Environment.NewLine + string.Join(Environment.NewLine, notices);
+    }
+
     private static string FormatSnapshot(ResultSnapshot snapshot)
     {
-        var suffix = snapshot.IsTruncated ? " … (truncated)" : string.Empty;
-        return (snapshot.Display ?? snapshot.Kind.ToString()) + suffix;
+        return SnapshotTextFormatter.FormatCompact(snapshot);
     }
 
     public async ValueTask DisposeAsync()

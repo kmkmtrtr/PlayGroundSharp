@@ -32,6 +32,7 @@ public sealed class CSharpLanguageServiceTests
 
         Assert.Contains(items, static item => item.DisplayText == "PreviewText");
         Assert.Contains(items, static item => item.DisplayText == "ReadLines");
+        Assert.Contains(items, static item => item.DisplayText == "ReadJsonAsync");
         Assert.Contains(items, static item => item.DisplayText == "ReadJsonArrayAsync");
     }
 
@@ -44,6 +45,19 @@ public sealed class CSharpLanguageServiceTests
 
         Assert.Contains(items, static item => item.DisplayText == "Length");
         Assert.Contains(items, static item => item.DisplayText == "Contains");
+    }
+
+    [Fact]
+    public async Task CompletesInnerExpressionInsideMethodArguments()
+    {
+        var context = new SessionContext(["var innerText = \"hello\""], SessionContext.DefaultImports, []);
+        const string code = "Console.WriteLine(innerText.";
+
+        var items = await service.GetCompletionsAsync(context, code, code.Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "Length");
+        Assert.Contains(items, static item => item.DisplayText == "Contains");
+        Assert.DoesNotContain(items, static item => item.DisplayText == "WriteLine");
     }
 
     [Fact]
@@ -76,7 +90,63 @@ public sealed class CSharpLanguageServiceTests
         Assert.NotNull(signature);
         Assert.Contains(signature.Signatures, static item => item.DisplayText.Contains("Join", StringComparison.Ordinal));
         Assert.Contains(signature.Signatures, static item => !string.IsNullOrWhiteSpace(item.Summary));
+        Assert.All(signature.Signatures, static item => Assert.True(item.ActiveParameter is -1 or 0));
         Assert.Contains(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public async Task TracksActiveSignatureParameterFromCaretPosition()
+    {
+        var context = new SessionContext(
+            ["int Combine(int first, int second, int third, int fourth) => first + second + third + fourth"],
+            SessionContext.DefaultImports,
+            []);
+        const string code = "Combine(10, 20, 30, 40)";
+
+        foreach (var (text, expectedParameter) in new[] { ("10", 0), ("30", 2), ("40", 3), ("20", 1) })
+        {
+            var help = await service.GetSignatureHelpAsync(
+                context, code, code.IndexOf(text, StringComparison.Ordinal) + 1);
+
+            Assert.NotNull(help);
+            Assert.Equal(expectedParameter, help.Signatures[help.SelectedSignature].ActiveParameter);
+        }
+    }
+
+    [Fact]
+    public async Task ReturnsActiveParameterDocumentation()
+    {
+        const string code = "\"text\".Contains(\"value\")";
+
+        var help = await service.GetSignatureHelpAsync(
+            SessionContext.Empty, code, code.IndexOf("value", StringComparison.Ordinal) + 2);
+
+        Assert.NotNull(help);
+        var signature = help.Signatures[help.SelectedSignature];
+        var parameter = signature.Parameters[signature.ActiveParameter];
+        Assert.Equal("value", parameter.Name);
+        Assert.NotEmpty(parameter.Summary);
+    }
+
+    [Fact]
+    public async Task SelectsOverloadCompatibleWithEnteredArguments()
+    {
+        var context = new SessionContext(
+            [
+                "string FormatValue(int value, string suffix) => value + suffix",
+                "string FormatValue(string value, bool trim) => trim ? value.Trim() : value"
+            ],
+            SessionContext.DefaultImports,
+            []);
+        const string code = "FormatValue(42, ";
+
+        var help = await service.GetSignatureHelpAsync(context, code, code.Length);
+
+        Assert.NotNull(help);
+        var selected = help.Signatures[help.SelectedSignature];
+        Assert.Contains("int value", selected.DisplayText, StringComparison.Ordinal);
+        Assert.Contains("string suffix", selected.DisplayText, StringComparison.Ordinal);
+        Assert.Equal("suffix", selected.Parameters[selected.ActiveParameter].Name);
     }
 
     [Fact]

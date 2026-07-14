@@ -25,11 +25,24 @@ public sealed class ResultSnapshotFactoryTests
         var node = new Node();
         node.Next = node;
         var cycle = factory.Create(node);
-        var sequence = factory.Create(Enumerable.Range(1, 101));
+        var sequence = factory.Create(Enumerable.Range(1, ResultSnapshotFactory.MaximumItems + 1));
 
         Assert.Equal(SnapshotKind.Circular, cycle.Properties?.Single().Value.Kind);
-        Assert.Equal(100, sequence.Items?.Count);
+        Assert.Equal(ResultSnapshotFactory.MaximumItems, sequence.Items?.Count);
         Assert.True(sequence.IsTruncated);
+    }
+
+    [Fact]
+    public void PreservesJsonAndNestedArrayStructure()
+    {
+        var snapshot = factory.Create(JsonNode.Parse("{\"name\":\"Ada\",\"matrix\":[[1,2],[3,4]]}"));
+
+        Assert.Equal(SnapshotKind.Json, snapshot.Kind);
+        Assert.Equal(2, snapshot.TotalCount);
+        var matrix = Assert.Single(snapshot.Properties!, static property => property.Name == "matrix").Value;
+        Assert.Equal(2, matrix.Items?.Count);
+        Assert.Equal(["1", "2"], matrix.Items![0].Items!.Select(static item => item.Display));
+        Assert.False(snapshot.IsTruncated);
     }
 
     [Fact]

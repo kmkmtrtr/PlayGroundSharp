@@ -32,6 +32,7 @@ public sealed partial class HelpViewModel : ObservableObject
         [
             new("キー操作", "EnterまたはCtrl+Enterで実行します（設定で変更可能）。Ctrl+Spaceで補完、Tabで明示選択、Escで閉じます。Shift+EnterまたはEnterで改行します。補完Popup中央の境界をドラッグすると候補とドキュメントの幅を変更できます。"),
             new("履歴", "一行入力で上下キーを押すと履歴を移動します。過去の入力行をクリックして現在の入力へコピーできます。"),
+            new("ファイルとフォルダのドロップ", "入力欄へドロップすると操作メニューを表示します。パス挿入、JSONやテキストの読み込みコード、フォルダ内ファイルの列挙を選べます。コードを自動実行することはありません。複数パスは配列として挿入します。"),
             new("補完の確定", "候補は入力内容に応じて絞り込まれます。Enterでは候補を確定せず、Tabまたはダブルクリックだけで挿入します。")
         ]),
         new("シンボル", "名前空間、型、メソッドとドキュメントを探索します。",
@@ -49,7 +50,8 @@ public sealed partial class HelpViewModel : ObservableObject
         new("大容量データ", "巨大なファイル全体を不用意にメモリへ載せないためのDataヘルパーです。",
         [
             new("確認とプレビュー", "Inspectは内容を読まずサイズを返します。PreviewTextとReadBytesは最大1 MiBに制限されます。", "Data.Inspect(@\"C:\\data\\large.json\")\nData.PreviewText(@\"C:\\data\\large.log\", 65536)"),
-            new("行ストリーム", "ReadLinesは遅延列挙です。Takeなどで件数を絞ってください。結果表示側も最大100件で打ち切ります。", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)"),
+            new("行ストリーム", "ReadLinesは遅延列挙です。Takeなどで件数を絞ってください。", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)"),
+            new("JSON", "オブジェクト、配列、スカラーを含む1つのJSON値を読み込みます。結果の［詳細］からツリー表示とコピーを利用できます。", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
             new("JSON配列", "トップレベル配列をストリーム解析し、指定件数だけ保持します。takeは最大10,000件です。", "await Data.ReadJsonArrayAsync(@\"C:\\data\\large.json\", take: 100)"),
             new("JSON Lines", "一行一JSONを非同期列挙します。必要な件数でbreakしてください。", "var rows = new List<JsonElement>();\nawait foreach (var row in Data.ReadJsonLinesAsync(@\"C:\\data\\events.jsonl\"))\n{\n    rows.Add(row);\n    if (rows.Count == 100) break;\n}\nrows")
         ]),
@@ -75,6 +77,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Input and IntelliSense", "Completion and diagnostics use the current session state.",
         [
             new("Keys", "Run with Enter or Ctrl+Enter as configured. Ctrl+Space opens completion, Tab explicitly accepts, and Esc closes it. Completion is never accepted by Enter. Drag the center divider to resize completion items and documentation."),
+            new("Dropping files and folders", "Drop onto the input editor to choose between inserting a path, generating data-reading code, or enumerating a folder. Nothing is executed automatically. Multiple paths are inserted as an array."),
             new("History", "Use Up and Down on a single line, or click a prior input to copy it into the editor.")
         ]),
         new("Symbol explorer", "Browse namespaces, types, methods, and XML documentation.",
@@ -90,6 +93,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Large files and JSON", "Data helpers avoid loading entire files by default.",
         [
             new("Preview", "PreviewText and ReadBytes are bounded to 1 MiB.", "Data.Inspect(@\"C:\\data\\large.json\")\nData.PreviewText(@\"C:\\data\\large.log\")"),
+            new("JSON", "ReadJsonAsync loads one complete JSON object, array, or scalar. Inspect the result to browse and copy its structure.", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
             new("Streaming", "ReadLines is lazy. JSON arrays and JSON Lines are parsed incrementally.", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)\nawait Data.ReadJsonArrayAsync(@\"C:\\data\\large.json\", 100)")
         ]),
         new("Dependencies", "Add NuGet packages, DLLs, and usings to execution and IntelliSense.",

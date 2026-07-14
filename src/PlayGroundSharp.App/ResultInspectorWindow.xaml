@@ -10,7 +10,20 @@
             <RowDefinition Height="8" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <TextBlock Text="{DynamicResource Inspector.Snapshot}" Foreground="{DynamicResource MutedBrush}" Margin="2,0,0,8" />
+        <DockPanel Margin="2,0,0,8">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <Button Content="{DynamicResource Inspector.Expand}" Style="{StaticResource MiniButtonStyle}"
+                        Click="ExpandSelected_Click" Margin="4,0,0,0" />
+                <Button Content="{DynamicResource Inspector.Collapse}" Style="{StaticResource MiniButtonStyle}"
+                        Click="CollapseSelected_Click" Margin="4,0,0,0" />
+                <Button Content="{DynamicResource Inspector.CopySelected}" Style="{StaticResource MiniButtonStyle}"
+                        Click="CopySelected_Click" Margin="12,0,0,0" />
+                <Button Content="{DynamicResource Inspector.CopyAll}" Style="{StaticResource MiniButtonStyle}"
+                        Click="CopyAll_Click" Margin="4,0,0,0" />
+            </StackPanel>
+            <TextBlock Text="{DynamicResource Inspector.Snapshot}" Foreground="{DynamicResource MutedBrush}"
+                       VerticalAlignment="Center" />
+        </DockPanel>
         <TreeView x:Name="SnapshotTree" Grid.Row="1" ItemsSource="{Binding Roots}"
                   Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                   BorderBrush="{DynamicResource BorderBrush}" SelectedItemChanged="SnapshotTree_SelectedItemChanged">
@@ -20,6 +33,11 @@
                     <TextBlock Text="{Binding Label}" FontFamily="Cascadia Mono,Consolas" />
                 </HierarchicalDataTemplate>
             </TreeView.Resources>
+            <TreeView.ItemContainerStyle>
+                <Style TargetType="TreeViewItem">
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                </Style>
+            </TreeView.ItemContainerStyle>
         </TreeView>
         <TextBox x:Name="DetailText" Grid.Row="3" IsReadOnly="True" TextWrapping="Wrap"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"

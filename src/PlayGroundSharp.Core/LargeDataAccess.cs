@@ -14,6 +14,18 @@ public sealed class LargeDataAccess
     public const int MaximumByteReadCount = 1_048_576;
     public const int MaximumJsonItemCount = 10_000;
 
+    /// <summary>Reads one complete JSON value such as an object, scalar, or array.</summary>
+    public async Task<JsonElement> ReadJsonAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        var file = GetFile(path);
+        await using var stream = file.OpenRead();
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return document.RootElement.Clone();
+    }
+
     /// <summary>Returns metadata for an existing file without loading its content.</summary>
     public FileProbe Inspect(string path)
     {

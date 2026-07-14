@@ -14,9 +14,11 @@ public sealed class LargeDataAccessTests : IDisposable
     {
         var textPath = Path.Combine(directory, "sample.txt");
         var jsonPath = Path.Combine(directory, "array.json");
+        var jsonObjectPath = Path.Combine(directory, "object.json");
         var jsonLinesPath = Path.Combine(directory, "items.jsonl");
         await File.WriteAllTextAsync(textPath, "alpha\nbeta\ngamma");
         await File.WriteAllTextAsync(jsonPath, "[{\"id\":1},{\"id\":2},{\"id\":3}]");
+        await File.WriteAllTextAsync(jsonObjectPath, "{\"name\":\"Ada\",\"scores\":[10,20]}");
         await File.WriteAllTextAsync(jsonLinesPath, "{\"id\":4}\n{\"id\":5}\n");
         var data = new LargeDataAccess();
 
@@ -24,6 +26,7 @@ public sealed class LargeDataAccessTests : IDisposable
         var preview = data.PreviewText(textPath, 5);
         var lines = data.ReadLines(textPath).Take(2).ToArray();
         var array = await data.ReadJsonArrayAsync(jsonPath, 2);
+        var jsonObject = await data.ReadJsonAsync(jsonObjectPath);
         var jsonLines = new List<JsonElement>();
         await foreach (var item in data.ReadJsonLinesAsync(jsonLinesPath)) jsonLines.Add(item);
 
@@ -31,6 +34,8 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Equal("alpha", preview);
         Assert.Equal(["alpha", "beta"], lines);
         Assert.Equal([1, 2], array.Select(static item => item.GetProperty("id").GetInt32()));
+        Assert.Equal("Ada", jsonObject.GetProperty("name").GetString());
+        Assert.Equal([10, 20], jsonObject.GetProperty("scores").EnumerateArray().Select(static item => item.GetInt32()));
         Assert.Equal([4, 5], jsonLines.Select(static item => item.GetProperty("id").GetInt32()));
     }
 
@@ -45,6 +50,19 @@ public sealed class LargeDataAccessTests : IDisposable
             data.ReadBytes(path, count: LargeDataAccess.MaximumByteReadCount + 1));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             data.PreviewText(path, LargeDataAccess.MaximumPreviewCharacters + 1));
+    }
+
+    [Fact]
+    public void BuildsSafePathAndJsonLinesSnippets()
+    {
+        var literal = DataSnippetBuilder.ToVerbatimStringLiteral("C:\\data\\a\"b.jsonl");
+        var array = DataSnippetBuilder.CreatePathArray(["C:\\one.txt", "D:\\two.json"]);
+        var jsonLines = DataSnippetBuilder.CreateJsonLines("C:\\data\\a\"b.jsonl");
+
+        Assert.Equal("@\"C:\\data\\a\"\"b.jsonl\"", literal);
+        Assert.Contains("@\"C:\\one.txt\"", array, StringComparison.Ordinal);
+        Assert.Contains("@\"D:\\two.json\"", array, StringComparison.Ordinal);
+        Assert.Contains($"ReadJsonLinesAsync({literal})", jsonLines, StringComparison.Ordinal);
     }
 
     public void Dispose()

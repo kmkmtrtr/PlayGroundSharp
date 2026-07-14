@@ -9,16 +9,20 @@ public sealed record TranscriptLine(
     Brush PrefixBrush,
     Brush TextBrush,
     string? InputCode = null,
-    ResultSnapshot? Snapshot = null)
+    ResultSnapshot? Snapshot = null,
+    string? CopyValue = null)
 {
     public bool IsInspectable => Snapshot is not null;
     public bool IsInput => InputCode is not null;
+    public bool IsCopyable => Snapshot is not null || CopyValue is not null;
+    public string CopyText => CopyValue ?? (Snapshot is null ? Text : SnapshotTextFormatter.FormatFull(Snapshot));
 
     public static TranscriptLine Input(int index, string code) => new(">", code, Resource("AccentBrush"), Resource("ForegroundBrush"), code);
     public static TranscriptLine Output(int index, string text, ResultSnapshot snapshot) =>
         new(string.Empty, text, Brushes.Transparent, Resource("ForegroundBrush"), Snapshot: snapshot);
     public static TranscriptLine Console(string text, bool error) => new(error ? "!" : "│", text.TrimEnd(),
-        Resource(error ? "ErrorBrush" : "MutedBrush"), Resource(error ? "ErrorBrush" : "MutedBrush"));
+        Resource(error ? "ErrorBrush" : "MutedBrush"), Resource(error ? "ErrorBrush" : "MutedBrush"),
+        CopyValue: text.TrimEnd());
     public static TranscriptLine Diagnostic(string text, bool error = true) => new(error ? "×" : "⚠", text,
         Resource(error ? "ErrorBrush" : "WarningBrush"), Resource(error ? "ErrorBrush" : "WarningBrush"));
     public static TranscriptLine System(string text) => new("·", text, Resource("MutedBrush"), Resource("MutedBrush"));

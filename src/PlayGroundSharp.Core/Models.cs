@@ -24,7 +24,8 @@ public sealed record ResultSnapshot(
     string? TypeName,
     IReadOnlyList<ResultProperty>? Properties = null,
     IReadOnlyList<ResultSnapshot>? Items = null,
-    bool IsTruncated = false);
+    bool IsTruncated = false,
+    int? TotalCount = null);
 
 public sealed record ResultProperty(string Name, ResultSnapshot Value);
 

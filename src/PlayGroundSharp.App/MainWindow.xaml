@@ -82,6 +82,7 @@
                         <MenuItem Header="{DynamicResource Menu.PreviewText}" Tag="Preview" Click="InsertDataSnippet_Click" />
                         <MenuItem Header="{DynamicResource Menu.ReadLines}" Tag="Lines" Click="InsertDataSnippet_Click" />
                         <Separator />
+                        <MenuItem Header="{DynamicResource Menu.ReadJson}" Tag="Json" Click="InsertDataSnippet_Click" />
                         <MenuItem Header="{DynamicResource Menu.ReadJsonArray}" Tag="JsonArray" Click="InsertDataSnippet_Click" />
                         <MenuItem Header="{DynamicResource Menu.ReadJsonLines}" Tag="JsonLines" Click="InsertDataSnippet_Click" />
                     </MenuItem>
@@ -330,9 +331,14 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <Button Grid.Column="2" Content="{DynamicResource Ui.Inspect}" Style="{StaticResource MiniButtonStyle}" Margin="8,0,0,0"
-                                        Visibility="{Binding IsInspectable, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                        Click="InspectResult_Click" />
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
+                                    <Button Content="{DynamicResource Ui.Copy}" Style="{StaticResource MiniButtonStyle}"
+                                            Visibility="{Binding IsCopyable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                            Click="CopyTranscriptLine_Click" />
+                                    <Button Content="{DynamicResource Ui.Inspect}" Style="{StaticResource MiniButtonStyle}" Margin="4,0,0,0"
+                                            Visibility="{Binding IsInspectable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                            Click="InspectResult_Click" />
+                                </StackPanel>
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -347,6 +353,7 @@
                                    FontFamily="Cascadia Mono,Consolas" FontSize="14" ShowLineNumbers="False"
                                    Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" CaretOffset="0"
                                    Padding="0,2" BorderThickness="0"
+                                   AllowDrop="True" PreviewDragOver="Editor_PreviewDragOver" PreviewDrop="Editor_PreviewDrop"
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                    PreviewKeyDown="Editor_PreviewKeyDown" TextChanged="Editor_TextChanged"
                                    MouseHover="Editor_MouseHover" />

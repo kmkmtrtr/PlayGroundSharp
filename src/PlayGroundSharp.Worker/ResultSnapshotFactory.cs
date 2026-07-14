@@ -12,10 +12,16 @@ namespace PlayGroundSharp.Worker;
 public sealed class ResultSnapshotFactory
 {
     public const int MaximumDepth = 10;
-    public const int MaximumItems = 100;
-    public const int MaximumStringLength = 1024 * 1024;
+    public const int MaximumItems = 10_000;
+    public const int MaximumNodes = 50_000;
+    public const int MaximumStringLength = 10 * 1024 * 1024;
+    public const int MaximumTextCharacters = 10 * 1024 * 1024;
 
-    public ResultSnapshot Create(object? value) => Create(value, 0, new HashSet<object>(ReferenceComparer.Instance));
+    public ResultSnapshot Create(object? value) => Create(
+        value,
+        0,
+        new HashSet<object>(ReferenceComparer.Instance),
+        new SnapshotBudget(MaximumNodes, MaximumTextCharacters));
 
     public static ExceptionInfo CreateException(Exception exception) => new(
         exception.GetType().FullName ?? exception.GetType().Name,
@@ -23,8 +29,10 @@ public sealed class ResultSnapshotFactory
         exception.StackTrace,
         exception.InnerException is null ? null : CreateException(exception.InnerException));
 
-    private ResultSnapshot Create(object? value, int depth, HashSet<object> path)
+    private ResultSnapshot Create(object? value, int depth, HashSet<object> path, SnapshotBudget budget)
     {
+        if (!budget.TryTakeNode())
+            return new(SnapshotKind.MaxDepth, "… snapshot limit reached", null, IsTruncated: true);
         if (value is null)
         {
             return new(SnapshotKind.Null, "null", null);
@@ -34,8 +42,8 @@ public sealed class ResultSnapshotFactory
         var typeName = type.FullName ?? type.Name;
         if (value is string text)
         {
-            var truncated = text.Length > MaximumStringLength;
-            return new(SnapshotKind.String, truncated ? text[..MaximumStringLength] : text, typeName, IsTruncated: truncated);
+            var display = budget.TakeText(text, MaximumStringLength, out var truncated);
+            return new(SnapshotKind.String, display, typeName, IsTruncated: truncated);
         }
         if (value is bool boolean)
         {
@@ -59,11 +67,11 @@ public sealed class ResultSnapshotFactory
         }
         if (value is JsonElement element)
         {
-            return new(SnapshotKind.Json, JsonSerializer.Serialize(element, new JsonSerializerOptions { WriteIndented = true }), typeName);
+            return CreateJsonElement(element, typeName, depth, budget, nodeAlreadyTaken: true);
         }
         if (value is JsonNode node)
         {
-            return new(SnapshotKind.Json, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), typeName);
+            return CreateJsonElement(JsonSerializer.SerializeToElement(node), typeName, depth, budget, nodeAlreadyTaken: true);
         }
         if (value is Exception exception)
         {
@@ -85,16 +93,19 @@ public sealed class ResultSnapshotFactory
         {
             if (value is IEnumerable enumerable)
             {
-                return CreateSequence(enumerable, typeName, depth, path);
+                return CreateSequence(enumerable, typeName, depth, path, budget);
             }
 
             var properties = new List<ResultProperty>();
-            foreach (var property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
-                         .Where(static property => property.GetIndexParameters().Length == 0))
+            var readableProperties = type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Where(static property => property.GetIndexParameters().Length == 0)
+                .ToArray();
+            foreach (var property in readableProperties)
             {
+                if (!budget.CanTakeNode) break;
                 try
                 {
-                    properties.Add(new(property.Name, Create(property.GetValue(value), depth + 1, path)));
+                    properties.Add(new(property.Name, Create(property.GetValue(value), depth + 1, path, budget)));
                 }
                 catch (Exception error) when (error is TargetInvocationException or MethodAccessException)
                 {
@@ -102,7 +113,13 @@ public sealed class ResultSnapshotFactory
                 }
             }
 
-            return new(SnapshotKind.Object, value.ToString(), typeName, properties);
+            return new(
+                SnapshotKind.Object,
+                $"{readableProperties.Length} properties",
+                typeName,
+                properties,
+                IsTruncated: properties.Count < readableProperties.Length,
+                TotalCount: readableProperties.Length);
         }
         finally
         {
@@ -113,28 +130,109 @@ public sealed class ResultSnapshotFactory
         }
     }
 
-    private ResultSnapshot CreateSequence(IEnumerable enumerable, string typeName, int depth, HashSet<object> path)
+    private ResultSnapshot CreateSequence(
+        IEnumerable enumerable,
+        string typeName,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
     {
         var items = new List<ResultSnapshot>();
-        var truncated = false;
+        var totalCount = enumerable is ICollection collection ? collection.Count : (int?)null;
         var enumerator = enumerable.GetEnumerator();
         try
         {
-            while (items.Count < MaximumItems && enumerator.MoveNext())
+            while (items.Count < MaximumItems && budget.CanTakeNode && enumerator.MoveNext())
             {
-                items.Add(Create(enumerator.Current, depth + 1, path));
+                items.Add(Create(enumerator.Current, depth + 1, path, budget));
             }
-            if (items.Count == MaximumItems && enumerator.MoveNext())
-            {
-                truncated = true;
-            }
+            var truncated = totalCount is { } count
+                ? items.Count < count
+                : !budget.CanTakeNode || items.Count == MaximumItems && enumerator.MoveNext();
+            return new(
+                SnapshotKind.Sequence,
+                totalCount is { } knownCount ? $"{knownCount:N0} items" : $"{items.Count:N0} captured items",
+                typeName,
+                Items: items,
+                IsTruncated: truncated,
+                TotalCount: totalCount);
         }
         finally
         {
             (enumerator as IDisposable)?.Dispose();
         }
+    }
 
-        return new(SnapshotKind.Sequence, $"[{string.Join(", ", items.Select(static item => item.Display))}]", typeName, Items: items, IsTruncated: truncated);
+    private ResultSnapshot CreateJsonElement(
+        JsonElement element,
+        string typeName,
+        int depth,
+        SnapshotBudget budget,
+        bool nodeAlreadyTaken = false)
+    {
+        if (!nodeAlreadyTaken && !budget.TryTakeNode())
+            return new(SnapshotKind.MaxDepth, "… snapshot limit reached", typeName, IsTruncated: true);
+        if (depth >= MaximumDepth && element.ValueKind is JsonValueKind.Array or JsonValueKind.Object)
+            return new(SnapshotKind.MaxDepth, "…", typeName, IsTruncated: true);
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+            {
+                var propertyCount = element.EnumerateObject().Count();
+                var properties = new List<ResultProperty>(Math.Min(propertyCount, 256));
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (!budget.CanTakeNode) break;
+                    properties.Add(new(property.Name,
+                        CreateJsonElement(property.Value, typeName, depth + 1, budget)));
+                }
+                return new(
+                    SnapshotKind.Json,
+                    $"{propertyCount:N0} properties",
+                    typeName,
+                    properties,
+                    IsTruncated: properties.Count < propertyCount,
+                    TotalCount: propertyCount);
+            }
+            case JsonValueKind.Array:
+            {
+                var itemCount = element.GetArrayLength();
+                var items = new List<ResultSnapshot>(Math.Min(itemCount, 256));
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (items.Count >= MaximumItems || !budget.CanTakeNode) break;
+                    items.Add(CreateJsonElement(item, typeName, depth + 1, budget));
+                }
+                return new(
+                    SnapshotKind.Json,
+                    $"{itemCount:N0} items",
+                    typeName,
+                    Items: items,
+                    IsTruncated: items.Count < itemCount,
+                    TotalCount: itemCount);
+            }
+            case JsonValueKind.String:
+            {
+                var text = element.GetString() ?? string.Empty;
+                return new(
+                    SnapshotKind.String,
+                    budget.TakeText(text, MaximumStringLength, out var truncated),
+                    typeName,
+                    IsTruncated: truncated);
+            }
+            case JsonValueKind.Number:
+                return new(SnapshotKind.Number, element.GetRawText(), typeName);
+            case JsonValueKind.True:
+                return new(SnapshotKind.Boolean, "true", typeName);
+            case JsonValueKind.False:
+                return new(SnapshotKind.Boolean, "false", typeName);
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return new(SnapshotKind.Null, "null", typeName);
+            default:
+                return new(SnapshotKind.Json, element.GetRawText(), typeName);
+        }
     }
 
     private static bool IsNumber(Type type) => Type.GetTypeCode(type) is
@@ -146,5 +244,25 @@ public sealed class ResultSnapshotFactory
         public static ReferenceComparer Instance { get; } = new();
         public new bool Equals(object? left, object? right) => ReferenceEquals(left, right);
         public int GetHashCode(object value) => RuntimeHelpers.GetHashCode(value);
+    }
+
+    private sealed class SnapshotBudget(int remainingNodes, int remainingTextCharacters)
+    {
+        public bool CanTakeNode => remainingNodes > 0;
+
+        public bool TryTakeNode()
+        {
+            if (remainingNodes <= 0) return false;
+            remainingNodes--;
+            return true;
+        }
+
+        public string TakeText(string value, int perValueMaximum, out bool truncated)
+        {
+            var length = Math.Min(value.Length, Math.Min(perValueMaximum, remainingTextCharacters));
+            remainingTextCharacters -= length;
+            truncated = length < value.Length;
+            return length == value.Length ? value : value[..length];
+        }
     }
 }

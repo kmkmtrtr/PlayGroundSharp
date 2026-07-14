@@ -27,8 +27,13 @@ public sealed record CompletionCandidate(
     public string TextToInsert => InsertionText ?? DisplayText;
 }
 public sealed record QuickInfoResult(string Text);
-public sealed record SignatureInformation(string DisplayText, string Summary);
-public sealed record SignatureHelpResult(IReadOnlyList<SignatureInformation> Signatures, int ActiveParameter);
+public sealed record SignatureParameterInformation(string Name, string TypeName, string Summary);
+public sealed record SignatureInformation(
+    string DisplayText,
+    string Summary,
+    IReadOnlyList<SignatureParameterInformation> Parameters,
+    int ActiveParameter);
+public sealed record SignatureHelpResult(IReadOnlyList<SignatureInformation> Signatures, int SelectedSignature);
 
 /// <summary>Describes one documented parameter on an explorer method.</summary>
 public sealed record ExplorerParameterInfo(string Name, string TypeName, string Summary);
@@ -184,21 +189,186 @@ public sealed class CSharpLanguageService
         var model = await workspaceDocument.Document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
         if (root is null || model is null) return null;
         var absolutePosition = workspaceDocument.CurrentOffset + position;
-        var token = root.FindToken(Math.Max(0, Math.Min(absolutePosition, root.FullSpan.End - 1)));
-        var invocation = token.Parent?.AncestorsAndSelf().OfType<InvocationExpressionSyntax>().FirstOrDefault();
+        var invocation = FindInvocationAtPosition(root, absolutePosition);
         if (invocation is null) return null;
-        var symbols = model.GetMemberGroup(invocation.Expression, cancellationToken)
+        var methods = model.GetMemberGroup(invocation.Expression, cancellationToken)
             .OfType<IMethodSymbol>()
-            .Select(method => new SignatureInformation(
-                method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                GetDocumentationSummary(method, cancellationToken)))
-            .DistinctBy(static item => item.DisplayText, StringComparer.Ordinal)
+            .Distinct<IMethodSymbol>(SymbolEqualityComparer.Default)
             .ToArray();
-        if (symbols.Length == 0) return null;
-        var activeParameter = invocation.ArgumentList.Arguments.Count;
-        if (invocation.ArgumentList.Arguments.LastOrDefault()?.Span.Contains(absolutePosition) == true)
-            activeParameter = Math.Max(0, activeParameter - 1);
-        return new(symbols, activeParameter);
+        if (methods.Length == 0) return null;
+
+        var resolvedMethod = model.GetSymbolInfo(invocation, cancellationToken).Symbol as IMethodSymbol;
+        var activeArgument = GetActiveArgumentIndex(invocation.ArgumentList, absolutePosition);
+        var rankedMethods = methods
+            .Select((method, originalIndex) => new
+            {
+                Method = method,
+                OriginalIndex = originalIndex,
+                IsResolved = AreSameMethod(method, resolvedMethod),
+                Score = GetOverloadScore(method, invocation.ArgumentList, model, cancellationToken)
+            })
+            .OrderByDescending(static item => item.IsResolved)
+            .ThenByDescending(static item => item.Score.IsCompatible)
+            .ThenByDescending(static item => item.Score.IdentityConversions)
+            .ThenByDescending(static item => item.Score.ImplicitConversions)
+            .ThenBy(static item => item.Score.ParameterCountDistance)
+            .ThenBy(static item => item.OriginalIndex)
+            .Select(static item => item.Method)
+            .ToArray();
+        var signatures = rankedMethods.Select(method =>
+        {
+            var documentation = GetDocumentation(method, cancellationToken);
+            var parameters = method.Parameters.Select(parameter => new SignatureParameterInformation(
+                parameter.Name,
+                parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                documentation.Parameters.GetValueOrDefault(parameter.Name) ?? string.Empty)).ToArray();
+            return new SignatureInformation(
+                method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                documentation.Summary,
+                parameters,
+                GetActiveParameterIndex(method, invocation.ArgumentList, activeArgument));
+        }).DistinctBy(static item => item.DisplayText, StringComparer.Ordinal).ToArray();
+        return new(signatures, 0);
+    }
+
+    private static InvocationExpressionSyntax? FindInvocationAtPosition(SyntaxNode root, int position)
+    {
+        var probePosition = Math.Clamp(
+            position > root.FullSpan.Start ? position - 1 : position,
+            root.FullSpan.Start,
+            Math.Max(root.FullSpan.Start, root.FullSpan.End - 1));
+        var invocation = root.FindToken(probePosition, findInsideTrivia: true).Parent?
+            .AncestorsAndSelf()
+            .OfType<InvocationExpressionSyntax>()
+            .FirstOrDefault(candidate => IsPositionInArgumentList(candidate.ArgumentList, position));
+        if (invocation is not null) return invocation;
+
+        return root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(candidate => IsPositionInArgumentList(candidate.ArgumentList, position))
+            .OrderBy(static candidate => candidate.ArgumentList.FullSpan.Length)
+            .FirstOrDefault();
+
+    }
+
+    private static bool IsPositionInArgumentList(ArgumentListSyntax argumentList, int position) =>
+        position >= argumentList.OpenParenToken.Span.End &&
+        position <= (argumentList.CloseParenToken.IsMissing
+            ? argumentList.FullSpan.End
+            : argumentList.CloseParenToken.SpanStart);
+
+    private static int GetActiveArgumentIndex(ArgumentListSyntax argumentList, int position) =>
+        argumentList.Arguments.GetSeparators().Count(separator => separator.Span.End <= position);
+
+    private static int GetActiveParameterIndex(
+        IMethodSymbol method,
+        ArgumentListSyntax argumentList,
+        int activeArgument)
+    {
+        if (method.Parameters.Length == 0) return -1;
+        var argument = activeArgument < argumentList.Arguments.Count
+            ? argumentList.Arguments[activeArgument]
+            : null;
+        if (argument?.NameColon?.Name.Identifier.ValueText is { Length: > 0 } name)
+        {
+            return FindParameterIndex(method, name);
+        }
+        if (activeArgument < method.Parameters.Length) return activeArgument;
+        return method.Parameters[^1].IsParams ? method.Parameters.Length - 1 : -1;
+    }
+
+    private static bool AreSameMethod(IMethodSymbol method, IMethodSymbol? resolvedMethod) =>
+        resolvedMethod is not null && SymbolEqualityComparer.Default.Equals(
+            method.OriginalDefinition, resolvedMethod.OriginalDefinition);
+
+    private static OverloadScore GetOverloadScore(
+        IMethodSymbol method,
+        ArgumentListSyntax argumentList,
+        SemanticModel model,
+        CancellationToken cancellationToken)
+    {
+        var identityConversions = 0;
+        var implicitConversions = 0;
+        for (var argumentIndex = 0; argumentIndex < argumentList.Arguments.Count; argumentIndex++)
+        {
+            var argument = argumentList.Arguments[argumentIndex];
+            var parameterIndex = GetParameterIndex(method, argument, argumentIndex);
+            if (parameterIndex < 0 || !HasMatchingRefKind(method.Parameters[parameterIndex], argument))
+                return OverloadScore.Incompatible;
+            if (argument.Expression.IsMissing) continue;
+
+            var sourceType = model.GetTypeInfo(argument.Expression, cancellationToken).Type;
+            if (sourceType is null or { TypeKind: TypeKind.Error or TypeKind.Dynamic }) continue;
+            var parameter = method.Parameters[parameterIndex];
+            var targetTypes = GetConversionTargetTypes(parameter, argumentIndex);
+            var conversions = targetTypes
+                .Select(target => model.Compilation.ClassifyConversion(sourceType, target))
+                .ToArray();
+            if (conversions.Any(static conversion => conversion.IsIdentity))
+            {
+                identityConversions++;
+                continue;
+            }
+            if (conversions.Any(static conversion => conversion.IsImplicit))
+            {
+                implicitConversions++;
+                continue;
+            }
+            if (targetTypes.Any(static target => target.TypeKind == TypeKind.TypeParameter)) continue;
+            return OverloadScore.Incompatible;
+        }
+
+        return new(
+            true,
+            identityConversions,
+            implicitConversions,
+            Math.Abs(method.Parameters.Length - argumentList.Arguments.Count));
+    }
+
+    private static int GetParameterIndex(IMethodSymbol method, ArgumentSyntax argument, int argumentIndex)
+    {
+        if (argument.NameColon?.Name.Identifier.ValueText is { Length: > 0 } name)
+            return FindParameterIndex(method, name);
+        if (argumentIndex < method.Parameters.Length) return argumentIndex;
+        return method.Parameters is [.., { IsParams: true }] ? method.Parameters.Length - 1 : -1;
+    }
+
+    private static int FindParameterIndex(IMethodSymbol method, string name)
+    {
+        for (var index = 0; index < method.Parameters.Length; index++)
+            if (method.Parameters[index].Name == name)
+                return index;
+        return -1;
+    }
+
+    private static IEnumerable<ITypeSymbol> GetConversionTargetTypes(IParameterSymbol parameter, int argumentIndex)
+    {
+        yield return parameter.Type;
+        if (parameter.IsParams && parameter.Type is IArrayTypeSymbol arrayType &&
+            argumentIndex >= parameter.Ordinal)
+            yield return arrayType.ElementType;
+    }
+
+    private static bool HasMatchingRefKind(IParameterSymbol parameter, ArgumentSyntax argument)
+    {
+        var argumentRefKind = argument.RefKindKeyword.Kind() switch
+        {
+            SyntaxKind.RefKeyword => RefKind.Ref,
+            SyntaxKind.OutKeyword => RefKind.Out,
+            SyntaxKind.InKeyword => RefKind.In,
+            _ => RefKind.None
+        };
+        return parameter.RefKind == argumentRefKind ||
+               parameter.RefKind == RefKind.In && argumentRefKind == RefKind.None;
+    }
+
+    private readonly record struct OverloadScore(
+        bool IsCompatible,
+        int IdentityConversions,
+        int ImplicitConversions,
+        int ParameterCountDistance)
+    {
+        public static OverloadScore Incompatible { get; } = new(false, 0, 0, int.MaxValue);
     }
 
     public async Task<IReadOnlyList<DiagnosticInfo>> GetDiagnosticsAsync(

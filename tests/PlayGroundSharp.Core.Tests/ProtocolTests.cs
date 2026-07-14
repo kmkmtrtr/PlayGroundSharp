@@ -42,4 +42,25 @@ public sealed class ProtocolTests
         Assert.Equal("Example.Package", package.PackageId);
         Assert.True(package.IsVerified);
     }
+
+    [Fact]
+    public void ResultSnapshotCountMetadataRoundTrips()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "3 items",
+            "System.Int32[]",
+            Items: [
+                new(SnapshotKind.Number, "1", "System.Int32"),
+                new(SnapshotKind.Number, "2", "System.Int32"),
+                new(SnapshotKind.Number, "3", "System.Int32")
+            ],
+            TotalCount: 3);
+
+        var envelope = PipeEnvelope.Create(MessageKinds.Result, Guid.NewGuid(), new ResultEvent(1, snapshot));
+        var restored = envelope.ReadPayload<ResultEvent>().Snapshot;
+
+        Assert.Equal(3, restored.TotalCount);
+        Assert.Equal(["1", "2", "3"], restored.Items!.Select(static item => item.Display));
+    }
 }

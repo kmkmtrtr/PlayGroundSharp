@@ -26,4 +26,12 @@ public static class DataSnippetBuilder
                $"{{{Environment.NewLine}    rows.Add(row);{Environment.NewLine}" +
                $"    if (rows.Count == 100) break;{Environment.NewLine}}}{Environment.NewLine}rows";
     }
+
+    public static string CreateFileInspection(IReadOnlyList<string> paths) =>
+        $"({CreatePathArray(paths)}){Environment.NewLine}" +
+        $".Select(path => Data.Inspect(path)){Environment.NewLine}.ToArray()";
+
+    public static string CreateJsonBatch(IReadOnlyList<string> paths) =>
+        $"await Task.WhenAll(({CreatePathArray(paths)}){Environment.NewLine}" +
+        ".Select(path => Data.ReadJsonAsync(path)))";
 }

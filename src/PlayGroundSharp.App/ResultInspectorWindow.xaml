@@ -1,13 +1,16 @@
 <Window x:Class="PlayGroundSharp.App.ResultInspectorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:PlayGroundSharp.App"
         Title="{DynamicResource Inspector.Title}" Width="760" Height="560" MinWidth="480" MinHeight="340"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="2*" />
-            <RowDefinition Height="8" />
+            <RowDefinition Height="5" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <DockPanel Margin="2,0,0,8">
@@ -20,16 +23,31 @@
                         Click="CopySelected_Click" Margin="12,0,0,0" />
                 <Button Content="{DynamicResource Inspector.CopyAll}" Style="{StaticResource MiniButtonStyle}"
                         Click="CopyAll_Click" Margin="4,0,0,0" />
+                <Button Content="{DynamicResource Inspector.SaveAll}" Style="{StaticResource MiniButtonStyle}"
+                        Click="SaveAll_Click" Margin="4,0,0,0" />
             </StackPanel>
             <TextBlock Text="{DynamicResource Inspector.Snapshot}" Foreground="{DynamicResource MutedBrush}"
                        VerticalAlignment="Center" />
         </DockPanel>
-        <TreeView x:Name="SnapshotTree" Grid.Row="1" ItemsSource="{Binding Roots}"
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{DynamicResource Inspector.Search}" VerticalAlignment="Center" Margin="2,0,8,0" />
+            <TextBox x:Name="SearchBox" Grid.Column="1" TextChanged="SearchBox_TextChanged"
+                     AutomationProperties.Name="{DynamicResource Inspector.Search}"
+                     Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
+                     BorderBrush="{DynamicResource BorderBrush}" Padding="6,4" />
+            <TextBlock x:Name="SearchStatus" Grid.Column="2" Foreground="{DynamicResource MutedBrush}"
+                       VerticalAlignment="Center" Margin="10,0,2,0" MinWidth="70" TextAlignment="Right" />
+        </Grid>
+        <TreeView x:Name="SnapshotTree" Grid.Row="2" ItemsSource="{Binding Roots}"
                   Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                   BorderBrush="{DynamicResource BorderBrush}" SelectedItemChanged="SnapshotTree_SelectedItemChanged">
             <TreeView.Resources>
-                <HierarchicalDataTemplate DataType="{x:Type local:SnapshotTreeNode}" ItemsSource="{Binding Children}"
-                                          xmlns:local="clr-namespace:PlayGroundSharp.App">
+                <HierarchicalDataTemplate DataType="{x:Type local:SnapshotTreeNode}" ItemsSource="{Binding Children}">
                     <TextBlock Text="{Binding Label}" FontFamily="Cascadia Mono,Consolas" />
                 </HierarchicalDataTemplate>
             </TreeView.Resources>
@@ -39,7 +57,15 @@
                 </Style>
             </TreeView.ItemContainerStyle>
         </TreeView>
-        <TextBox x:Name="DetailText" Grid.Row="3" IsReadOnly="True" TextWrapping="Wrap"
+        <GridSplitter Grid.Row="3" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                      Background="Transparent" ShowsPreview="True" Cursor="SizeNS" />
+        <DockPanel Grid.Row="4" Margin="2,5,0,5">
+            <Button Content="{DynamicResource Inspector.CopyPath}" Style="{StaticResource MiniButtonStyle}"
+                    DockPanel.Dock="Right" Click="CopyPath_Click" />
+            <TextBlock x:Name="PathText" FontFamily="Cascadia Mono,Consolas" TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}" />
+        </DockPanel>
+        <TextBox x:Name="DetailText" Grid.Row="5" IsReadOnly="True" TextWrapping="Wrap"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                  Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                  BorderBrush="{DynamicResource BorderBrush}" FontFamily="Cascadia Mono,Consolas" Padding="8" />

@@ -58,11 +58,17 @@ public sealed class LargeDataAccessTests : IDisposable
         var literal = DataSnippetBuilder.ToVerbatimStringLiteral("C:\\data\\a\"b.jsonl");
         var array = DataSnippetBuilder.CreatePathArray(["C:\\one.txt", "D:\\two.json"]);
         var jsonLines = DataSnippetBuilder.CreateJsonLines("C:\\data\\a\"b.jsonl");
+        var inspections = DataSnippetBuilder.CreateFileInspection(["C:\\one.txt", "D:\\two.json"]);
+        var jsonBatch = DataSnippetBuilder.CreateJsonBatch(["C:\\one.json", "D:\\two.json"]);
 
         Assert.Equal("@\"C:\\data\\a\"\"b.jsonl\"", literal);
         Assert.Contains("@\"C:\\one.txt\"", array, StringComparison.Ordinal);
         Assert.Contains("@\"D:\\two.json\"", array, StringComparison.Ordinal);
         Assert.Contains($"ReadJsonLinesAsync({literal})", jsonLines, StringComparison.Ordinal);
+        Assert.Contains("Select(path => Data.Inspect(path))", inspections, StringComparison.Ordinal);
+        Assert.Contains("@\"C:\\one.txt\"", inspections, StringComparison.Ordinal);
+        Assert.Contains("await Task.WhenAll", jsonBatch, StringComparison.Ordinal);
+        Assert.Contains("Select(path => Data.ReadJsonAsync(path))", jsonBatch, StringComparison.Ordinal);
     }
 
     public void Dispose()

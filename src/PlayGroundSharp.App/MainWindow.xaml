@@ -335,6 +335,9 @@
                                     <Button Content="{DynamicResource Ui.Copy}" Style="{StaticResource MiniButtonStyle}"
                                             Visibility="{Binding IsCopyable, Converter={StaticResource BooleanToVisibilityConverter}}"
                                             Click="CopyTranscriptLine_Click" />
+                                    <Button Content="{DynamicResource Ui.Save}" Style="{StaticResource MiniButtonStyle}" Margin="4,0,0,0"
+                                            Visibility="{Binding IsCopyable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                            Click="SaveTranscriptLine_Click" />
                                     <Button Content="{DynamicResource Ui.Inspect}" Style="{StaticResource MiniButtonStyle}" Margin="4,0,0,0"
                                             Visibility="{Binding IsInspectable, Converter={StaticResource BooleanToVisibilityConverter}}"
                                             Click="InspectResult_Click" />
@@ -353,10 +356,17 @@
                                    FontFamily="Cascadia Mono,Consolas" FontSize="14" ShowLineNumbers="False"
                                    Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" CaretOffset="0"
                                    Padding="0,2" BorderThickness="0"
-                                   AllowDrop="True" PreviewDragOver="Editor_PreviewDragOver" PreviewDrop="Editor_PreviewDrop"
+                                   AllowDrop="True" PreviewDragOver="Editor_PreviewDragOver" PreviewDragLeave="Editor_PreviewDragLeave"
+                                   PreviewDrop="Editor_PreviewDrop"
                                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                    PreviewKeyDown="Editor_PreviewKeyDown" TextChanged="Editor_TextChanged"
                                    MouseHover="Editor_MouseHover" />
+                <Border x:Name="DropOverlay" Grid.Row="1" Grid.Column="1" Panel.ZIndex="20" Visibility="Collapsed"
+                        IsHitTestVisible="False" Background="{DynamicResource SelectionBrush}"
+                        BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="5" Padding="12">
+                    <TextBlock Text="{DynamicResource Drop.Hint}" Foreground="{DynamicResource AccentBrush}"
+                               FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
                 <Popup x:Name="AssistPopup" Grid.Row="1" Grid.Column="1" PlacementTarget="{Binding ElementName=Editor}"
                        Placement="Bottom" VerticalOffset="4" StaysOpen="True" AllowsTransparency="False"
                        Focusable="False">

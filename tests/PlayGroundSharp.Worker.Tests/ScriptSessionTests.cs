@@ -177,4 +177,32 @@ public sealed class ScriptSessionTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task ExecutesGeneratedMultiFileSnippets()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-Batch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var paths = new[] { Path.Combine(directory, "one.json"), Path.Combine(directory, "two.json") };
+        await File.WriteAllTextAsync(paths[0], "{\"id\":1}");
+        await File.WriteAllTextAsync(paths[1], "{\"id\":2}");
+        try
+        {
+            var session = new ScriptSession();
+
+            var inspections = await session.ExecuteAsync(1, DataSnippetBuilder.CreateFileInspection(paths));
+            var json = await session.ExecuteAsync(2, DataSnippetBuilder.CreateJsonBatch(paths));
+
+            Assert.True(inspections.StateAccepted,
+                string.Join(" | ", inspections.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+            Assert.Equal(2, inspections.Snapshot?.TotalCount);
+            Assert.True(json.StateAccepted,
+                string.Join(" | ", json.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+            Assert.Equal(2, json.Snapshot?.TotalCount);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 }

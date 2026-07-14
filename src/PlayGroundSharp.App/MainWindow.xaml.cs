@@ -311,12 +311,18 @@ public partial class MainWindow : Window
 
     private void Editor_PreviewDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = TryGetDroppedPaths(e.Data, out _) ? DragDropEffects.Copy : DragDropEffects.None;
+        var canDrop = TryGetDroppedPaths(e.Data, out _);
+        e.Effects = canDrop ? DragDropEffects.Copy : DragDropEffects.None;
+        DropOverlay.Visibility = canDrop ? Visibility.Visible : Visibility.Collapsed;
         e.Handled = true;
     }
 
+    private void Editor_PreviewDragLeave(object sender, DragEventArgs e) =>
+        DropOverlay.Visibility = Visibility.Collapsed;
+
     private void Editor_PreviewDrop(object sender, DragEventArgs e)
     {
+        DropOverlay.Visibility = Visibility.Collapsed;
         if (!TryGetDroppedPaths(e.Data, out var paths))
         {
             e.Effects = DragDropEffects.None;
@@ -333,11 +339,28 @@ public partial class MainWindow : Window
 
         if (paths.Length > 1)
         {
-            InsertDroppedSnippet(DataSnippetBuilder.CreatePathArray(paths));
-            viewModel.SetLocalizedStatus("Status.DroppedPaths", paths.Length);
+            ShowMultipleDropActionMenu(paths);
             return;
         }
         ShowDropActionMenu(paths[0]);
+    }
+
+    private void ShowMultipleDropActionMenu(IReadOnlyList<string> paths)
+    {
+        var menu = new ContextMenu
+        {
+            PlacementTarget = Editor,
+            Placement = PlacementMode.MousePoint
+        };
+        menu.Items.Add(CreateDropAction("Drop.InsertPathArray", DataSnippetBuilder.CreatePathArray(paths)));
+        if (paths.All(File.Exists))
+        {
+            menu.Items.Add(CreateDropAction("Drop.InspectFiles", DataSnippetBuilder.CreateFileInspection(paths)));
+            if (paths.All(static path => Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase)))
+                menu.Items.Add(CreateDropAction("Drop.ReadJsonFiles", DataSnippetBuilder.CreateJsonBatch(paths)));
+        }
+        menu.IsOpen = true;
+        viewModel.SetLocalizedStatus("Status.DropChooseAction");
     }
 
     private void ShowDropActionMenu(string path)
@@ -824,7 +847,7 @@ public partial class MainWindow : Window
     private void InspectResult_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: TranscriptLine { Snapshot: { } snapshot } })
-            new ResultInspectorWindow(snapshot) { Owner = this }.Show();
+            new ResultInspectorWindow(snapshot, viewModel.LanguageMode) { Owner = this }.Show();
     }
 
     private async void CopyTranscriptLine_Click(object sender, RoutedEventArgs e)
@@ -833,6 +856,29 @@ public partial class MainWindow : Window
         try
         {
             Clipboard.SetText(await Task.Run(() => line.CopyText));
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
+    }
+
+    private async void SaveTranscriptLine_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TranscriptLine line }) return;
+        var dialog = new SaveFileDialog
+        {
+            Title = viewModel.Localize("Dialog.ResultSaveTitle"),
+            Filter = viewModel.Localize("Dialog.ResultFileFilter"),
+            DefaultExt = ".txt",
+            AddExtension = true,
+            FileName = $"PlayGroundSharp-result-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            var text = await Task.Run(() => line.CopyText);
+            await File.WriteAllTextAsync(dialog.FileName, text);
         }
         catch (Exception error)
         {

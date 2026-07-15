@@ -25,6 +25,7 @@ public sealed partial class UiOption<T>(T value, string label) : ObservableObjec
 
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
+    private const int MaximumExplorerSearchResults = 400;
     private static readonly string[] Commands =
     [
         ":help", ":clear", ":reset", ":using list", ":using add ", ":using remove ",
@@ -38,6 +39,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly List<(string Id, string Version)> packages = [];
     private readonly List<string> history = [];
     private CancellationTokenSource? diagnosticDelay;
+    private CancellationTokenSource? typeExplorerSearchDelay;
     private CancellationTokenSource? typeExplorerRefresh;
     private IReadOnlyList<SymbolExplorerEntry> typeExplorerEntries = [];
     private int diagnosticErrorCount;
@@ -478,7 +480,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SettingsStore.Save(new(value, ThemeMode, LanguageMode));
 
-    partial void OnTypeExplorerSearchTextChanged(string value) => RebuildTypeExplorer();
+    partial void OnTypeExplorerSearchTextChanged(string value) => ScheduleTypeExplorerRebuild();
 
     partial void OnThemeModeChanged(AppThemeMode value)
     {
@@ -834,10 +836,30 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private void ScheduleTypeExplorerRebuild()
+    {
+        typeExplorerSearchDelay?.Cancel();
+        typeExplorerSearchDelay?.Dispose();
+        typeExplorerSearchDelay = new CancellationTokenSource();
+        _ = RebuildTypeExplorerAfterDelayAsync(typeExplorerSearchDelay.Token);
+    }
+
+    private async Task RebuildTypeExplorerAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(180, cancellationToken);
+            RebuildTypeExplorer();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     private void RebuildTypeExplorer()
     {
         var query = TypeExplorerSearchText.Trim();
-        var matched = string.IsNullOrEmpty(query)
+        var allMatches = string.IsNullOrEmpty(query)
             ? typeExplorerEntries
             : typeExplorerEntries.Where(entry =>
                 entry.FullName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -848,6 +870,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 entry.Parameters.Any(parameter =>
                     parameter.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                     parameter.Summary.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
+        var totalMatchCount = allMatches.Count;
+        var matched = string.IsNullOrEmpty(query)
+            ? allMatches
+            : allMatches.Take(MaximumExplorerSearchResults).ToArray();
         var parentKeys = matched
             .Where(static entry => entry.ContainingType is not null)
             .Select(static entry => (entry.Namespace, TypeName: entry.ContainingType!, entry.AssemblyName))
@@ -881,7 +907,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ? Localize("Explorer.Count",
                 typeExplorerEntries.Count(static entry => entry.ContainingType is null && entry.Kind != "method"),
                 typeExplorerEntries.Count(static entry => entry.Kind is "method" or "constructor"))
-            : Localize("Explorer.Matches", matched.Count);
+            : totalMatchCount > matched.Count
+                ? Localize("Explorer.MatchesLimited", totalMatchCount, matched.Count)
+                : Localize("Explorer.Matches", totalMatchCount);
     }
 
     private static string GetTypeGlyph(string kind) => kind switch
@@ -918,11 +946,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var namespaceNodes = Namespaces.Values
                 .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
                 .Select(item => item.Build(expand));
+            var membersByType = Symbols
+                .Where(static item => item.ContainingType is not null)
+                .ToLookup(static item => (item.ContainingType!, item.AssemblyName));
             var typeNodes = Symbols
                 .Where(static item => item.ContainingType is null && item.Kind is not "method" and not "constructor")
                 .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(type => CreateSymbolNode(type, Symbols
-                    .Where(method => method.ContainingType == type.Name)
+                .Select(type => CreateSymbolNode(type, membersByType[(type.Name, type.AssemblyName)]
                     .OrderBy(static method => method.Name, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(static method => method.DisplayName, StringComparer.OrdinalIgnoreCase)
                     .Select(static method => CreateSymbolNode(method, []))
@@ -987,6 +1017,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         diagnosticDelay?.Cancel();
         diagnosticDelay?.Dispose();
+        typeExplorerSearchDelay?.Cancel();
+        typeExplorerSearchDelay?.Dispose();
         typeExplorerRefresh?.Cancel();
         typeExplorerRefresh?.Dispose();
         await worker.DisposeAsync();

@@ -8,6 +8,29 @@
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
         Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="Window_Deactivated"
         PreviewKeyDown="Window_PreviewKeyDown" PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown">
+    <Window.Resources>
+        <DataTemplate x:Key="CompletionItemTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding DisplayText}" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,2,0">
+                    <TextBlock Text="{Binding NamespaceHint}" ToolTip="{Binding NamespaceHint}"
+                               Foreground="{DynamicResource MutedBrush}" FontSize="10" MaxWidth="150"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <Border Visibility="{Binding IsExtensionMethod, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            Background="{DynamicResource SelectionBrush}" CornerRadius="3" Padding="4,1">
+                        <TextBlock Text="ext" Foreground="{DynamicResource MutedBrush}" FontSize="9" />
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="SignatureItemTemplate">
+            <TextBlock Text="{Binding DisplayText}" />
+        </DataTemplate>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="54" />

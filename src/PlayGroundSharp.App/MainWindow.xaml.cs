@@ -583,7 +583,8 @@ public partial class MainWindow : Window
         completionStart = items.Select(static item => item.ReplacementStart).Distinct().SingleOrDefault()
             ?? FindCompletionStart(requestText, requestOffset);
         CompletionList.IsHitTestVisible = true;
-        CompletionList.DisplayMemberPath = nameof(CompletionCandidate.DisplayText);
+        CompletionList.DisplayMemberPath = null;
+        CompletionList.ItemTemplate = (DataTemplate)FindResource("CompletionItemTemplate");
         assistMode = items.Count > 0 ? AssistMode.Completion : AssistMode.None;
         AssistHint.Text = viewModel.Localize("Assist.CompletionHint");
         ApplyCompletionFilter();
@@ -618,7 +619,8 @@ public partial class MainWindow : Window
         assistMode = AssistMode.Signature;
         CompletionList.ItemsSource = help.Signatures;
         CompletionList.IsHitTestVisible = true;
-        CompletionList.DisplayMemberPath = nameof(SignatureInformation.DisplayText);
+        CompletionList.DisplayMemberPath = null;
+        CompletionList.ItemTemplate = (DataTemplate)FindResource("SignatureItemTemplate");
         CompletionList.SelectedIndex = Math.Clamp(help.SelectedSignature, 0, help.Signatures.Count - 1);
         AssistPopup.IsOpen = true;
         UpdateAssistSummary();

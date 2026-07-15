@@ -10,6 +10,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using RoslynDocument = Microsoft.CodeAnalysis.Document;
 
@@ -22,9 +23,12 @@ public sealed record CompletionCandidate(
     IReadOnlyList<string> Tags,
     string? InsertionText = null,
     string? RequiredNamespace = null,
-    int? ReplacementStart = null)
+    int? ReplacementStart = null,
+    string? SourceNamespace = null)
 {
     public string TextToInsert => InsertionText ?? DisplayText;
+    public bool IsExtensionMethod => Tags.Contains("ExtensionMethod", StringComparer.OrdinalIgnoreCase);
+    public string? NamespaceHint => RequiredNamespace ?? SourceNamespace;
 }
 public sealed record QuickInfoResult(string Text);
 public sealed record SignatureParameterInformation(string Name, string TypeName, string Summary);
@@ -59,6 +63,9 @@ public sealed record SymbolExplorerEntry(
 /// <summary>Provides Roslyn editor services over the same session inputs used by execution.</summary>
 public sealed class CSharpLanguageService
 {
+    private static readonly Regex NumericLiteralReceiverPattern = new(
+        @"(?<![\p{L}\p{N}_\.])(?<literal>[+-]?(?:0[xX][0-9A-Fa-f_]+|0[bB][01_]+|(?:\d[\d_]*)(?:\.\d[\d_]*)?(?:[eE][+-]?\d[\d_]*)?[fFdDmM]?))\.$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Lazy<MefHostServices> WorkspaceHost = new(
         static () => MefHostServices.Create(MefHostServices.DefaultAssemblies),
         LazyThreadSafetyMode.ExecutionAndPublication);
@@ -111,13 +118,27 @@ public sealed class CSharpLanguageService
                         .Where(method => method.IsExtensionMethod && method.ReduceExtensionMethod(receiverType) is not null));
                 items.AddRange(memberSymbols
                     .Where(static symbol => symbol.CanBeReferencedByName)
-                    .Select(static symbol => new CompletionCandidate(symbol.Name, symbol.Name, symbol.Name, [symbol.Kind.ToString()])));
+                    .Select(CreateSymbolCompletionCandidate));
             }
         }
+        if (items.Any(static item => item.IsExtensionMethod && item.SourceNamespace is null))
+            await AddExtensionNamespacesAsync(
+                workspaceDocument.Document, workspaceDocument.CurrentOffset, position, context.Imports,
+                context.ReferencePaths, items, cancellationToken)
+                .ConfigureAwait(false);
+        for (var index = 0; index < items.Count; index++)
+        {
+            var item = items[index];
+            if (item.IsExtensionMethod && item.RequiredNamespace is null && item.SourceNamespace is { } sourceNamespace &&
+                !context.Imports.Contains(sourceNamespace, StringComparer.Ordinal))
+                items[index] = item with { RequiredNamespace = sourceNamespace };
+        }
+        ApplyNumericLiteralReceiverEdit(currentCode, position, items);
         AddUnimportedTypeCompletions(context, currentCode, position, items, cancellationToken);
         return items
             .DistinctBy(static item => (item.TextToInsert, item.RequiredNamespace), CompletionIdentityComparer.Instance)
             .OrderBy(static item => item.RequiredNamespace is not null)
+            .ThenBy(static item => item.IsExtensionMethod)
             .ThenBy(static item => item.SortText, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
@@ -135,7 +156,7 @@ public sealed class CSharpLanguageService
         if (service is null) return null;
         var completions = await service.GetCompletionsAsync(workspaceDocument.Document,
             workspaceDocument.CurrentOffset + position, cancellationToken: cancellationToken).ConfigureAwait(false);
-        var item = candidate.RequiredNamespace is null
+        var item = candidate.RequiredNamespace is null || candidate.IsExtensionMethod
             ? completions?.ItemsList.FirstOrDefault(item =>
                 item.DisplayText == candidate.DisplayText && item.FilterText == candidate.FilterText)
             : null;
@@ -533,6 +554,99 @@ public sealed class CSharpLanguageService
             ? currentCode.Insert(position, "__PlayGroundSharpCompletion")
             : currentCode;
 
+    private static void ApplyNumericLiteralReceiverEdit(
+        string currentCode,
+        int position,
+        List<CompletionCandidate> items)
+    {
+        var memberStart = Math.Clamp(position, 0, currentCode.Length);
+        while (memberStart > 0 && SyntaxFacts.IsIdentifierPartCharacter(currentCode[memberStart - 1])) memberStart--;
+        var match = NumericLiteralReceiverPattern.Match(currentCode[..memberStart]);
+        if (!match.Success) return;
+        var literal = match.Groups["literal"].Value;
+        for (var index = 0; index < items.Count; index++)
+        {
+            var item = items[index];
+            items[index] = item with
+            {
+                InsertionText = $"({literal}).{item.TextToInsert}",
+                ReplacementStart = match.Index
+            };
+        }
+    }
+
+    private static async Task AddExtensionNamespacesAsync(
+        RoslynDocument document,
+        int currentOffset,
+        int position,
+        IReadOnlyList<string> imports,
+        IReadOnlyList<string> referencePaths,
+        List<CompletionCandidate> items,
+        CancellationToken cancellationToken)
+    {
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+        if (root is null || model is null) return;
+        var absolutePosition = currentOffset + position;
+        var access = root.DescendantNodes().OfType<MemberAccessExpressionSyntax>()
+            .LastOrDefault(node => node.OperatorToken.SpanStart == absolutePosition - 1);
+        var receiverType = access is null ? null : model.GetTypeInfo(access.Expression, cancellationToken).Type;
+        if (receiverType is null || access is null) return;
+
+        var namespaceCandidates = model.LookupSymbols(
+                absolutePosition, receiverType, includeReducedExtensionMethods: true)
+            .Concat(model.LookupSymbols(absolutePosition, includeReducedExtensionMethods: true))
+            .OfType<IMethodSymbol>()
+            .Where(method => method.MethodKind == MethodKind.ReducedExtension ||
+                             method.IsExtensionMethod && method.ReduceExtensionMethod(receiverType) is not null)
+            .Select(method => (method.Name,
+                Namespace: (method.ReducedFrom ?? method).ContainingNamespace?.ToDisplayString()))
+            .Where(static item => !string.IsNullOrWhiteSpace(item.Namespace))
+            .Select(static item => (item.Name, Namespace: item.Namespace!))
+            .ToList();
+
+        var unresolvedNames = items.Where(static item => item.IsExtensionMethod)
+            .Select(static item => item.DisplayText)
+            .ToHashSet(StringComparer.Ordinal);
+        var dynamicPaths = referencePaths.Where(File.Exists).Select(Path.GetFullPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var reference in model.Compilation.References.OfType<PortableExecutableReference>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reference.FilePath is null || !dynamicPaths.Contains(Path.GetFullPath(reference.FilePath))) continue;
+            if (model.Compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly) continue;
+            foreach (var type in EnumeratePublicTypes(assembly.GlobalNamespace))
+            foreach (var method in type.GetMembers().OfType<IMethodSymbol>())
+            {
+                if (!method.IsExtensionMethod || !unresolvedNames.Contains(method.Name) ||
+                    method.ReduceExtensionMethod(receiverType) is null) continue;
+                var @namespace = method.ContainingNamespace?.ToDisplayString();
+                if (!string.IsNullOrWhiteSpace(@namespace)) namespaceCandidates.Add((method.Name, @namespace));
+            }
+        }
+
+        var namespacesByName = namespaceCandidates
+            .GroupBy(static item => item.Name, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key,
+                group => group.Select(static item => item.Namespace!)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(@namespace => !imports.Contains(@namespace, StringComparer.Ordinal))
+                    .ThenBy(static @namespace => @namespace, StringComparer.Ordinal)
+                    .First(),
+                StringComparer.Ordinal);
+
+        for (var index = 0; index < items.Count; index++)
+        {
+            var item = items[index];
+            if (!namespacesByName.TryGetValue(item.DisplayText, out var sourceNamespace)) continue;
+            items[index] = item with
+            {
+                Tags = item.IsExtensionMethod ? item.Tags : [.. item.Tags, "ExtensionMethod"],
+                SourceNamespace = sourceNamespace
+            };
+        }
+    }
+
     private static string NormalizeHistoricalSubmission(string code)
     {
         var tree = CSharpSyntaxTree.ParseText(code, new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script));
@@ -914,6 +1028,19 @@ public sealed class CSharpLanguageService
         {
             foreach (var member in @interface.GetMembers()) yield return member;
         }
+    }
+
+    private static CompletionCandidate CreateSymbolCompletionCandidate(ISymbol symbol)
+    {
+        var extensionMethod = symbol as IMethodSymbol;
+        var tag = extensionMethod is not null &&
+                  (extensionMethod.IsExtensionMethod || extensionMethod.MethodKind == MethodKind.ReducedExtension)
+            ? "ExtensionMethod"
+            : symbol.Kind.ToString();
+        var sourceNamespace = extensionMethod is null
+            ? null
+            : (extensionMethod.ReducedFrom ?? extensionMethod).ContainingNamespace?.ToDisplayString();
+        return new(symbol.Name, symbol.Name, symbol.Name, [tag], SourceNamespace: sourceNamespace);
     }
 
     private static DiagnosticInfo ToDiagnostic(Diagnostic diagnostic, int offset)

@@ -61,6 +61,57 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task DoesNotOfferInstanceExtensionsAfterATypeName()
+    {
+        var context = new SessionContext(
+            [],
+            [.. SessionContext.DefaultImports, "PlayGroundSharp.TestFixture"],
+            [typeof(NumberExtensions).Assembly.Location]);
+
+        var typeItems = await service.GetCompletionsAsync(context, "int.", "int.".Length);
+        var instanceItems = await service.GetCompletionsAsync(context, "(1).", "(1).".Length);
+
+        Assert.DoesNotContain(typeItems, static item => item.DisplayText == "Billions");
+        var extension = Assert.Single(instanceItems, static item => item.DisplayText == "Billions");
+        Assert.True(extension.IsExtensionMethod);
+        Assert.Contains("PlayGroundSharp.TestFixture", extension.NamespaceHint, StringComparison.Ordinal);
+        var orderedItems = instanceItems.ToList();
+        var instanceMemberIndex = orderedItems.FindIndex(static item => item.DisplayText == "ToString");
+        Assert.True(instanceMemberIndex >= 0);
+        Assert.True(instanceMemberIndex < orderedItems.IndexOf(extension));
+    }
+
+    [Fact]
+    public async Task ParenthesizesNumericLiteralWhenCompletingAMember()
+    {
+        var context = new SessionContext(
+            [],
+            [.. SessionContext.DefaultImports, "PlayGroundSharp.TestFixture"],
+            [typeof(NumberExtensions).Assembly.Location]);
+
+        var items = await service.GetCompletionsAsync(context, "1.Bil", "1.Bil".Length);
+        var extension = Assert.Single(items, static item => item.DisplayText == "Billions");
+
+        Assert.Equal(0, extension.ReplacementStart);
+        Assert.Equal("(1).Billions", extension.TextToInsert);
+    }
+
+    [Fact]
+    public async Task MarksTheNamespaceRequiredByAnUnimportedExtension()
+    {
+        var context = new SessionContext(
+            ["var hoge = 1;"],
+            SessionContext.DefaultImports,
+            [typeof(NumberExtensions).Assembly.Location]);
+
+        var items = await service.GetCompletionsAsync(context, "hoge.", "hoge.".Length);
+        var extension = Assert.Single(items, static item => item.DisplayText == "Billions");
+
+        Assert.Equal("PlayGroundSharp.TestFixture", extension.NamespaceHint);
+        Assert.Equal("PlayGroundSharp.TestFixture", extension.RequiredNamespace);
+    }
+
+    [Fact]
     public async Task CompletesDefinedType()
     {
         var context = new SessionContext(["record User(string Name, int Age)"], SessionContext.DefaultImports, []);

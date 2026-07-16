@@ -869,15 +869,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private void TranscriptRow_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (sender is not FrameworkElement
+            {
+                DataContext: TranscriptLine line,
+                ContextMenu: { } menu
+            }) return;
+        foreach (var item in menu.Items.OfType<MenuItem>()) item.DataContext = line;
+    }
+
     private void InspectResult_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: TranscriptLine { Snapshot: { } snapshot } })
+        if (GetTranscriptLine(sender)?.Snapshot is { } snapshot)
             new ResultInspectorWindow(snapshot, viewModel.LanguageMode) { Owner = this }.Show();
     }
 
     private async void CopyTranscriptLine_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: TranscriptLine line }) return;
+        if (GetTranscriptLine(sender) is not { } line) return;
         try
         {
             Clipboard.SetText(await Task.Run(() => line.CopyText));
@@ -890,7 +900,7 @@ public partial class MainWindow : Window
 
     private async void SaveTranscriptLine_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: TranscriptLine line }) return;
+        if (GetTranscriptLine(sender) is not { } line) return;
         var dialog = new SaveFileDialog
         {
             Title = viewModel.Localize("Dialog.ResultSaveTitle"),
@@ -911,8 +921,36 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ConsoleSurface_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
+    private static TranscriptLine? GetTranscriptLine(object sender)
+    {
+        if (sender is FrameworkElement { DataContext: TranscriptLine line }) return line;
+        return sender is MenuItem menuItem &&
+               ItemsControl.ItemsControlFromItemContainer(menuItem) is ContextMenu
+               {
+                   PlacementTarget: FrameworkElement { DataContext: TranscriptLine contextLine }
+               }
+            ? contextLine
+            : null;
+    }
+
+    private void ConsoleSurface_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var source = e.OriginalSource as DependencyObject;
+        var control = FindAncestor<Control>(source);
+        if (control is not null && !ReferenceEquals(control, TranscriptScroll)) return;
         Dispatcher.BeginInvoke(Editor.Focus);
+    }
+
+    private void TranscriptScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (FindAncestor<TreeView>(e.OriginalSource as DependencyObject) is null) return;
+        var distance = Math.Clamp(TranscriptScroll.ViewportHeight * 0.08, 40, 100);
+        TranscriptScroll.ScrollToVerticalOffset(Math.Clamp(
+            TranscriptScroll.VerticalOffset - Math.Sign(e.Delta) * distance,
+            0,
+            TranscriptScroll.ScrollableHeight));
+        e.Handled = true;
+    }
 
     private enum AssistMode { None, Completion, Signature }
 }

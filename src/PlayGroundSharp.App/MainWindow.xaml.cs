@@ -857,9 +857,6 @@ public partial class MainWindow : Window
         var insertionText = item.TextToInsert;
         var replacementStart = Math.Clamp(item.ReplacementStart ?? completionFilterStart, 0, Editor.CaretOffset);
         var length = Editor.CaretOffset - replacementStart;
-        Editor.Document.Replace(replacementStart, length, insertionText);
-        Editor.CaretOffset = replacementStart + insertionText.Length;
-        HideAssist();
         if (item.RequiredNamespace is { } requiredNamespace)
         {
             try
@@ -871,8 +868,14 @@ public partial class MainWindow : Window
             {
                 viewModel.SetLocalizedStatus("Status.UsingFailed");
                 viewModel.Transcript.Add(TranscriptLine.Diagnostic(error.Message));
+                HideAssist();
+                Editor.Focus();
+                return;
             }
         }
+        Editor.Document.Replace(replacementStart, length, insertionText);
+        Editor.CaretOffset = replacementStart + insertionText.Length;
+        HideAssist();
         Editor.Focus();
         ScheduleSignatureHelpRefresh();
     }
@@ -952,7 +955,14 @@ public partial class MainWindow : Window
         {
             var description = await viewModel.GetCompletionDescriptionAsync(Editor.CaretOffset, candidate, cancellation.Token);
             if (!cancellation.IsCancellationRequested && ReferenceEquals(CompletionList.SelectedItem, candidate))
-                ShowAssistSummary(description);
+            {
+                var importNotice = candidate.RequiredNamespace is null
+                    ? null
+                    : viewModel.Localize("Assist.AutoImport", candidate.RequiredNamespace);
+                ShowAssistSummary(string.Join(
+                    Environment.NewLine + Environment.NewLine,
+                    new[] { importNotice, description }.Where(static text => !string.IsNullOrWhiteSpace(text))));
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception error)

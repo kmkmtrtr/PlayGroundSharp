@@ -29,6 +29,12 @@ public sealed record CompletionCandidate(
     public string TextToInsert => InsertionText ?? DisplayText;
     public bool IsExtensionMethod => Tags.Contains("ExtensionMethod", StringComparer.OrdinalIgnoreCase);
     public string? NamespaceHint => RequiredNamespace ?? SourceNamespace;
+    public bool HasNamespaceHint => !string.IsNullOrWhiteSpace(NamespaceHint);
+    public bool RequiresImport => !string.IsNullOrWhiteSpace(RequiredNamespace);
+    public string NamespaceDisplayText => RequiresImport ? $"using {RequiredNamespace}" : NamespaceHint ?? string.Empty;
+    public string AccessibleDisplayText => HasNamespaceHint
+        ? $"{DisplayText}, {NamespaceDisplayText}"
+        : DisplayText;
 }
 public sealed record QuickInfoResult(string Text);
 public sealed record SignatureParameterInformation(string Name, string TypeName, string Summary);
@@ -706,7 +712,7 @@ public sealed class CSharpLanguageService
                 item.SortText.Contains(candidate.Namespace, StringComparison.Ordinal)).ToArray();
             foreach (var duplicate in roslynDuplicates) items.Remove(duplicate);
             items.Add(new(
-                $"{candidate.Name}  ({candidate.Namespace})",
+                candidate.Name,
                 candidate.Name,
                 candidate.Name,
                 ["Type", "Import"],

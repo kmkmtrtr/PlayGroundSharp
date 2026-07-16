@@ -111,6 +111,24 @@ public sealed class CSharpLanguageServiceTests
 
         Assert.Equal("PlayGroundSharp.TestFixture", extension.NamespaceHint);
         Assert.Equal("PlayGroundSharp.TestFixture", extension.RequiredNamespace);
+        Assert.True(extension.RequiresImport);
+        Assert.Equal("using PlayGroundSharp.TestFixture", extension.NamespaceDisplayText);
+        Assert.Contains("using PlayGroundSharp.TestFixture", extension.AccessibleDisplayText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ShowsTheNamespaceWithoutRequiringAnImportForAnActiveExtension()
+    {
+        var context = new SessionContext(
+            ["var hoge = 1;"],
+            [.. SessionContext.DefaultImports, "PlayGroundSharp.TestFixture"],
+            [typeof(NumberExtensions).Assembly.Location]);
+
+        var items = await service.GetCompletionsAsync(context, "hoge.", "hoge.".Length);
+        var extension = Assert.Single(items, static item => item.DisplayText == "Billions");
+
+        Assert.False(extension.RequiresImport);
+        Assert.Equal("PlayGroundSharp.TestFixture", extension.NamespaceDisplayText);
     }
 
     [Fact]
@@ -234,7 +252,8 @@ public sealed class CSharpLanguageServiceTests
 
         var candidate = Assert.Single(items, static item =>
             item.TextToInsert == "Greeter" && item.RequiredNamespace == "PlayGroundSharp.TestFixture");
-        Assert.Contains("PlayGroundSharp.TestFixture", candidate.DisplayText, StringComparison.Ordinal);
+        Assert.Equal("Greeter", candidate.DisplayText);
+        Assert.Equal("using PlayGroundSharp.TestFixture", candidate.NamespaceDisplayText);
         Assert.DoesNotContain(items, static item => item.TextToInsert == "Greeter" && item.RequiredNamespace is null);
     }
 

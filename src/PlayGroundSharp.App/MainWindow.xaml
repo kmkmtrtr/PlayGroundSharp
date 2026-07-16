@@ -18,9 +18,22 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding DisplayText}" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,2,0">
-                    <TextBlock Text="{Binding NamespaceHint}" ToolTip="{Binding NamespaceHint}"
-                               Foreground="{DynamicResource MutedBrush}" FontSize="10" MaxWidth="150"
-                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <Border Visibility="{Binding HasNamespaceHint, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            ToolTip="{Binding NamespaceDisplayText}" CornerRadius="3" Padding="4,1" Margin="0,0,6,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding RequiresImport}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding NamespaceDisplayText}" Foreground="{DynamicResource MutedBrush}"
+                                   FontSize="10" MaxWidth="190" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" />
+                    </Border>
                     <Border Visibility="{Binding IsExtensionMethod, Converter={StaticResource BooleanToVisibilityConverter}}"
                             Background="{DynamicResource SelectionBrush}" CornerRadius="3" Padding="4,1">
                         <TextBlock Text="ext" Foreground="{DynamicResource MutedBrush}" FontSize="9" />
@@ -457,7 +470,7 @@
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem">
                                         <Setter Property="Focusable" Value="False" />
-                                        <Setter Property="AutomationProperties.Name" Value="{Binding DisplayText}" />
+                                        <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleDisplayText}" />
                                     </Style>
                                 </ListBox.ItemContainerStyle>
                             </ListBox>

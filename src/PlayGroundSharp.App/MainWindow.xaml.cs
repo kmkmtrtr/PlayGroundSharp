@@ -508,6 +508,17 @@ public partial class MainWindow : Window
                 : CompletionList.SelectedIndex <= 0 ? CompletionList.Items.Count - 1 : CompletionList.SelectedIndex - 1;
             CompletionList.ScrollIntoView(CompletionList.SelectedItem);
         }
+        else if (assistMode != AssistMode.None && e.Key is Key.PageUp or Key.PageDown)
+        {
+            e.Handled = true;
+            var current = Math.Max(0, CompletionList.SelectedIndex);
+            var direction = e.Key == Key.PageDown ? 1 : -1;
+            CompletionList.SelectedIndex = Math.Clamp(
+                current + direction * GetCompletionPageSize(),
+                0,
+                CompletionList.Items.Count - 1);
+            CompletionList.ScrollIntoView(CompletionList.SelectedItem);
+        }
         else if (e.Key == Key.Enter && IsExecuteGesture(Keyboard.Modifiers))
         {
             e.Handled = true;
@@ -546,6 +557,18 @@ public partial class MainWindow : Window
             var value = viewModel.MoveHistory(1);
             if (value is not null) Editor.Text = value;
         }
+    }
+
+    private int GetCompletionPageSize()
+    {
+        if (CompletionList.Items.Count == 0) return 1;
+        var index = Math.Max(0, CompletionList.SelectedIndex);
+        if (CompletionList.ItemContainerGenerator.ContainerFromIndex(index) is FrameworkElement container &&
+            container.ActualHeight > 0 && CompletionList.ActualHeight > 0)
+        {
+            return Math.Max(1, (int)(CompletionList.ActualHeight / container.ActualHeight) - 1);
+        }
+        return 8;
     }
 
     private void Editor_TextChanged(object? sender, EventArgs e)

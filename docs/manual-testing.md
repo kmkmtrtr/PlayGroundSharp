@@ -31,6 +31,7 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 25 | In the Web preview, search and add `Humanizer.Core`, then type `"hello_world".Hum` | Humanizer extension candidates and their namespace are available to completion |
 | 26 | In the Web preview, select the built fixture DLL and type `new PlayGroundSharp.TestFixture.Gre` | the DLL appears in Files and `Greeter` is offered by completion |
 | 27 | In the Web preview, execute stateful code and save a workspace | a `.pgsworkspace` download starts; loading it in Files restores imports, packages, input and accepted submissions |
+| 28 | Open completion with enough candidates, then press `PageDown` and `PageUp` while the editor retains focus | selection moves by one visible page and scrolls into view; `PageUp` returns toward the previous page |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 

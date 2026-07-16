@@ -30,6 +30,7 @@ public sealed record SymbolExplorerNode(
         "interface" => "Interface",
         "struct" => "Struct",
         "enum" => "Enum",
+        "enum member" => "Enum value",
         "delegate" => "Delegate",
         "method" => "Method",
         "constructor" => "Constructor",

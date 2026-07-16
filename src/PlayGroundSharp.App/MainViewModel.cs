@@ -1114,7 +1114,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         TypeExplorerStatus = string.IsNullOrEmpty(query)
             ? Localize("Explorer.Count",
                 typeExplorerEntries.Count(static entry => entry.ContainingType is null && entry.Kind != "method"),
-                typeExplorerEntries.Count(static entry => entry.Kind is "method" or "constructor"))
+                typeExplorerEntries.Count(static entry => entry.Kind is "method" or "constructor"),
+                typeExplorerEntries.Count(static entry => entry.Kind == "enum member"))
             : totalMatchCount > matched.Count
                 ? Localize("Explorer.MatchesLimited", totalMatchCount, matched.Count)
                 : Localize("Explorer.Matches", totalMatchCount);
@@ -1128,6 +1129,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         "interface" => "I",
         "struct" => "S",
         "enum" => "E",
+        "enum member" => "V",
         "delegate" => "D",
         "method" => "M",
         "constructor" => "M",

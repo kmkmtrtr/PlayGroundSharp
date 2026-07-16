@@ -197,6 +197,7 @@
                                             <DataTrigger Binding="{Binding Kind}" Value="interface"><Setter Property="Foreground" Value="{DynamicResource ExplorerInterfaceBrush}" /></DataTrigger>
                                             <DataTrigger Binding="{Binding Kind}" Value="struct"><Setter Property="Foreground" Value="{DynamicResource ExplorerStructBrush}" /></DataTrigger>
                                             <DataTrigger Binding="{Binding Kind}" Value="enum"><Setter Property="Foreground" Value="{DynamicResource ExplorerEnumBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="enum member"><Setter Property="Foreground" Value="{DynamicResource ExplorerEnumBrush}" /></DataTrigger>
                                             <DataTrigger Binding="{Binding Kind}" Value="delegate"><Setter Property="Foreground" Value="{DynamicResource ExplorerDelegateBrush}" /></DataTrigger>
                                             <DataTrigger Binding="{Binding Kind}" Value="method"><Setter Property="Foreground" Value="{DynamicResource ExplorerMethodBrush}" /></DataTrigger>
                                             <DataTrigger Binding="{Binding Kind}" Value="constructor"><Setter Property="Foreground" Value="{DynamicResource ExplorerMethodBrush}" /></DataTrigger>

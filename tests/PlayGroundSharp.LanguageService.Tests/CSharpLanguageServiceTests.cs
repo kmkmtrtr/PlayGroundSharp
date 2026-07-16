@@ -274,6 +274,7 @@ public sealed class CSharpLanguageServiceTests
             [
                 "record User(string Name)",
                 "delegate int Transformer(int value)",
+                "/// <summary>Describes a local state.</summary>\nenum LocalState\n{\n    /// <summary>The initial state.</summary>\n    Ready = 4,\n    Busy = 8\n}",
                 "interface IEntity { }\nclass EntityBase { }\nclass Customer : EntityBase, IEntity { }",
                 "/// <summary>Checks whether a user is an adult.</summary>\n/// <param name=\"user\">The user to inspect.</param>\nbool IsAdult(User user) => true"
             ],
@@ -286,11 +287,24 @@ public sealed class CSharpLanguageServiceTests
         Assert.Contains(entries, static entry => entry.Namespace == "System.Linq" && entry.Name == "Enumerable" && entry.Kind == "class");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "User" && entry.Kind == "record");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "Transformer" && entry.Kind == "delegate");
+        var sessionEnumMember = Assert.Single(entries, static entry =>
+            entry.Namespace == "(session)" && entry.ContainingType == "LocalState" &&
+            entry.Name == "Ready" && entry.Kind == "enum member");
+        Assert.Equal("Ready = 4", sessionEnumMember.DisplayName);
+        Assert.Contains("initial", sessionEnumMember.Summary, StringComparison.OrdinalIgnoreCase);
         var inheritedClass = Assert.Single(entries, static entry =>
             entry.Namespace == "(session)" && entry.Name == "Customer" && entry.Kind == "class");
         Assert.Equal(["EntityBase", "IEntity"], inheritedClass.InheritedTypes);
         Assert.Contains(entries, static entry =>
             entry.Namespace == "PlayGroundSharp.TestFixture" && entry.Name == "Greeter");
+        var dynamicEnumMember = Assert.Single(entries, static entry =>
+            entry.Namespace == "PlayGroundSharp.TestFixture" && entry.ContainingType == "WorkflowState" &&
+            entry.Name == "Running" && entry.Kind == "enum member");
+        Assert.Equal("Running = 20", dynamicEnumMember.DisplayName);
+        Assert.Contains("currently running", dynamicEnumMember.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(entries, static entry =>
+            entry.Namespace == "System" && entry.ContainingType == "DayOfWeek" &&
+            entry.Name == "Sunday" && entry.DisplayName == "Sunday = 0" && entry.Kind == "enum member");
 
         var sessionMethod = Assert.Single(entries, static entry =>
             entry.Namespace == "(session)" && entry.Name == "IsAdult" && entry.Kind == "method");

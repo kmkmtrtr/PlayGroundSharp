@@ -37,7 +37,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("シンボル", "名前空間、型、メソッドとドキュメントを探索します。",
         [
-            new("ホバーと詳細表示", "項目へマウスを置くと署名と概要をすばやく確認できます。クリックするとパラメーターや戻り値を右側のフライアウトへ表示します。Explorer右端をドラッグすると一覧幅を変更できます。深い階層は横スクロールホイール、またはShift+ホイールで横移動できます。"),
+            new("ホバーと詳細表示", "項目へマウスを置くと署名と概要をすばやく確認できます。enumは展開すると各メンバーと定数値を表示します。クリックするとパラメーターや戻り値を右側のフライアウトへ表示します。Explorer右端をドラッグすると一覧幅を変更できます。深い階層は横スクロールホイール、またはShift+ホイールで横移動できます。"),
             new("日本語ドキュメント", "アセンブリ付属のXMLコメントは通常英語です。内容を不正確に自動翻訳せず、.NET APIでは固定詳細からMicrosoft Learnの日本語ページを開けます。"),
             new("検索", "名前空間、型、メソッド、コメント、アセンブリ名を横断検索します。")
         ]),
@@ -83,7 +83,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Symbol explorer", "Browse namespaces, types, methods, and XML documentation.",
         [
-            new("Hover and details", "Hover for a compact signature and summary. Click for parameter and return documentation in a right-side flyout. Drag the Explorer edge to resize it. Use a horizontal wheel or Shift+wheel to move through deep hierarchies."),
+            new("Hover and details", "Hover for a compact signature and summary. Expand an enum to inspect every member and its constant value. Click for documentation in a right-side flyout. Drag the Explorer edge to resize it. Use a horizontal wheel or Shift+wheel to move through deep hierarchies."),
             new("Localized docs", "Assembly XML documentation is commonly English. Framework symbols link to the localized Microsoft Learn API page rather than applying an unreliable automatic translation.")
         ]),
         new("Workspaces", "Save and reconstruct a session later.",

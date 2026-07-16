@@ -7,6 +7,7 @@ using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.Host.Mef;
 using PlayGroundSharp.Core;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
@@ -415,7 +416,7 @@ public sealed class CSharpLanguageService
             .ToArray();
     }
 
-    /// <summary>Builds the documented type and method inventory available to the current session.</summary>
+    /// <summary>Builds the documented type and member inventory available to the current session.</summary>
     public async Task<IReadOnlyList<SymbolExplorerEntry>> GetSymbolExplorerAsync(
         SessionContext context,
         CancellationToken cancellationToken = default)
@@ -828,6 +829,40 @@ public sealed class CSharpLanguageService
                          !method.IsImplicitlyDeclared &&
                          method.MethodKind is MethodKind.Ordinary or MethodKind.Constructor))
             entries.Add(CreateMethodEntry(method, namespaceName, typeName, cancellationToken, documentationPath));
+
+        if (type.TypeKind == TypeKind.Enum)
+            foreach (var field in type.GetMembers().OfType<IFieldSymbol>()
+                         .Where(static field =>
+                             field.DeclaredAccessibility == Accessibility.Public &&
+                             field.HasConstantValue &&
+                             !field.IsImplicitlyDeclared))
+                entries.Add(CreateEnumMemberEntry(
+                    field, namespaceName, typeName, cancellationToken, documentationPath));
+    }
+
+    private static SymbolExplorerEntry CreateEnumMemberEntry(
+        IFieldSymbol field,
+        string namespaceName,
+        string containingType,
+        CancellationToken cancellationToken,
+        string? documentationPath)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var documentation = GetDocumentation(field, cancellationToken, documentationPath);
+        var assemblyName = namespaceName == "(session)" ? "Session" : field.ContainingAssembly?.Name ?? string.Empty;
+        var constantValue = Convert.ToString(field.ConstantValue, CultureInfo.InvariantCulture) ?? string.Empty;
+        return new(
+            namespaceName,
+            field.Name,
+            $"{field.Name} = {constantValue}",
+            "enum member",
+            assemblyName,
+            containingType,
+            $"{containingType}.{field.Name} = {constantValue}",
+            documentation.Summary,
+            [],
+            string.Empty,
+            []);
     }
 
     private static SymbolExplorerEntry CreateMethodEntry(

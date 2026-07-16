@@ -65,6 +65,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private string historyDraft = string.Empty;
     private string? executingCode;
     private TaskCompletionSource? executionCompletion;
+    private bool isPreparingExecution;
 
     [ObservableProperty] private string inputText = string.Empty;
     [ObservableProperty] private string status = "Starting Worker";
@@ -312,7 +313,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task ExecuteAsync()
     {
         var code = InputText;
-        if (IsRunning || string.IsNullOrWhiteSpace(code)) return;
+        if (IsRunning || isPreparingExecution || string.IsNullOrWhiteSpace(code)) return;
         if (HasPendingSessionMutation)
         {
             SetLocalizedStatus("Status.SessionBusy");
@@ -342,13 +343,23 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        isPreparingExecution = true;
+        try
+        {
+            await AddRequiredExtensionImportsAsync(code);
+        }
+        finally
+        {
+            isPreparingExecution = false;
+        }
+
         var index = submissions.Count + 1;
         executingCode = code;
         history.Add(code);
         historyPosition = history.Count;
         historyDraft = string.Empty;
         Transcript.Add(TranscriptLine.Input(index, code));
-        InputText = string.Empty;
+        if (InputText == code) InputText = string.Empty;
         executionCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         IsRunning = true;
         SetLocalizedStatus("Status.Compiling");
@@ -363,6 +374,38 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             IsWorkerConnected = false;
             IsRunning = false;
             SignalExecutionFinished();
+        }
+    }
+
+    private async Task AddRequiredExtensionImportsAsync(string code)
+    {
+        IReadOnlyList<string> requiredImports;
+        try
+        {
+            var context = Context;
+            requiredImports = await Task.Run(
+                () => languageService.GetRequiredExtensionImportsAsync(context, code));
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine($"Automatic extension import analysis failed: {error}");
+            return;
+        }
+
+        foreach (var requiredImport in requiredImports)
+        {
+            try
+            {
+                if (!await AddUsingAsync(requiredImport)) continue;
+                SetLocalizedStatus("Status.AddedUsing", requiredImport);
+                Transcript.Add(TranscriptLine.System(
+                    Localize("Message.UsingExecutionAutoAdded", requiredImport)));
+            }
+            catch (Exception error)
+            {
+                SetLocalizedStatus("Status.UsingFailed");
+                Transcript.Add(TranscriptLine.Diagnostic(error.Message));
+            }
         }
     }
 

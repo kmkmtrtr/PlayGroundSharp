@@ -149,6 +149,97 @@ public sealed class CSharpLanguageService
             .ToArray();
     }
 
+    /// <summary>
+    /// Finds namespaces that can unambiguously resolve extension-method invocations typed without
+    /// accepting their completion item. Already bound invocations and ambiguous namespaces are ignored.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetRequiredExtensionImportsAsync(
+        SessionContext context,
+        string currentCode,
+        CancellationToken cancellationToken = default)
+    {
+        if (!currentCode.Contains('.') || !currentCode.Contains('(')) return [];
+
+        using var workspaceDocument = CreateDocument(context, currentCode);
+        var root = await workspaceDocument.Document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        var model = await workspaceDocument.Document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+        if (root is null || model is null) return [];
+
+        var currentStart = workspaceDocument.CurrentOffset;
+        var currentEnd = currentStart + currentCode.Length;
+        var unresolvedInvocations = new List<UnresolvedExtensionInvocation>();
+        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (invocation.SpanStart < currentStart || invocation.Span.End > currentEnd ||
+                invocation.Expression is not MemberAccessExpressionSyntax access)
+                continue;
+
+            var invocationSymbol = model.GetSymbolInfo(invocation, cancellationToken);
+            if (invocationSymbol.Symbol is not null || invocationSymbol.CandidateSymbols.Length > 0) continue;
+
+            var receiverSymbol = model.GetSymbolInfo(access.Expression, cancellationToken).Symbol;
+            if (receiverSymbol is INamedTypeSymbol) continue;
+            var receiverType = model.GetTypeInfo(access.Expression, cancellationToken).Type ?? receiverSymbol switch
+            {
+                ILocalSymbol local => local.Type,
+                IFieldSymbol field => field.Type,
+                IPropertySymbol property => property.Type,
+                _ => null
+            };
+            if (receiverType is null or { TypeKind: TypeKind.Error or TypeKind.Dynamic }) continue;
+
+            unresolvedInvocations.Add(new(
+                invocation,
+                access.Name.Identifier.ValueText,
+                receiverType,
+                new HashSet<string>(StringComparer.Ordinal)));
+        }
+        if (unresolvedInvocations.Count == 0) return [];
+
+        var unresolvedNames = unresolvedInvocations
+            .Select(static invocation => invocation.MethodName)
+            .ToHashSet(StringComparer.Ordinal);
+        var dynamicPaths = context.ReferencePaths
+            .Where(File.Exists)
+            .Select(Path.GetFullPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var reference in model.Compilation.References.OfType<PortableExecutableReference>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (reference.FilePath is null || !dynamicPaths.Contains(Path.GetFullPath(reference.FilePath))) continue;
+            if (model.Compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly) continue;
+
+            foreach (var type in EnumeratePublicTypes(assembly.GlobalNamespace))
+            foreach (var method in type.GetMembers().OfType<IMethodSymbol>())
+            {
+                if (!method.IsExtensionMethod || !unresolvedNames.Contains(method.Name)) continue;
+                var sourceNamespace = method.ContainingNamespace?.ToDisplayString();
+                if (string.IsNullOrWhiteSpace(sourceNamespace) ||
+                    context.Imports.Contains(sourceNamespace, StringComparer.Ordinal))
+                    continue;
+
+                foreach (var unresolved in unresolvedInvocations.Where(invocation =>
+                             invocation.MethodName.Equals(method.Name, StringComparison.Ordinal)))
+                {
+                    var reducedMethod = method.ReduceExtensionMethod(unresolved.ReceiverType);
+                    if (reducedMethod is null ||
+                        !CanAcceptArgumentCount(reducedMethod, unresolved.Invocation.ArgumentList.Arguments.Count) ||
+                        !GetOverloadScore(
+                            reducedMethod, unresolved.Invocation.ArgumentList, model, cancellationToken).IsCompatible)
+                        continue;
+                    unresolved.Namespaces.Add(sourceNamespace);
+                }
+            }
+        }
+
+        return unresolvedInvocations
+            .Where(static invocation => invocation.Namespaces.Count == 1)
+            .Select(static invocation => invocation.Namespaces.Single())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
     public async Task<string?> GetCompletionDescriptionAsync(
         SessionContext context,
         string currentCode,
@@ -362,6 +453,13 @@ public sealed class CSharpLanguageService
         return method.Parameters is [.., { IsParams: true }] ? method.Parameters.Length - 1 : -1;
     }
 
+    private static bool CanAcceptArgumentCount(IMethodSymbol method, int argumentCount)
+    {
+        var requiredCount = method.Parameters.Count(static parameter => !parameter.IsOptional && !parameter.IsParams);
+        return argumentCount >= requiredCount &&
+               (method.Parameters is [.., { IsParams: true }] || argumentCount <= method.Parameters.Length);
+    }
+
     private static int FindParameterIndex(IMethodSymbol method, string name)
     {
         for (var index = 0; index < method.Parameters.Length; index++)
@@ -399,6 +497,12 @@ public sealed class CSharpLanguageService
     {
         public static OverloadScore Incompatible { get; } = new(false, 0, 0, int.MaxValue);
     }
+
+    private sealed record UnresolvedExtensionInvocation(
+        InvocationExpressionSyntax Invocation,
+        string MethodName,
+        ITypeSymbol ReceiverType,
+        HashSet<string> Namespaces);
 
     public async Task<IReadOnlyList<DiagnosticInfo>> GetDiagnosticsAsync(
         SessionContext context,
@@ -517,14 +621,19 @@ public sealed class CSharpLanguageService
         var paths = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))?
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries) ?? [];
         var documentationPaths = GetReferenceDocumentationPaths();
-        return paths.Select(path =>
+        return paths
+            .Where(path => SessionContext.DefaultReferenceAssemblyNames.Contains(
+                Path.GetFileNameWithoutExtension(path)))
+            .Select(path =>
         {
             var assemblyName = Path.GetFileNameWithoutExtension(path);
             var documentationPath = documentationPaths.GetValueOrDefault(assemblyName);
             if (documentationPath is null && assemblyName == "System.Private.CoreLib")
                 documentationPath = documentationPaths.GetValueOrDefault("System.Runtime");
             return CreateMetadataReference(path, documentationPath);
-        }).Append(CreateMetadataReference(typeof(SessionContext).Assembly.Location)).ToArray();
+        }).Append(CreateMetadataReference(typeof(SessionContext).Assembly.Location))
+            .DistinctBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static MetadataReference CreateMetadataReference(string path) =>

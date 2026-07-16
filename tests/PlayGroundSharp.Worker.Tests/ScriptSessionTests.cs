@@ -1,7 +1,8 @@
+using Microsoft.CodeAnalysis.Scripting;
 using PlayGroundSharp.Core;
-using PlayGroundSharp.Worker;
-using PlayGroundSharp.TestFixture;
 using PlayGroundSharp.TestDependency;
+using PlayGroundSharp.TestFixture;
+using PlayGroundSharp.Worker;
 
 namespace PlayGroundSharp.Worker.Tests;
 
@@ -12,11 +13,33 @@ public sealed class ConsoleCollection;
 public sealed class ScriptSessionTests
 {
     [Fact]
+    public void SharedDefaultReferenceListCoversWorkerFrameworkReferences()
+    {
+        var workerReferences = ScriptOptions.Default.MetadataReferences
+            .Select(static reference => NormalizeUnresolvedReferenceDisplay(reference.Display))
+            .Select(Path.GetFileNameWithoutExtension)
+            .Append(typeof(object).Assembly.GetName().Name)
+            .Append(typeof(Enumerable).Assembly.GetName().Name)
+            .Append(typeof(System.Text.Json.JsonElement).Assembly.GetName().Name)
+            .OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Empty(workerReferences.Except(SessionContext.DefaultReferenceAssemblyNames));
+    }
+
+    [Fact]
     public async Task EvaluatesExpression()
     {
         var result = await new ScriptSession().ExecuteAsync(1, "1 + 2");
         Assert.True(result.StateAccepted);
         Assert.Equal("3", result.Snapshot?.Display);
+    }
+
+    private static string NormalizeUnresolvedReferenceDisplay(string? display)
+    {
+        if (display is null) return string.Empty;
+        var separator = display.LastIndexOf(": ", StringComparison.Ordinal);
+        return separator >= 0 ? display[(separator + 2)..] : display;
     }
 
     [Fact]

@@ -47,5 +47,21 @@ public sealed record SessionContext(
         "System.Threading", "System.Threading.Tasks", "System.Text", "System.Text.Json", "System.Text.Json.Nodes"
     ];
 
+    // Framework references used by ScriptOptions.Default plus assemblies exposed by the modeled globals.
+    // This deliberately conservative set prevents editor-only dependencies (for example Humanizer used
+    // internally by Roslyn) from leaking out of the app host and into session completion.
+    public static IReadOnlySet<string> DefaultReferenceAssemblyNames { get; } = new HashSet<string>(
+    [
+        "System.Private.CoreLib", "System", "System.Collections", "System.Collections.Concurrent", "System.Console",
+        "System.Diagnostics", "System.Diagnostics.Debug", "System.Diagnostics.Process", "System.Diagnostics.StackTrace",
+        "System.Globalization", "System.IO", "System.IO.FileSystem", "System.IO.FileSystem.Primitives",
+        "System.Linq", "System.Reflection", "System.Reflection.Extensions", "System.Reflection.Primitives",
+        "System.Runtime", "System.Runtime.Extensions", "System.Runtime.InteropServices", "System.Text", "System.Text.Encoding",
+        "System.Text.Encoding.CodePages", "System.Text.Encoding.Extensions", "System.Text.Json",
+        "System.Text.RegularExpressions", "System.Threading", "System.Threading.Tasks",
+        "System.Threading.Tasks.Parallel", "System.Threading.Thread", "System.ValueTuple",
+        "PlayGroundSharp.Core"
+    ], StringComparer.OrdinalIgnoreCase);
+
     public static SessionContext Empty { get; } = new([], DefaultImports, []);
 }

@@ -82,6 +82,29 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task DoesNotOfferExtensionsFromLanguageServiceImplementationDependencies()
+    {
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, "(1).", "(1).".Length);
+
+        Assert.DoesNotContain(items, static item => item.DisplayText == "Billions");
+    }
+
+    [Fact]
+    public async Task OffersHumanizerExtensionsAfterItsAssemblyIsAddedToTheSession()
+    {
+        var humanizerPath = Path.Combine(AppContext.BaseDirectory, "Humanizer.dll");
+        Assert.True(File.Exists(humanizerPath));
+        var context = new SessionContext([], SessionContext.DefaultImports, [humanizerPath]);
+
+        var items = await service.GetCompletionsAsync(context, "(1).", "(1).".Length);
+        var extension = Assert.Single(items, static item => item.DisplayText == "Billions");
+        var requiredImports = await service.GetRequiredExtensionImportsAsync(context, "(1).Billions()");
+
+        Assert.Equal("Humanizer", extension.RequiredNamespace);
+        Assert.Equal(["Humanizer"], requiredImports);
+    }
+
+    [Fact]
     public async Task ParenthesizesNumericLiteralWhenCompletingAMember()
     {
         var context = new SessionContext(
@@ -115,6 +138,40 @@ public sealed class CSharpLanguageServiceTests
         Assert.True(extension.RequiresImport);
         Assert.Equal("using PlayGroundSharp.TestFixture", extension.NamespaceDisplayText);
         Assert.Contains("using PlayGroundSharp.TestFixture", extension.AccessibleDisplayText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FindsRequiredImportForManuallyTypedExtensionInvocation()
+    {
+        var context = new SessionContext(
+            ["var hoge = 1;"],
+            SessionContext.DefaultImports,
+            [typeof(NumberExtensions).Assembly.Location]);
+
+        var requiredImports = await service.GetRequiredExtensionImportsAsync(context, "hoge.Billions()");
+
+        Assert.Equal(["PlayGroundSharp.TestFixture"], requiredImports);
+    }
+
+    [Fact]
+    public async Task DoesNotRequireImportForAnAlreadyActiveOrUnknownMethod()
+    {
+        var context = new SessionContext(
+            ["var hoge = 1;"],
+            [.. SessionContext.DefaultImports, "PlayGroundSharp.TestFixture"],
+            [typeof(NumberExtensions).Assembly.Location]);
+
+        var activeImports = await service.GetRequiredExtensionImportsAsync(context, "hoge.Billions()");
+        var unknownImports = await service.GetRequiredExtensionImportsAsync(
+            context with { Imports = SessionContext.DefaultImports },
+            "hoge.NotARealMethod()");
+        var typeReceiverImports = await service.GetRequiredExtensionImportsAsync(
+            context with { Imports = SessionContext.DefaultImports },
+            "int.Billions()");
+
+        Assert.Empty(activeImports);
+        Assert.Empty(unknownImports);
+        Assert.Empty(typeReceiverImports);
     }
 
     [Fact]

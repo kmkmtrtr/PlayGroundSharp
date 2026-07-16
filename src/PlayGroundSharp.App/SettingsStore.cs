@@ -14,6 +14,7 @@ internal sealed record AppSettings(
 
 internal static class SettingsStore
 {
+    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "PlayGroundSharp",
@@ -39,14 +40,32 @@ internal static class SettingsStore
 
     public static void Save(AppSettings settings)
     {
+        string? temporaryPath = null;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+            var directory = Path.GetDirectoryName(SettingsPath)!;
+            Directory.CreateDirectory(directory);
+            temporaryPath = Path.Combine(directory, $".settings.{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(settings, Options));
+            File.Move(temporaryPath, SettingsPath, overwrite: true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             // Settings persistence must never make the interactive console unusable.
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                try
+                {
+                    if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    // A stale temporary settings file is harmless and can be ignored.
+                }
+            }
         }
     }
 }

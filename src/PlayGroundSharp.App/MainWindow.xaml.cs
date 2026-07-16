@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? completionCancellation;
     private CancellationTokenSource? completionDescriptionCancellation;
     private CancellationTokenSource? signatureHelpCancellation;
+    private CancellationTokenSource? quickInfoCancellation;
     private readonly DispatcherTimer signatureHelpTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
     private AssistMode assistMode;
     private int completionFilterStart;
@@ -60,6 +61,7 @@ public partial class MainWindow : Window
         {
             viewModel.UpdateCursorPosition(Editor.TextArea.Caret.Line, Editor.TextArea.Caret.Column);
             if (assistMode == AssistMode.Signature) ScheduleSignatureHelpRefresh();
+            else if (assistMode == AssistMode.Completion) ApplyCompletionFilter();
         };
         signatureHelpTimer.Tick += async (_, _) =>
         {
@@ -86,6 +88,8 @@ public partial class MainWindow : Window
         completionDescriptionCancellation?.Dispose();
         signatureHelpCancellation?.Cancel();
         signatureHelpCancellation?.Dispose();
+        quickInfoCancellation?.Cancel();
+        quickInfoCancellation?.Dispose();
         await viewModel.DisposeAsync();
     }
 
@@ -559,7 +563,7 @@ public partial class MainWindow : Window
         var dialog = new SaveFileDialog
         {
             Title = viewModel.Localize("Dialog.TranscriptSaveTitle"),
-            Filter = viewModel.Localize("Dialog.ResultFileFilter"),
+            Filter = viewModel.Localize("Dialog.TextFileFilter"),
             DefaultExt = ".txt",
             AddExtension = true,
             FileName = $"PlayGroundSharp-transcript-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
@@ -718,9 +722,16 @@ public partial class MainWindow : Window
         {
             return;
         }
-        if (cancellation.IsCancellationRequested ||
-            Editor.CaretOffset < requestOffset ||
-            !Editor.Text.StartsWith(requestText, StringComparison.Ordinal))
+        catch (Exception error)
+        {
+            ShowAssistFailure(error);
+            return;
+        }
+        var inputUnchanged = Editor.CaretOffset == requestOffset && Editor.Text == requestText;
+        var inputAppendedAtEnd = requestOffset == requestText.Length &&
+                                 Editor.CaretOffset == Editor.Text.Length &&
+                                 Editor.Text.StartsWith(requestText, StringComparison.Ordinal);
+        if (cancellation.IsCancellationRequested || !inputUnchanged && !inputAppendedAtEnd)
             return;
         allCompletionItems = items;
         completionFilterStart = requestText.TrimStart().StartsWith(':')
@@ -751,6 +762,11 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
+            return;
+        }
+        catch (Exception error)
+        {
+            ShowAssistFailure(error);
             return;
         }
         if (cancellation.IsCancellationRequested || requestText != Editor.Text || requestOffset != Editor.CaretOffset)
@@ -903,6 +919,17 @@ public partial class MainWindow : Window
                 ShowAssistSummary(description);
         }
         catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (!cancellation.IsCancellationRequested) ShowAssistSummary(error.Message);
+        }
+    }
+
+    private void ShowAssistFailure(Exception error)
+    {
+        HideAssist();
+        viewModel.Transcript.Add(TranscriptLine.Diagnostic(error.Message));
+        if (!viewModel.IsRunning) viewModel.SetLocalizedStatus("Status.Ready");
     }
 
     private void ShowAssistSummary(string? text)
@@ -968,7 +995,32 @@ public partial class MainWindow : Window
         var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
         if (position is null) return;
         var offset = Editor.Document.GetOffset(position.Value.Location);
-        Editor.ToolTip = (await viewModel.GetQuickInfoAsync(offset))?.Text;
+        quickInfoCancellation?.Cancel();
+        quickInfoCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        quickInfoCancellation = cancellation;
+        var requestText = Editor.Text;
+        try
+        {
+            var result = await viewModel.GetQuickInfoAsync(offset, cancellation.Token);
+            if (!cancellation.IsCancellationRequested && requestText == Editor.Text)
+                Editor.ToolTip = result?.Text;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            if (!cancellation.IsCancellationRequested) Editor.ToolTip = null;
+        }
+    }
+
+    private void Editor_MouseLeave(object sender, MouseEventArgs e)
+    {
+        quickInfoCancellation?.Cancel();
+        quickInfoCancellation?.Dispose();
+        quickInfoCancellation = null;
+        Editor.ToolTip = null;
     }
 
     private void TranscriptLine_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -1021,7 +1073,7 @@ public partial class MainWindow : Window
         var dialog = new SaveFileDialog
         {
             Title = viewModel.Localize("Dialog.ResultSaveTitle"),
-            Filter = viewModel.Localize("Dialog.ResultFileFilter"),
+            Filter = viewModel.Localize(line.Snapshot is null ? "Dialog.TextFileFilter" : "Dialog.ResultFileFilter"),
             DefaultExt = ".txt",
             AddExtension = true,
             FileName = $"PlayGroundSharp-result-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
@@ -1029,7 +1081,10 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            var text = await Task.Run(() => line.CopyText);
+            var text = await Task.Run(() =>
+                line.Snapshot is not null && Path.GetExtension(dialog.FileName).Equals(".json", StringComparison.OrdinalIgnoreCase)
+                    ? SnapshotJsonFormatter.Format(line.Snapshot)
+                    : line.CopyText);
             await File.WriteAllTextAsync(dialog.FileName, text);
         }
         catch (Exception error)

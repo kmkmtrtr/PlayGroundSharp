@@ -22,7 +22,11 @@ public sealed record WorkspaceDocument(
 public static class WorkspaceFile
 {
     public const long MaximumFileBytes = 16 * 1024 * 1024;
-    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
+    };
 
     public static async Task SaveAsync(
         string path,
@@ -40,7 +44,12 @@ public static class WorkspaceFile
         {
             await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                              bufferSize: 65_536, FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
                 await JsonSerializer.SerializeAsync(stream, document, Options, cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                if (stream.Length > MaximumFileBytes)
+                    throw new InvalidDataException("Workspace file exceeds 16 MiB.");
+            }
             File.Move(temporaryPath, fullPath, overwrite: true);
         }
         finally
@@ -70,13 +79,16 @@ public static class WorkspaceFile
         ArgumentNullException.ThrowIfNull(document);
         if (document.Version != WorkspaceDocument.CurrentVersion)
             throw new InvalidDataException($"Unsupported workspace version {document.Version}.");
+        if (document.Submissions is null || document.Imports is null || document.References is null ||
+            document.Packages is null || document.InputText is null)
+            throw new InvalidDataException("Workspace contains missing fields.");
         if (document.Submissions.Count > 10_000 || document.Imports.Count > 10_000 ||
             document.References.Count > 10_000 || document.Packages.Count > 10_000)
             throw new InvalidDataException("Workspace contains too many entries.");
         if (document.Submissions.Any(static value => value is null) ||
             document.Imports.Any(static value => string.IsNullOrWhiteSpace(value)) ||
             document.References.Any(static value => string.IsNullOrWhiteSpace(value)) ||
-            document.Packages.Any(static value => string.IsNullOrWhiteSpace(value.Id) || string.IsNullOrWhiteSpace(value.Version)))
+            document.Packages.Any(static value => value is null || string.IsNullOrWhiteSpace(value.Id) || string.IsNullOrWhiteSpace(value.Version)))
             throw new InvalidDataException("Workspace contains invalid entries.");
     }
 }

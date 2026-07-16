@@ -135,7 +135,10 @@ public partial class ResultInspectorWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            var text = await Task.Run(() => SnapshotTextFormatter.FormatFull(snapshot));
+            var text = await Task.Run(() =>
+                Path.GetExtension(dialog.FileName).Equals(".json", StringComparison.OrdinalIgnoreCase)
+                    ? SnapshotJsonFormatter.Format(snapshot)
+                    : SnapshotTextFormatter.FormatFull(snapshot));
             await File.WriteAllTextAsync(dialog.FileName, text);
         }
         catch (Exception error)

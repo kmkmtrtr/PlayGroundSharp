@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Text.Json;
 using PlayGroundSharp.Core;
 
 namespace PlayGroundSharp.Core.Tests;
@@ -62,5 +63,40 @@ public sealed class ProtocolTests
 
         Assert.Equal(3, restored.TotalCount);
         Assert.Equal(["1", "2", "3"], restored.Items!.Select(static item => item.Display));
+    }
+
+    [Fact]
+    public void SnapshotJsonExportIsValidAndMarksTruncatedCollections()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Object,
+            "2 properties",
+            "Example",
+            Properties:
+            [
+                new("answer", new(SnapshotKind.Number, "42", "System.Int32")),
+                new("states", new(
+                    SnapshotKind.Sequence,
+                    "3 items",
+                    "State[]",
+                    Items:
+                    [
+                        new(SnapshotKind.Enum, "Ready", "State"),
+                        new(SnapshotKind.Boolean, "true", "System.Boolean")
+                    ],
+                    IsTruncated: true,
+                    TotalCount: 3))
+            ]);
+
+        using var document = JsonDocument.Parse(SnapshotJsonFormatter.Format(snapshot));
+
+        Assert.Equal(42, document.RootElement.GetProperty("answer").GetInt32());
+        var states = document.RootElement.GetProperty("states");
+        Assert.Equal("Ready", states[0].GetString());
+        Assert.True(states[1].GetBoolean());
+        var metadata = states[2].GetProperty("$playgroundSharp");
+        Assert.True(metadata.GetProperty("truncated").GetBoolean());
+        Assert.Equal(2, metadata.GetProperty("capturedCount").GetInt32());
+        Assert.Equal(3, metadata.GetProperty("totalCount").GetInt32());
     }
 }

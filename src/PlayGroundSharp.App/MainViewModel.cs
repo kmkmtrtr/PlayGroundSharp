@@ -32,6 +32,7 @@ public sealed partial class UiOption<T>(T value, string label) : ObservableObjec
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private const int MaximumExplorerSearchResults = 400;
+    private static readonly AppSettings InitialSettings = SettingsStore.Load();
     private static readonly string[] Commands =
     [
         ":help", ":clear", ":reset", ":using list", ":using add ", ":using remove ",
@@ -56,6 +57,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private object?[] statusLocalizationArguments = [];
     private string sessionLocalizationKey = "Session.Count";
     private object?[] sessionLocalizationArguments = [0];
+    private string? packageSearchLocalizationKey = "Package.SearchPrompt";
+    private object?[] packageSearchLocalizationArguments = [];
     private int historyPosition;
     private string historyDraft = string.Empty;
     private string? executingCode;
@@ -67,6 +70,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string diagnosticStatus = "0 errors, 0 warnings";
     [ObservableProperty] private string cursorStatus = "Ln 1, Col 1";
     [ObservableProperty] private bool isRunning;
+    [ObservableProperty] private bool isWorkerConnected;
     [ObservableProperty] private bool isReferenceDrawerOpen;
     [ObservableProperty] private bool isTypeExplorerOpen = true;
     [ObservableProperty] private string typeExplorerSearchText = string.Empty;
@@ -77,10 +81,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private bool includePrereleasePackages;
     [ObservableProperty] private bool isPackageSearchBusy;
     [ObservableProperty] private bool isWorkspaceBusy;
+    [ObservableProperty] private bool isSessionChanging = true;
     [ObservableProperty] private string newUsingText = string.Empty;
-    [ObservableProperty] private ExecutionKeyMode executionKeyMode = SettingsStore.Load().ExecutionKeyMode;
-    [ObservableProperty] private AppThemeMode themeMode = SettingsStore.Load().ThemeMode;
-    [ObservableProperty] private AppLanguageMode languageMode = SettingsStore.Load().LanguageMode;
+    [ObservableProperty] private ExecutionKeyMode executionKeyMode = InitialSettings.ExecutionKeyMode;
+    [ObservableProperty] private AppThemeMode themeMode = InitialSettings.ThemeMode;
+    [ObservableProperty] private AppLanguageMode languageMode = InitialSettings.LanguageMode;
 
     public ObservableCollection<TranscriptLine> Transcript { get; } = [];
     public ObservableCollection<string> PackageItems { get; } = [];
@@ -123,7 +128,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         DiagnosticStatus = Localize("Diagnostics.Count", 0, 0);
         CursorStatus = Localize("Cursor.Position", 1, 1);
         TypeExplorerStatus = Localize("Explorer.Loading");
-        PackageSearchMessage = Localize("Package.SearchPrompt");
+        SetPackageSearchMessage("Package.SearchPrompt");
         CancelCommand = new AsyncRelayCommand(CancelAsync);
         ResetCommand = new AsyncRelayCommand(ResetAsync);
         RestartWorkerCommand = new AsyncRelayCommand(RestartWorkerAsync);
@@ -134,13 +139,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         InstallPackageCommand = new AsyncRelayCommand<NuGetPackageInfo>(InstallPackageAsync);
         AddUsingFromGuiCommand = new AsyncRelayCommand(AddUsingFromGuiAsync);
         worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEvent(envelope));
-        worker.Disconnected += message => Application.Current.Dispatcher.Invoke(() =>
+        worker.Disconnected += disconnection => Application.Current.Dispatcher.Invoke(() =>
         {
+            IsWorkerConnected = false;
             SetLocalizedStatus("Status.WorkerDisconnected");
             IsRunning = false;
             SignalExecutionFinished();
             VariableItems.Clear();
-            Transcript.Add(TranscriptLine.System(message));
+            var reason = disconnection.Kind switch
+            {
+                WorkerDisconnectionKind.ProcessExited => Localize("Message.WorkerExitCode", disconnection.ExitCode),
+                WorkerDisconnectionKind.PipeClosed => Localize("Message.WorkerPipeClosed"),
+                _ => disconnection.Detail ?? Localize("Message.WorkerPipeClosed")
+            };
+            Transcript.Add(TranscriptLine.System(Localize("Message.WorkerDisconnected", reason)));
         });
     }
 
@@ -164,7 +176,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             if (IsRunning) await CancelAsync();
+            IsWorkerConnected = false;
             await worker.RestartAsync(cancellationToken);
+            IsWorkerConnected = true;
             submissions.Clear();
             imports.Clear();
             imports.AddRange(document.Imports.Distinct(StringComparer.Ordinal));
@@ -269,21 +283,32 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             await worker.StartAsync();
+            IsWorkerConnected = true;
             SetLocalizedStatus("Status.Ready");
             Transcript.Add(TranscriptLine.System(Localize("Message.WorkerConnected")));
             await RefreshTypeExplorerAsync();
         }
         catch (Exception error)
         {
+            IsWorkerConnected = false;
             SetLocalizedStatus("Status.WorkerDisconnected");
             Transcript.Add(TranscriptLine.Diagnostic(error.Message));
+        }
+        finally
+        {
+            IsSessionChanging = false;
         }
     }
 
     public async Task ExecuteAsync()
     {
         var code = InputText;
-        if (IsRunning || string.IsNullOrWhiteSpace(code)) return;
+        if (IsRunning || HasPendingSessionMutation || string.IsNullOrWhiteSpace(code)) return;
+        if (!IsWorkerConnected)
+        {
+            SetLocalizedStatus("Status.WorkerDisconnected");
+            return;
+        }
         if (code.TrimStart().StartsWith(':'))
         {
             InputText = string.Empty;
@@ -317,6 +342,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             Transcript.Add(TranscriptLine.Diagnostic(error.Message));
             SetLocalizedStatus("Status.WorkerDisconnected");
+            IsWorkerConnected = false;
             IsRunning = false;
             SignalExecutionFinished();
         }
@@ -416,24 +442,37 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             cancellationToken);
     }
 
-    public Task<QuickInfoResult?> GetQuickInfoAsync(int position)
+    public Task<QuickInfoResult?> GetQuickInfoAsync(int position, CancellationToken cancellationToken = default)
     {
         var context = Context;
         var code = InputText;
         var offset = Math.Clamp(position, 0, code.Length);
-        return Task.Run(() => languageService.GetQuickInfoAsync(context, code, offset));
+        return Task.Run(
+            () => languageService.GetQuickInfoAsync(context, code, offset, cancellationToken),
+            cancellationToken);
     }
 
     public async Task<bool> AddUsingAsync(string @namespace)
     {
-        if (IsRunning) throw new InvalidOperationException(Localize("Message.SessionBusy"));
+        if (!IsWorkerConnected) throw new InvalidOperationException(Localize("Message.WorkerUnavailable"));
+        if (IsRunning || HasPendingSessionMutation)
+            throw new InvalidOperationException(Localize("Message.SessionBusy"));
         var value = @namespace.Trim();
         if (imports.Contains(value, StringComparer.Ordinal)) return false;
-        await worker.AddUsingAsync(value);
-        imports.Add(value);
-        UsingItems.Add(value);
-        await RefreshTypeExplorerAsync();
-        return true;
+        IsSessionChanging = true;
+        try
+        {
+            await worker.AddUsingAsync(value);
+            if (imports.Contains(value, StringComparer.Ordinal)) return false;
+            imports.Add(value);
+            UsingItems.Add(value);
+            await RefreshTypeExplorerAsync();
+            return true;
+        }
+        finally
+        {
+            IsSessionChanging = false;
+        }
     }
 
     public bool HasSessionState => submissions.Count > 0;
@@ -442,33 +481,43 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var value = @namespace?.Trim();
         if (string.IsNullOrEmpty(value) || !imports.Contains(value, StringComparer.Ordinal)) return false;
-        if (IsRunning) return false;
+        if (!IsWorkerConnected) throw new InvalidOperationException(Localize("Message.WorkerUnavailable"));
+        if (IsRunning || HasPendingSessionMutation)
+            throw new InvalidOperationException(Localize("Message.SessionBusy"));
 
-        var rebuildWorker = HasSessionState;
-        if (rebuildWorker)
+        IsSessionChanging = true;
+        try
         {
-            imports.Remove(value);
-            UsingItems.Remove(value);
-            SetLocalizedStatus("Status.StartingWorker");
-            await RestartAndRehydrateAsync();
-            submissions.Clear();
-            executingCode = null;
-            VariableItems.Clear();
-            IsRunning = false;
-            SetSessionStatus("Session.Restarted");
-            Transcript.Add(TranscriptLine.System(Localize("Message.UsingRemovedWithRestart", value)));
-        }
-        else
-        {
-            await worker.RemoveUsingAsync(value);
-            imports.Remove(value);
-            UsingItems.Remove(value);
-            Transcript.Add(TranscriptLine.System(Localize("Message.UsingRemoved", value)));
-        }
+            var rebuildWorker = HasSessionState;
+            if (rebuildWorker)
+            {
+                imports.Remove(value);
+                UsingItems.Remove(value);
+                SetLocalizedStatus("Status.StartingWorker");
+                await RestartAndRehydrateAsync();
+                submissions.Clear();
+                executingCode = null;
+                VariableItems.Clear();
+                IsRunning = false;
+                SetSessionStatus("Session.Restarted");
+                Transcript.Add(TranscriptLine.System(Localize("Message.UsingRemovedWithRestart", value)));
+            }
+            else
+            {
+                await worker.RemoveUsingAsync(value);
+                imports.Remove(value);
+                UsingItems.Remove(value);
+                Transcript.Add(TranscriptLine.System(Localize("Message.UsingRemoved", value)));
+            }
 
-        SetLocalizedStatus("Status.RemovedUsing", value);
-        await RefreshTypeExplorerAsync();
-        return true;
+            SetLocalizedStatus("Status.RemovedUsing", value);
+            await RefreshTypeExplorerAsync();
+            return true;
+        }
+        finally
+        {
+            IsSessionChanging = false;
+        }
     }
 
     private async Task AddUsingFromGuiAsync()
@@ -520,6 +569,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SessionStatus = Localize(sessionLocalizationKey, sessionLocalizationArguments);
         DiagnosticStatus = Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
         CursorStatus = Localize("Cursor.Position", cursorLine, cursorColumn);
+        if (packageSearchLocalizationKey is not null)
+            PackageSearchMessage = Localize(packageSearchLocalizationKey, packageSearchLocalizationArguments);
         RebuildTypeExplorer();
     }
 
@@ -632,42 +683,63 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 var searchResults = envelope.ReadPayload<PackageSearchResultsEvent>();
                 PackageSearchItems.Clear();
                 foreach (var item in searchResults.Packages) PackageSearchItems.Add(item);
-                PackageSearchMessage = searchResults.TotalHits == 0
-                    ? Localize("Package.NoneFound")
-                    : Localize("Package.Found", searchResults.TotalHits, searchResults.Packages.Count);
+                if (searchResults.TotalHits == 0)
+                    SetPackageSearchMessage("Package.NoneFound");
+                else
+                    SetPackageSearchMessage("Package.Found", searchResults.TotalHits, searchResults.Packages.Count);
                 break;
         }
     }
 
     private async Task ResetAsync()
     {
-        if (IsRunning) await CancelAsync();
-        await worker.ResetAsync();
-        submissions.Clear();
-        VariableItems.Clear();
-        SetSessionStatus("Session.Count", 0);
-        Transcript.Add(TranscriptLine.System(Localize("Message.SessionReset")));
-        await RefreshTypeExplorerAsync();
+        if (!IsWorkerConnected || HasPendingSessionMutation) return;
+        IsSessionChanging = true;
+        try
+        {
+            if (IsRunning) await CancelAsync();
+            await worker.ResetAsync();
+            submissions.Clear();
+            VariableItems.Clear();
+            SetSessionStatus("Session.Count", 0);
+            Transcript.Add(TranscriptLine.System(Localize("Message.SessionReset")));
+            await RefreshTypeExplorerAsync();
+        }
+        finally
+        {
+            IsSessionChanging = false;
+        }
     }
 
     private async Task RestartWorkerAsync()
     {
-        SetLocalizedStatus("Status.StartingWorker");
-        await RestartAndRehydrateAsync();
-        submissions.Clear();
-        executingCode = null;
-        VariableItems.Clear();
-        IsRunning = false;
-        SignalExecutionFinished();
-        SetLocalizedStatus("Status.Ready");
-        SetSessionStatus("Session.Restarted");
-        Transcript.Add(TranscriptLine.System(Localize("Message.WorkerRestarted")));
-        await RefreshTypeExplorerAsync();
+        if (HasPendingSessionMutation) return;
+        IsSessionChanging = true;
+        try
+        {
+            SetLocalizedStatus("Status.StartingWorker");
+            await RestartAndRehydrateAsync();
+            submissions.Clear();
+            executingCode = null;
+            VariableItems.Clear();
+            IsRunning = false;
+            SignalExecutionFinished();
+            SetLocalizedStatus("Status.Ready");
+            SetSessionStatus("Session.Restarted");
+            Transcript.Add(TranscriptLine.System(Localize("Message.WorkerRestarted")));
+            await RefreshTypeExplorerAsync();
+        }
+        finally
+        {
+            IsSessionChanging = false;
+        }
     }
 
     private async Task RestartAndRehydrateAsync()
     {
+        IsWorkerConnected = false;
         await worker.RestartAsync();
+        IsWorkerConnected = true;
         await ConfigureWorkerImportsAsync();
         foreach (var reference in references)
             await worker.AddReferenceAsync(reference);
@@ -723,16 +795,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             var match = Regex.Match(command, "^:reference add \\\"(?<path>.+)\\\"$");
             if (!match.Success) throw new ArgumentException("Usage: :reference add \"<DLL path>\"");
-            var path = Path.GetFullPath(match.Groups["path"].Value);
-            await worker.AddReferenceAsync(path);
-            if (!references.Contains(path, StringComparer.OrdinalIgnoreCase))
-            {
-                references.Add(path);
-                ReferenceItems.Add(path);
-                AddAssemblyLibrary(path, "Local DLL");
-            }
-            await RefreshTypeExplorerAsync();
-            Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceAdded", path)));
+            await AddReferenceAsync(Path.GetFullPath(match.Groups["path"].Value));
         }
         else if (command == ":package list")
         {
@@ -756,13 +819,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task SearchPackagesAsync()
     {
         if (IsPackageSearchBusy) return;
-        if (IsRunning)
+        if (!IsWorkerConnected)
         {
-            PackageSearchMessage = Localize("Message.SessionBusy");
+            SetPackageSearchMessage("Message.WorkerUnavailable");
+            return;
+        }
+        if (IsRunning || IsWorkspaceBusy || IsSessionChanging)
+        {
+            SetPackageSearchMessage("Message.SessionBusy");
             return;
         }
         IsPackageSearchBusy = true;
-        PackageSearchMessage = Localize("Package.Searching");
+        SetPackageSearchMessage("Package.Searching");
         SetLocalizedStatus("Status.SearchingPackages");
         try
         {
@@ -771,7 +839,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception error)
         {
-            PackageSearchMessage = error.Message;
+            SetRawPackageSearchMessage(error.Message);
             SetLocalizedStatus("Status.PackageSearchFailed");
         }
         finally
@@ -787,40 +855,88 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task AddPackageAsync(string packageId, string? version)
     {
         if (IsPackageSearchBusy) return;
-        if (IsRunning)
+        if (!IsWorkerConnected)
         {
-            PackageSearchMessage = Localize("Message.SessionBusy");
+            SetPackageSearchMessage("Message.WorkerUnavailable");
+            return;
+        }
+        if (IsRunning || IsWorkspaceBusy || IsSessionChanging)
+        {
+            SetPackageSearchMessage("Message.SessionBusy");
             return;
         }
         if (version is not null && packages.Any(item =>
             item.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase) && item.Version == version))
         {
-            PackageSearchMessage = Localize("Package.AlreadyInstalled", packageId, version);
+            SetPackageSearchMessage("Package.AlreadyInstalled", packageId, version);
             return;
         }
 
         IsPackageSearchBusy = true;
         SetLocalizedStatus("Status.RestoringPackage");
-        PackageSearchMessage = Localize("Package.Installing", packageId,
-            version ?? Localize("Package.LatestStable"));
+        if (version is null)
+            SetPackageSearchMessage("Package.InstallingLatest", packageId);
+        else
+            SetPackageSearchMessage("Package.Installing", packageId, version);
         try
         {
             await worker.AddPackageAsync(packageId, version);
             SetLocalizedStatus("Status.Ready");
             var installed = packages.FirstOrDefault(item => item.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase));
-            PackageSearchMessage = installed == default
-                ? Localize("Package.Installed", packageId)
-                : Localize("Package.InstalledVersion", installed.Id, installed.Version);
+            if (installed == default)
+                SetPackageSearchMessage("Package.Installed", packageId);
+            else
+                SetPackageSearchMessage("Package.InstalledVersion", installed.Id, installed.Version);
         }
         catch (Exception error)
         {
             SetLocalizedStatus("Status.PackageInstallFailed");
-            PackageSearchMessage = error.Message;
+            SetRawPackageSearchMessage(error.Message);
         }
         finally
         {
             IsPackageSearchBusy = false;
         }
+    }
+
+    private bool HasPendingSessionMutation => IsPackageSearchBusy || IsWorkspaceBusy || IsSessionChanging;
+
+    private async Task AddReferenceAsync(string path)
+    {
+        if (!IsWorkerConnected) throw new InvalidOperationException(Localize("Message.WorkerUnavailable"));
+        if (IsRunning || HasPendingSessionMutation)
+            throw new InvalidOperationException(Localize("Message.SessionBusy"));
+        IsSessionChanging = true;
+        try
+        {
+            await worker.AddReferenceAsync(path);
+            if (!references.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                references.Add(path);
+                ReferenceItems.Add(path);
+                AddAssemblyLibrary(path, "Local DLL");
+            }
+            await RefreshTypeExplorerAsync();
+            Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceAdded", path)));
+        }
+        finally
+        {
+            IsSessionChanging = false;
+        }
+    }
+
+    private void SetPackageSearchMessage(string key, params object?[] arguments)
+    {
+        packageSearchLocalizationKey = key;
+        packageSearchLocalizationArguments = arguments;
+        PackageSearchMessage = Localize(key, arguments);
+    }
+
+    private void SetRawPackageSearchMessage(string message)
+    {
+        packageSearchLocalizationKey = null;
+        packageSearchLocalizationArguments = [];
+        PackageSearchMessage = message;
     }
 
     private void AddPackageLibrary(PackageAddedEvent package)

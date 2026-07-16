@@ -6,6 +6,9 @@ using PlayGroundSharp.Core;
 
 namespace PlayGroundSharp.App;
 
+public enum WorkerDisconnectionKind { ProcessExited, PipeClosed, TransportError }
+public sealed record WorkerDisconnection(WorkerDisconnectionKind Kind, int? ExitCode = null, string? Detail = null);
+
 /// <summary>Starts, monitors and communicates with the isolated execution Worker.</summary>
 public sealed class WorkerClient : IAsyncDisposable
 {
@@ -15,15 +18,19 @@ public sealed class WorkerClient : IAsyncDisposable
     private PipeTransport? transport;
     private CancellationTokenSource? lifetime;
     private Task? readLoop;
-    private bool isStopping;
+    private volatile bool isStopping;
+    private long connectionGeneration;
+    private int disconnectionReported;
 
     public event Action<PipeEnvelope>? EventReceived;
-    public event Action<string>? Disconnected;
+    public event Action<WorkerDisconnection>? Disconnected;
     public bool IsConnected => pipe?.IsConnected == true && process is { HasExited: false };
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         await StopAsync().ConfigureAwait(false);
+        var generation = Interlocked.Increment(ref connectionGeneration);
+        Volatile.Write(ref disconnectionReported, 0);
         var pipeName = $"PlayGroundSharp-{Guid.NewGuid():N}";
         var processPath = Environment.ProcessPath
             ?? throw new InvalidOperationException("The application executable path is unavailable.");
@@ -41,7 +48,9 @@ public sealed class WorkerClient : IAsyncDisposable
         var startedProcess = process;
         process.Exited += (_, _) =>
         {
-            if (!isStopping) Disconnected?.Invoke($"Worker exited with code {startedProcess.ExitCode}.");
+            if (!isStopping)
+                ReportDisconnected(generation,
+                    new(WorkerDisconnectionKind.ProcessExited, startedProcess.ExitCode));
         };
 
         pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
@@ -50,7 +59,7 @@ public sealed class WorkerClient : IAsyncDisposable
         await pipe.ConnectAsync(connectTimeout.Token).ConfigureAwait(false);
         transport = new PipeTransport(pipe);
         lifetime = new CancellationTokenSource();
-        readLoop = ReadLoopAsync(lifetime.Token);
+        readLoop = ReadLoopAsync(generation, lifetime.Token);
     }
 
     public Task ExecuteAsync(int index, string code, CancellationToken cancellationToken = default) =>
@@ -105,14 +114,19 @@ public sealed class WorkerClient : IAsyncDisposable
         }
     }
 
-    private async Task ReadLoopAsync(CancellationToken cancellationToken)
+    private async Task ReadLoopAsync(long generation, CancellationToken cancellationToken)
     {
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
                 var envelope = await transport!.ReadAsync(cancellationToken).ConfigureAwait(false);
-                if (envelope is null) break;
+                if (envelope is null)
+                {
+                    if (!cancellationToken.IsCancellationRequested)
+                        ReportDisconnected(generation, new(WorkerDisconnectionKind.PipeClosed));
+                    break;
+                }
                 EventReceived?.Invoke(envelope);
                 if (envelope.Kind is MessageKinds.Completed or MessageKinds.Cancelled or MessageKinds.SessionChanged or
                     MessageKinds.PackageSearchResults or MessageKinds.Error)
@@ -132,13 +146,20 @@ public sealed class WorkerClient : IAsyncDisposable
         }
         catch (Exception error)
         {
-            Disconnected?.Invoke(error.Message);
+            ReportDisconnected(generation, new(WorkerDisconnectionKind.TransportError, Detail: error.Message));
         }
         finally
         {
             foreach (var completion in pending.Values)
                 completion.TrySetException(new IOException("Worker disconnected."));
         }
+    }
+
+    private void ReportDisconnected(long generation, WorkerDisconnection disconnection)
+    {
+        if (isStopping || generation != Volatile.Read(ref connectionGeneration) ||
+            Interlocked.Exchange(ref disconnectionReported, 1) != 0) return;
+        Disconnected?.Invoke(disconnection);
     }
 
     private void EnsureConnected()
@@ -149,6 +170,7 @@ public sealed class WorkerClient : IAsyncDisposable
     private async Task StopAsync()
     {
         isStopping = true;
+        Interlocked.Increment(ref connectionGeneration);
         lifetime?.Cancel();
         if (readLoop is not null)
         {

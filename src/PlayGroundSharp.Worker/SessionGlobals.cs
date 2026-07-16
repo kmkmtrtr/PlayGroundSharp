@@ -8,6 +8,7 @@ public sealed class SessionGlobals
     public object? Last { get; internal set; }
     public ResultHistory Out { get; } = new();
     public LargeDataAccess Data { get; } = new();
+    public CancellationToken ExecutionCancellation { get; internal set; }
 }
 
 /// <summary>Retains original result objects by one-based submission index.</summary>

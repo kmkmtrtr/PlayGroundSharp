@@ -30,6 +30,8 @@ public sealed class WorkerHost(string pipeName)
     {
         try
         {
+            if (executionCancellation is not null && envelope.Kind is not MessageKinds.Cancel and not MessageKinds.Execute)
+                throw new InvalidOperationException("Session changes are unavailable while a submission is running.");
             switch (envelope.Kind)
             {
                 case MessageKinds.Execute:

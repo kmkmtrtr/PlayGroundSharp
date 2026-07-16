@@ -26,7 +26,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? signatureHelpCancellation;
     private readonly DispatcherTimer signatureHelpTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
     private AssistMode assistMode;
-    private int completionStart;
+    private int completionFilterStart;
     private GridLength typeExplorerWidth = new(286);
     private GridLength referenceDrawerWidth = new(470);
     private HwndSource? windowSource;
@@ -53,7 +53,7 @@ public partial class MainWindow : Window
             if (args.Text == ".") await ShowCompletionAsync();
             if (args.Text == "(" || args.Text == "," && assistMode == AssistMode.Signature)
                 await ShowSignatureHelpAsync();
-            if (args.Text == ")" && assistMode == AssistMode.Signature) HideAssist();
+            if (args.Text == ")" && assistMode == AssistMode.Signature) ScheduleSignatureHelpRefresh();
         };
         Editor.TextArea.Caret.PositionChanged += (_, _) =>
         {
@@ -514,7 +514,7 @@ public partial class MainWindow : Window
             e.Handled = true;
             CompletionList.SelectedIndex = e.Key == Key.Down
                 ? Math.Min(CompletionList.SelectedIndex + 1, CompletionList.Items.Count - 1)
-                : CompletionList.SelectedIndex <= 0 ? CompletionList.Items.Count - 1 : CompletionList.SelectedIndex - 1;
+                : Math.Max(CompletionList.SelectedIndex - 1, 0);
             CompletionList.ScrollIntoView(CompletionList.SelectedItem);
         }
         else if (assistMode != AssistMode.None && e.Key is Key.PageUp or Key.PageDown)
@@ -553,18 +553,36 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 SymbolDetailPopup.IsOpen = false;
             }
-            else if (AssistPopup.IsOpen) HideAssist();
-            else if (viewModel.IsRunning) await viewModel.CancelAsync();
+            else if (AssistPopup.IsOpen)
+            {
+                e.Handled = true;
+                HideAssist();
+            }
+            else if (viewModel.IsRunning)
+            {
+                e.Handled = true;
+                await viewModel.CancelAsync();
+            }
         }
         else if (e.Key == Key.Up && Editor.Document.LineCount == 1)
         {
-            var value = viewModel.MoveHistory(-1);
-            if (value is not null) Editor.Text = value;
+            var value = viewModel.MoveHistory(-1, Editor.Text);
+            if (value is not null)
+            {
+                e.Handled = true;
+                Editor.Text = value;
+                Editor.CaretOffset = Editor.Text.Length;
+            }
         }
         else if (e.Key == Key.Down && Editor.Document.LineCount == 1)
         {
-            var value = viewModel.MoveHistory(1);
-            if (value is not null) Editor.Text = value;
+            var value = viewModel.MoveHistory(1, Editor.Text);
+            if (value is not null)
+            {
+                e.Handled = true;
+                Editor.Text = value;
+                Editor.CaretOffset = Editor.Text.Length;
+            }
         }
     }
 
@@ -583,8 +601,7 @@ public partial class MainWindow : Window
     private void Editor_TextChanged(object? sender, EventArgs e)
     {
         viewModel.InputText = Editor.Text;
-        if (assistMode == AssistMode.Signature && !HasOpenArgumentList(Editor.Text, Editor.CaretOffset)) HideAssist();
-        else if (assistMode == AssistMode.Signature) ScheduleSignatureHelpRefresh();
+        if (assistMode == AssistMode.Signature) ScheduleSignatureHelpRefresh();
         else if (assistMode == AssistMode.Completion) ApplyCompletionFilter();
     }
 
@@ -612,8 +629,9 @@ public partial class MainWindow : Window
             !Editor.Text.StartsWith(requestText, StringComparison.Ordinal))
             return;
         allCompletionItems = items;
-        completionStart = items.Select(static item => item.ReplacementStart).Distinct().SingleOrDefault()
-            ?? FindCompletionStart(requestText, requestOffset);
+        completionFilterStart = requestText.TrimStart().StartsWith(':')
+            ? 0
+            : FindCompletionStart(requestText, requestOffset);
         CompletionList.IsHitTestVisible = true;
         CompletionList.DisplayMemberPath = null;
         CompletionList.ItemTemplate = (DataTemplate)FindResource("CompletionItemTemplate");
@@ -691,9 +709,10 @@ public partial class MainWindow : Window
     private async Task InsertCompletionAsync(CompletionCandidate item)
     {
         var insertionText = item.TextToInsert;
-        var length = Math.Max(0, Editor.CaretOffset - completionStart);
-        Editor.Document.Replace(completionStart, length, insertionText);
-        Editor.CaretOffset = completionStart + insertionText.Length;
+        var replacementStart = Math.Clamp(item.ReplacementStart ?? completionFilterStart, 0, Editor.CaretOffset);
+        var length = Editor.CaretOffset - replacementStart;
+        Editor.Document.Replace(replacementStart, length, insertionText);
+        Editor.CaretOffset = replacementStart + insertionText.Length;
         HideAssist();
         if (item.RequiredNamespace is { } requiredNamespace)
         {
@@ -709,6 +728,7 @@ public partial class MainWindow : Window
             }
         }
         Editor.Focus();
+        ScheduleSignatureHelpRefresh();
     }
 
     private void HideAssist()
@@ -732,14 +752,14 @@ public partial class MainWindow : Window
     {
         if (assistMode != AssistMode.Completion) return;
         var caretOffset = Editor.CaretOffset;
-        if (caretOffset < completionStart || caretOffset > Editor.Text.Length)
+        if (caretOffset < completionFilterStart || caretOffset > Editor.Text.Length)
         {
             HideAssist();
             return;
         }
 
-        var prefix = Editor.Text[completionStart..caretOffset];
-        var isCommand = completionStart == 0 && Editor.Text.StartsWith(':');
+        var prefix = Editor.Text[completionFilterStart..caretOffset];
+        var isCommand = completionFilterStart == 0 && Editor.Text.StartsWith(':');
         if (!isCommand && prefix.Any(static character => !IsIdentifierPart(character)))
         {
             HideAssist();
@@ -848,17 +868,6 @@ public partial class MainWindow : Window
         ExecutionKeyMode.ControlEnter => modifiers == ModifierKeys.None,
         _ => false
     };
-
-    private static bool HasOpenArgumentList(string text, int caretOffset)
-    {
-        var balance = 0;
-        foreach (var character in text.AsSpan(0, Math.Clamp(caretOffset, 0, text.Length)))
-        {
-            if (character == '(') balance++;
-            else if (character == ')') balance--;
-        }
-        return balance > 0;
-    }
 
     private async void Editor_MouseHover(object sender, MouseEventArgs e)
     {

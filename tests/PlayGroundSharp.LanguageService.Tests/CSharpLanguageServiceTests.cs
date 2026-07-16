@@ -91,9 +91,11 @@ public sealed class CSharpLanguageServiceTests
 
         var items = await service.GetCompletionsAsync(context, "1.Bil", "1.Bil".Length);
         var extension = Assert.Single(items, static item => item.DisplayText == "Billions");
+        var description = await service.GetCompletionDescriptionAsync(context, "1.Bil", "1.Bil".Length, extension);
 
         Assert.Equal(0, extension.ReplacementStart);
         Assert.Equal("(1).Billions", extension.TextToInsert);
+        Assert.Contains("billions", description, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

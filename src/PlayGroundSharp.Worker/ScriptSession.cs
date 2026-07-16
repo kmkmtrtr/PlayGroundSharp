@@ -60,6 +60,7 @@ public sealed class ScriptSession
         using var errorWriter = new BoundedEventWriter(standardError);
         Console.SetOut(outputWriter);
         Console.SetError(errorWriter);
+        globals.ExecutionCancellation = cancellationToken;
         try
         {
             var executableCode = PrepareSubmission(code);
@@ -76,6 +77,8 @@ public sealed class ScriptSession
                 return new(false, false, null, null, error.Diagnostics.Select(ToDiagnostic).ToArray(), null);
             }
 
+            if (candidate.Exception is OperationCanceledException cancelled && cancellationToken.IsCancellationRequested)
+                throw cancelled;
             state = candidate;
             submissions.Add(code);
             if (candidate.Exception is not null)
@@ -99,6 +102,7 @@ public sealed class ScriptSession
             errorWriter.Flush();
             Console.SetOut(originalOut);
             Console.SetError(originalError);
+            globals.ExecutionCancellation = default;
         }
     }
 

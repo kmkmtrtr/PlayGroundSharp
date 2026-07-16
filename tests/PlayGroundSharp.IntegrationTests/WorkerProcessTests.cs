@@ -123,6 +123,52 @@ public sealed class WorkerProcessTests
         }
     }
 
+    [Fact]
+    public async Task WorkerRejectsSessionChangesWhileSubmissionIsRunning()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-busy-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName);
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var transport = new PipeTransport(pipe);
+            var executionId = Guid.NewGuid();
+            await transport.WriteAsync(PipeEnvelope.Create(
+                MessageKinds.Execute, executionId, new ExecuteRequest(1,
+                    "Console.WriteLine(\"waiting\"); await Task.Delay(10_000, ExecutionCancellation)")), timeout.Token);
+            Assert.Equal(MessageKinds.Started, (await transport.ReadAsync(timeout.Token))?.Kind);
+            PipeEnvelope? output;
+            do
+            {
+                output = await transport.ReadAsync(timeout.Token);
+            } while (output?.CorrelationId != executionId || output.Kind != MessageKinds.ConsoleOut);
+
+            var usingId = Guid.NewGuid();
+            await transport.WriteAsync(PipeEnvelope.Create(
+                MessageKinds.AddUsing, usingId, new AddUsingRequest("System.Net")), timeout.Token);
+            var rejection = await transport.ReadAsync(timeout.Token);
+
+            Assert.Equal(usingId, rejection?.CorrelationId);
+            Assert.Equal(MessageKinds.Error, rejection?.Kind);
+            Assert.Contains("running", rejection!.ReadPayload<WorkerErrorEvent>().Message, StringComparison.OrdinalIgnoreCase);
+
+            await transport.WriteAsync(PipeEnvelope.Create(
+                MessageKinds.Cancel, Guid.NewGuid(), new CancelRequest(executionId)), timeout.Token);
+            PipeEnvelope? cancelled;
+            do
+            {
+                cancelled = await transport.ReadAsync(timeout.Token);
+            } while (cancelled?.CorrelationId != executionId || cancelled.Kind != MessageKinds.Cancelled);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
     private static Process StartWorker(string pipeName)
     {
         var publishedHost = Environment.GetEnvironmentVariable("PLAYGROUNDSHARP_WORKER_HOST");

@@ -60,6 +60,20 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task ExposesExecutionCancellationTokenToSubmittedCode()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "var retained = 21;");
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            session.ExecuteAsync(2, "await Task.Delay(10_000, ExecutionCancellation)", cancellationToken: cancellation.Token));
+
+        var next = await session.ExecuteAsync(2, "retained * 2");
+        Assert.Equal("42", next.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task ReportsRetainedVariablesWithBoundedSnapshots()
     {
         var session = new ScriptSession();

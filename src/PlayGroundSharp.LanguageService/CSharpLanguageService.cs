@@ -168,8 +168,10 @@ public sealed class CSharpLanguageService
             ? string.Empty
             : string.Concat(description.TaggedParts.Select(static part => part.Text)).Trim();
 
-        var completionStart = position;
-        while (completionStart > 0 && IsIdentifierPart(currentCode[completionStart - 1])) completionStart--;
+        var completionStart = candidate.ReplacementStart ?? position;
+        while (candidate.ReplacementStart is null && completionStart > 0 && IsIdentifierPart(currentCode[completionStart - 1]))
+            completionStart--;
+        completionStart = Math.Clamp(completionStart, 0, position);
         var completedCode = currentCode.Remove(completionStart, position - completionStart)
             .Insert(completionStart, candidate.TextToInsert);
         var symbolPosition = completionStart + Math.Max(0, candidate.TextToInsert.Length - 1);

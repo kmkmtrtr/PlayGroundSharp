@@ -23,7 +23,7 @@ Release publish targets framework-dependent `win-x64` single-file output. All ma
 
 ## Script state
 
-The first submission uses `CSharpScript.RunAsync`; accepted submissions use `ContinueWithAsync`. Compilation failures do not replace state. Runtime-faulted states remain continuable. `SessionGlobals` exposes original values through `Last` and indexed `Out`.
+The first submission uses `CSharpScript.RunAsync`; accepted submissions use `ContinueWithAsync`. Compilation failures do not replace state. Runtime-faulted states remain continuable. `SessionGlobals` exposes original values through `Last` and indexed `Out`, plus the per-run `ExecutionCancellation` token so submitted waits and loops can cooperate with Stop without losing session state.
 
 Imports can be added in place. Roslyn continuation states inherit imports, so removing one after a submission cannot mutate the existing state safely. The App confirms the state loss, starts a fresh Worker, reapplies the remaining imports and dependencies, and clears live variables/types/methods without replaying user code or its side effects. Before the first submission, removal is applied directly.
 

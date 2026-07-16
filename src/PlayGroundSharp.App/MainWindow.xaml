@@ -337,7 +337,8 @@
                   <ItemsControl Grid.Row="0" ItemsSource="{Binding Transcript}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="0,1,0,5" ContextMenuOpening="TranscriptRow_ContextMenuOpening">
+                            <Grid Margin="0,1,0,5" ContextMenuOpening="TranscriptRow_ContextMenuOpening"
+                                  AutomationProperties.Name="{Binding Text}">
                                 <Grid.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="{DynamicResource Ui.Copy}" IsEnabled="{Binding IsCopyable}"
@@ -444,6 +445,7 @@
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem">
                                         <Setter Property="Focusable" Value="False" />
+                                        <Setter Property="AutomationProperties.Name" Value="{Binding DisplayText}" />
                                     </Style>
                                 </ListBox.ItemContainerStyle>
                             </ListBox>

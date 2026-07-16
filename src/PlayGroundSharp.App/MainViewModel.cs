@@ -51,7 +51,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private string sessionLocalizationKey = "Session.Count";
     private object?[] sessionLocalizationArguments = [0];
     private int historyPosition;
+    private string historyDraft = string.Empty;
     private string? executingCode;
+    private TaskCompletionSource? executionCompletion;
 
     [ObservableProperty] private string inputText = string.Empty;
     [ObservableProperty] private string status = "Starting Worker";
@@ -130,6 +132,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             SetLocalizedStatus("Status.WorkerDisconnected");
             IsRunning = false;
+            SignalExecutionFinished();
             VariableItems.Clear();
             Transcript.Add(TranscriptLine.System(message));
         });
@@ -163,6 +166,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             packages.Clear();
             history.Clear();
             historyPosition = 0;
+            historyDraft = string.Empty;
             executingCode = null;
             Transcript.Clear();
             PackageItems.Clear();
@@ -202,6 +206,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 var expectedCount = submissions.Count + 1;
                 executingCode = code;
                 Transcript.Add(TranscriptLine.Input(expectedCount, code));
+                executionCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 IsRunning = true;
                 SetLocalizedStatus("Status.ReplayingWorkspace", expectedCount, document.Submissions.Count);
                 await worker.ExecuteAsync(expectedCount, code, cancellationToken);
@@ -221,6 +226,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         catch
         {
             IsRunning = false;
+            SignalExecutionFinished();
             executingCode = null;
             SetLocalizedStatus("Status.WorkspaceLoadFailed");
             throw;
@@ -291,8 +297,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         executingCode = code;
         history.Add(code);
         historyPosition = history.Count;
+        historyDraft = string.Empty;
         Transcript.Add(TranscriptLine.Input(index, code));
         InputText = string.Empty;
+        executionCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         IsRunning = true;
         SetLocalizedStatus("Status.Compiling");
         try
@@ -304,6 +312,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             Transcript.Add(TranscriptLine.Diagnostic(error.Message));
             SetLocalizedStatus("Status.WorkerDisconnected");
             IsRunning = false;
+            SignalExecutionFinished();
         }
     }
 
@@ -311,11 +320,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (!IsRunning) return;
         SetLocalizedStatus("Status.Cancelling");
+        var completion = executionCompletion?.Task;
         await worker.CancelAsync();
-        await Task.Delay(TimeSpan.FromSeconds(1.5));
+        var timeout = Task.Delay(TimeSpan.FromSeconds(1.5));
+        if (completion is not null && await Task.WhenAny(completion, timeout) == completion) return;
+        if (completion is null) await timeout;
         if (!IsRunning) return;
         await RestartAndRehydrateAsync();
         IsRunning = false;
+        SignalExecutionFinished();
         SetLocalizedStatus("Status.Ready");
         submissions.Clear();
         executingCode = null;
@@ -324,11 +337,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Transcript.Add(TranscriptLine.System(Localize("Message.ForcedRestart")));
     }
 
-    public string? MoveHistory(int delta)
+    public string? MoveHistory(int delta, string currentInput)
     {
         if (history.Count == 0) return null;
+        if (delta < 0 && historyPosition == history.Count) historyDraft = currentInput;
         historyPosition = Math.Clamp(historyPosition + delta, 0, history.Count);
-        return historyPosition == history.Count ? string.Empty : history[historyPosition];
+        return historyPosition == history.Count ? historyDraft : history[historyPosition];
     }
 
     public Task<IReadOnlyList<CompletionCandidate>> GetCompletionsAsync(
@@ -406,6 +420,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task<bool> AddUsingAsync(string @namespace)
     {
+        if (IsRunning) throw new InvalidOperationException(Localize("Message.SessionBusy"));
         var value = @namespace.Trim();
         if (imports.Contains(value, StringComparer.Ordinal)) return false;
         await worker.AddUsingAsync(value);
@@ -566,17 +581,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 }
                 executingCode = null;
                 IsRunning = false;
+                SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 SetSessionStatus("Session.Memory", submissions.Count, completed.WorkerMemoryBytes / 1024 / 1024);
                 break;
             case MessageKinds.Cancelled:
                 IsRunning = false;
+                SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 Transcript.Add(TranscriptLine.System(Localize("Message.ExecutionCancelled")));
                 break;
             case MessageKinds.Error:
                 Transcript.Add(TranscriptLine.Diagnostic(envelope.ReadPayload<WorkerErrorEvent>().Message));
                 IsRunning = false;
+                SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 break;
             case MessageKinds.PackageProgress:
@@ -629,6 +647,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         executingCode = null;
         VariableItems.Clear();
         IsRunning = false;
+        SignalExecutionFinished();
         SetLocalizedStatus("Status.Ready");
         SetSessionStatus("Session.Restarted");
         Transcript.Add(TranscriptLine.System(Localize("Message.WorkerRestarted")));
@@ -726,6 +745,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task SearchPackagesAsync()
     {
         if (IsPackageSearchBusy) return;
+        if (IsRunning)
+        {
+            PackageSearchMessage = Localize("Message.SessionBusy");
+            return;
+        }
         IsPackageSearchBusy = true;
         PackageSearchMessage = Localize("Package.Searching");
         SetLocalizedStatus("Status.SearchingPackages");
@@ -752,6 +776,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task AddPackageAsync(string packageId, string? version)
     {
         if (IsPackageSearchBusy) return;
+        if (IsRunning)
+        {
+            PackageSearchMessage = Localize("Message.SessionBusy");
+            return;
+        }
         if (version is not null && packages.Any(item =>
             item.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase) && item.Version == version))
         {
@@ -1015,8 +1044,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         return SnapshotTextFormatter.FormatCompact(snapshot);
     }
 
+    private void SignalExecutionFinished()
+    {
+        executionCompletion?.TrySetResult();
+        executionCompletion = null;
+    }
+
     public async ValueTask DisposeAsync()
     {
+        SignalExecutionFinished();
         diagnosticDelay?.Cancel();
         diagnosticDelay?.Dispose();
         typeExplorerSearchDelay?.Cancel();

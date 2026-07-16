@@ -62,7 +62,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("停止と安全性", "Worker分離は安定性のためであり、サンドボックスではありません。",
         [
-            new("停止", "Escまたは停止ボタンで協調的に中断します。応答しない場合はWorkerを強制終了し、UIとTranscriptを保持します。Worker内の変数状態は失われます。"),
+            new("停止", "Escまたは停止ボタンで中断します。待機や長いループにExecutionCancellationを渡すと、セッション状態を保ったまま協調停止できます。応答しないコードはWorkerを強制終了するため、Worker内の変数状態が失われます。", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
             new("権限", "任意のC#コードとパッケージは現在のWindowsユーザー権限で動作します。信頼できないコード、DLL、パッケージを実行しないでください。")
         ])
     ];
@@ -102,7 +102,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Cancellation and security", "Worker isolation improves recovery; it is not a sandbox.",
         [
-            new("Stop", "Press Esc or Stop. A non-responsive Worker can be terminated while the UI and transcript survive; Worker variables are lost."),
+            new("Stop", "Press Esc or Stop. Pass ExecutionCancellation to waits and long loops to stop cooperatively without losing session state. A non-responsive Worker is terminated, so Worker variables are lost.", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
             new("Permissions", "Submitted code and packages run with your current Windows user permissions. Never run untrusted code, DLLs, or packages.")
         ])
     ];

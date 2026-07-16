@@ -17,7 +17,7 @@ public sealed class WebSessionManager : IAsyncDisposable
             await session.DisposeAsync();
             throw new InvalidOperationException("Could not register the Worker session.");
         }
-        return (sessionId, SessionContext.DefaultImports);
+        return (sessionId, session.Context.Imports);
     }
 
     public bool TryGet(Guid sessionId, out WorkerProcessSession session) =>

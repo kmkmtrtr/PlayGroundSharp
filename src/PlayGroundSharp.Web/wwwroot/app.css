@@ -48,6 +48,24 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 kbd { border: 1px solid #3b485a; border-bottom-width: 2px; border-radius: 5px; background: #1a2330; padding: 2px 6px; color: #cbd5e2; font-size: 10px; }
 .code-editor { display: block; width: 100%; min-height: 235px; resize: vertical; border: 0; border-block: 1px solid var(--border); outline: 0; padding: 22px; background: #0a1018; color: #dbe7f5; font: 14px/1.72 "Cascadia Code", Consolas, monospace; tab-size: 4; caret-color: var(--accent); }
 .code-editor:focus { box-shadow: inset 3px 0 var(--accent); }
+.editor-host { position: relative; }
+.completion-popup { position: absolute; z-index: 8; left: 22px; right: 22px; top: 72px; max-height: 320px; display: grid; grid-template-columns: minmax(220px, 42%) 1fr; overflow: hidden; border: 1px solid #3b526b; border-radius: 10px; background: #111923; box-shadow: 0 18px 48px #000c; }
+.completion-items { overflow: auto; border-right: 1px solid var(--border); padding: 5px; }
+.completion-item { width: 100%; border: 0; border-radius: 6px; background: transparent; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 7px 8px; text-align: left; cursor: pointer; }
+.completion-item:hover, .completion-item.selected { background: #213247; }
+.completion-icon { color: var(--accent); font: 9px "Cascadia Code", monospace; text-align: center; }
+.completion-name { overflow: hidden; text-overflow: ellipsis; font: 12px "Cascadia Code", monospace; }
+.completion-namespace { max-width: 140px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font: 9px "Cascadia Code", monospace; }
+.completion-detail { overflow: auto; padding: 13px; font-size: 11px; }
+.completion-detail strong { display: block; color: #e9f0f8; font: 13px "Cascadia Code", monospace; }
+.completion-detail code { display: block; margin-top: 5px; color: var(--accent); }
+.completion-detail p { white-space: pre-wrap; line-height: 1.55; color: #aebac9; }
+.signature-popup { position: absolute; z-index: 7; left: 22px; bottom: 8px; max-width: calc(100% - 44px); padding: 10px 12px; border: 1px solid #3b526b; border-radius: 8px; background: #111923; box-shadow: 0 12px 32px #000a; font-size: 11px; }
+.signature-popup > code { color: #dce9f7; white-space: pre-wrap; }
+.signature-popup p { margin: 7px 0 0; color: #aebac9; }
+.signature-popup p strong { color: var(--accent); }
+.signature-toolbar { float: right; display: flex; align-items: center; gap: 4px; margin-left: 10px; color: var(--muted); }
+.signature-toolbar button { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 5px; background: #1a2533; cursor: pointer; }
 .editor-footer { padding: 12px 15px 12px 20px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
 .run-button { min-width: 106px; border: 0; border-radius: 8px; padding: 10px 15px; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #06110d; font-weight: 800; cursor: pointer; display: flex; justify-content: center; gap: 12px; box-shadow: 0 8px 24px #2fc58d30; }
 .run-button:hover { filter: brightness(1.07); transform: translateY(-1px); }
@@ -117,6 +135,26 @@ kbd { border: 1px solid #3b485a; border-bottom-width: 2px; border-radius: 5px; b
 .using-chip code { font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
 .using-chip button { border: 0; background: transparent; color: #8391a3; padding: 4px 7px; cursor: pointer; }
 .using-chip button:hover { color: var(--danger); }
+.package-search { display: grid; grid-template-columns: 1fr auto; }
+.package-search input { min-width: 0; background: #0a1018; border: 1px solid var(--border); border-radius: 7px 0 0 7px; padding: 8px 9px; color: #e7edf6; outline: 0; font: 11px "Cascadia Code", monospace; }
+.package-search button, .package-item button { border: 0; border-radius: 0 7px 7px 0; background: #263649; padding: 0 10px; cursor: pointer; font-size: 11px; }
+.package-message { color: var(--muted); font-size: 10px; margin: 8px 0; }
+.package-results { display: grid; gap: 7px; max-height: 280px; overflow: auto; }
+.package-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 9px; border: 1px solid #273649; border-radius: 8px; background: #0c131c; }
+.package-item strong, .package-item span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.package-item strong { color: #dce8f5; font-size: 11px; }
+.package-item span { color: var(--muted); font-size: 9px; margin-top: 3px; }
+.package-item button { grid-row: 1; grid-column: 2; border-radius: 6px; color: var(--accent); }
+.package-item p { grid-column: 1 / -1; margin: 3px 0 0; color: #8f9caf; font-size: 9px; line-height: 1.4; max-height: 2.8em; overflow: hidden; }
+.installed-list, .reference-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.installed-list span, .reference-list code { padding: 4px 7px; border: 1px solid #2c3d52; border-radius: 999px; color: var(--muted); font-size: 9px; }
+.installed-list code { color: var(--accent); }
+.file-drop { display: grid; gap: 5px; padding: 18px 12px; border: 1px dashed #395069; border-radius: 9px; text-align: center; cursor: pointer; transition: .15s ease; }
+.file-drop:hover, .file-drop.dragging { border-color: var(--accent); background: #10251f; }
+.file-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file-drop strong { color: #d9e5f2; font-size: 12px; }
+.file-drop span { color: var(--muted); font-size: 9px; line-height: 1.5; }
+.roadmap-panel li.done span { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 7px #55d6a566; }
 .roadmap-panel h2 { margin-bottom: 14px; }
 .roadmap-panel ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; color: #aab6c5; font-size: 12px; }
 .roadmap-panel li { display: flex; gap: 9px; align-items: center; }
@@ -146,4 +184,6 @@ kbd { border: 1px solid #3b485a; border-bottom-width: 2px; border-radius: 5px; b
     .side-column { grid-template-columns: 1fr; }
     .roadmap-panel { grid-column: auto; }
     .snapshot-row { grid-template-columns: minmax(65px, 100px) minmax(0, 1fr); }
+    .completion-popup { grid-template-columns: 1fr; right: 8px; left: 8px; }
+    .completion-detail { display: none; }
 }

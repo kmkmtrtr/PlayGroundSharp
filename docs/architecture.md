@@ -10,14 +10,14 @@ The repository started empty. .NET SDK 10.0.109 and Windows Desktop Runtime 10.0
 - **Core**: versioned IPC envelopes, request/event DTOs, diagnostics and bounded result contracts.
 - **Worker**: owns `ScriptState<object?>`, original result objects, references, console capture and package restore.
 - **LanguageService**: builds an in-memory Roslyn script document from accepted history, imports and references.
-- **Web.Client**: experimental Blazor WebAssembly shell for input, result trees, variables and imports.
-- **Web**: local-only ASP.NET Core bridge that gives each browser session its own child Worker.
+- **Web.Client**: experimental Blazor WebAssembly shell for input, Roslyn assistance, result trees, variables, dependencies and workspaces.
+- **Web**: local-only ASP.NET Core bridge that gives each browser session its own child Worker and language-service context.
 
 ## IPC
 
 The App starts its own executable in `--worker --pipe <name>` mode as a child process. The custom entry point enters `WorkerHost` without constructing WPF, so single-file publishing needs no separate Worker executable while process isolation remains intact. A dedicated duplex named pipe carries newline-delimited JSON envelopes, so submitted `Console` output cannot corrupt IPC. Every envelope includes a protocol version, kind and correlation ID. Only neutral DTOs cross the boundary. After each submission, the Worker also publishes bounded variable snapshots; the App never evaluates session variables or loads submitted assemblies into WPF.
 
-The WebAssembly preview reuses the same envelopes over a local HTTP API. Its ASP.NET Core host relaunches itself in `--web-worker --pipe <name>` mode per browser session and forwards bounded events as JSON. The browser never loads submitted assemblies. The API rejects non-loopback clients because authentication and server-grade sandboxing are intentionally outside the preview scope.
+The WebAssembly preview reuses the same envelopes over a local HTTP API. Its ASP.NET Core host relaunches itself in `--web-worker --pipe <name>` mode per browser session and forwards bounded events as JSON. HTTP endpoints also project the session context into `LanguageService`, forward Worker-side NuGet operations, and copy uploaded files into a per-session temporary directory. DLLs are loaded only by the child Worker; data-file helpers receive the temporary server path. The API rejects non-loopback clients because authentication and server-grade sandboxing are intentionally outside the preview scope.
 
 Release publish targets framework-dependent `win-x64` single-file output. All managed content is configured for .NET bundle extraction because Roslyn scripting and workspace metadata APIs require physical assembly locations. Standalone Worker apphost/config artifacts and PDBs are removed before bundling, leaving one distributable executable; the target machine supplies the .NET 10 Desktop Runtime.
 

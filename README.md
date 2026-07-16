@@ -27,7 +27,7 @@ An experimental Blazor WebAssembly UI is included. It currently runs the UI in t
 dotnet run --project src/PlayGroundSharp.Web/PlayGroundSharp.Web.csproj -c Debug
 ```
 
-Open `http://localhost:5188`. The preview supports stateful C# submissions, `Enter` to execute, `Shift+Enter` for a newline, expandable structured results, variables and using management. NuGet, DLL references, workspace persistence and IntelliSense are not implemented yet. Its execution API accepts loopback connections only and is not intended for deployment to an external server; submitted code still runs with the current user's permissions.
+Open `http://localhost:5188`. The preview supports stateful C# submissions, `Enter` to execute, `Shift+Enter` for a newline, expandable structured results, variables and using management. Roslyn completion uses `Tab`, shows namespaces and Summary documentation, and provides overload/parameter help. The side panel can search and install NuGet packages, upload local DLL references, insert bounded JSON/JSONL/text loading snippets, and save or restore `.pgsworkspace` files. Uploaded DLL binaries are intentionally not embedded in workspaces and must be selected again after loading. Its execution API accepts loopback connections only and is not intended for deployment to an external server; submitted code still runs with the current user's permissions.
 
 ## Publish
 

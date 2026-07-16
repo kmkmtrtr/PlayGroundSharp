@@ -77,7 +77,7 @@ public sealed class ScriptSessionTests
     public async Task ReportsRetainedVariablesWithBoundedSnapshots()
     {
         var session = new ScriptSession();
-        await session.ExecuteAsync(1, "var number = 42; const string label = \"answer\"; var longText = new string('x', 600);");
+        await session.ExecuteAsync(1, "var number = 42; const string label = \"answer\"; var longText = new string('x', 600); var values = Enumerable.Range(1, 10).ToArray();");
         await session.ExecuteAsync(2, "number = 100;");
 
         var variables = session.GetVariables();
@@ -92,6 +92,9 @@ public sealed class ScriptSessionTests
         var longText = Assert.Single(variables, static variable => variable.Name == "longText");
         Assert.Equal(512, longText.Value.Display?.Length);
         Assert.True(longText.Value.IsTruncated);
+        var values = Assert.Single(variables, static variable => variable.Name == "values");
+        Assert.Equal(10, values.Value.Items?.Count);
+        Assert.Equal("10", values.Value.Items?[9].Display);
     }
 
     [Fact]
@@ -110,6 +113,36 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task BoundsRuntimeExceptionMessages()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            "throw new InvalidOperationException(new string('x', 100_000));");
+
+        Assert.NotNull(result.Exception);
+        Assert.Equal(ResultSnapshotFactory.MaximumExceptionTextLength, result.Exception.Message.Length);
+    }
+
+    [Fact]
+    public async Task BrokenResultEnumerationDoesNotDesynchronizeTheSession()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1,
+            "IEnumerable<int> Broken() { yield return 1; throw new InvalidOperationException(\"broken sequence\"); }");
+
+        var broken = await session.ExecuteAsync(2, "Broken()");
+        var next = await session.ExecuteAsync(3, "40 + 2");
+
+        Assert.True(broken.StateAccepted);
+        Assert.Equal(SnapshotKind.Sequence, broken.Snapshot?.Kind);
+        Assert.Equal("1", broken.Snapshot?.Items?[0].Display);
+        Assert.Equal(SnapshotKind.Exception, broken.Snapshot?.Items?[1].Kind);
+        Assert.Contains("broken sequence", broken.Snapshot?.Items?[1].Display, StringComparison.Ordinal);
+        Assert.Equal("42", next.Snapshot?.Display);
+        Assert.Equal(3, session.Context.Submissions.Count);
+    }
+
+    [Fact]
     public async Task CapturesConsoleAndKeepsOriginalResults()
     {
         var session = new ScriptSession();
@@ -121,6 +154,40 @@ public sealed class ScriptSessionTests
         Assert.Contains("err", string.Concat(error));
         Assert.Equal("42", (await session.ExecuteAsync(2, "Last")).Snapshot?.Display);
         Assert.Equal("42", (await session.ExecuteAsync(3, "Out[1]")).Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task BatchesRapidConsoleLinesWithoutLosingContent()
+    {
+        var output = new List<string>();
+
+        await new ScriptSession().ExecuteAsync(
+            1,
+            "foreach (var i in Enumerable.Range(0, 10_000)) Console.WriteLine(i);",
+            output.Add);
+
+        var combined = string.Concat(output);
+        Assert.True(output.Count < 10, $"Expected batched output but received {output.Count} events.");
+        Assert.StartsWith("0", combined, StringComparison.Ordinal);
+        Assert.Contains("9999", combined, StringComparison.Ordinal);
+        Assert.Equal(10_000, combined.Count(static character => character == '\n'));
+    }
+
+    [Fact]
+    public async Task BoundsAndBatchesVeryLargeConsoleOutputInOrder()
+    {
+        const int maximumCharacters = 10 * 1024 * 1024;
+        var output = new List<string>();
+
+        await new ScriptSession().ExecuteAsync(
+            1,
+            $"Console.Write(new string('x', {maximumCharacters + 100}));",
+            output.Add);
+
+        var combined = string.Concat(output);
+        Assert.True(output.Count < 200, $"Expected batched output but received {output.Count} events.");
+        Assert.Equal(maximumCharacters, combined.IndexOf('\n'));
+        Assert.Contains("output truncated at 10 MiB", combined, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -492,6 +493,99 @@ public partial class MainWindow : Window
     }
 
     private void FocusEditor() => Dispatcher.BeginInvoke(Editor.Focus);
+
+    private void VariableItem_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<ListViewItem>(e.OriginalSource as DependencyObject)?.DataContext is not VariableItem item)
+            return;
+        e.Handled = true;
+        InsertDroppedSnippet(item.Name);
+    }
+
+    private void VariableItem_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space) || sender is not ListView { SelectedItem: VariableItem item })
+            return;
+        e.Handled = true;
+        InsertDroppedSnippet(item.Name);
+    }
+
+    private void VariableItem_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<ListViewItem>(e.OriginalSource as DependencyObject) is not { } row) return;
+        row.IsSelected = true;
+        row.Focus();
+    }
+
+    private void VariableList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (VariableList.SelectedItem is null) e.Handled = true;
+    }
+
+    private async void CopyVariable_Click(object sender, RoutedEventArgs e)
+    {
+        if (VariableList.SelectedItem is not VariableItem item) return;
+        try
+        {
+            Clipboard.SetText(await Task.Run(() => item.CopyText));
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
+    }
+
+    private void InspectVariable_Click(object sender, RoutedEventArgs e)
+    {
+        if (VariableList.SelectedItem is VariableItem item)
+            new ResultInspectorWindow(item.Snapshot, viewModel.LanguageMode) { Owner = this }.Show();
+    }
+
+    private async void CopyTranscript_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var lines = viewModel.Transcript.ToArray();
+            Clipboard.SetText(await Task.Run(() => FormatTranscript(lines)));
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
+    }
+
+    private async void SaveTranscript_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = viewModel.Localize("Dialog.TranscriptSaveTitle"),
+            Filter = viewModel.Localize("Dialog.ResultFileFilter"),
+            DefaultExt = ".txt",
+            AddExtension = true,
+            FileName = $"PlayGroundSharp-transcript-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            var lines = viewModel.Transcript.ToArray();
+            await File.WriteAllTextAsync(dialog.FileName, await Task.Run(() => FormatTranscript(lines)));
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
+    }
+
+    private static string FormatTranscript(IReadOnlyList<TranscriptLine> lines)
+    {
+        var text = new StringBuilder();
+        foreach (var line in lines)
+        {
+            if (line.Prefix.Length > 0) text.Append(line.Prefix).Append(' ');
+            text.AppendLine(line.CopyText);
+        }
+        return text.ToString();
+    }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
 

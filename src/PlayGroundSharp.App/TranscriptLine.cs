@@ -13,6 +13,7 @@ public sealed record TranscriptLine(
     string? CopyValue = null,
     IReadOnlyList<ConsoleSnapshotNode>? SnapshotRoots = null)
 {
+    private const int MaximumConsolePreviewLength = 8 * 1024;
     public bool IsInspectable => Snapshot is not null;
     public bool IsStructured => SnapshotRoots is not null;
     public bool IsInput => InputCode is not null;
@@ -26,9 +27,16 @@ public sealed record TranscriptLine(
             SnapshotRoots: snapshot.Properties is not null || snapshot.Items is not null
                 ? [ConsoleSnapshotNode.CreateRoot(snapshot)]
                 : null);
-    public static TranscriptLine Console(string text, bool error) => new(error ? "!" : "│", text.TrimEnd(),
-        Resource(error ? "ErrorBrush" : "MutedBrush"), Resource(error ? "ErrorBrush" : "MutedBrush"),
-        CopyValue: text.TrimEnd());
+    public static TranscriptLine Console(string text, bool error, string previewLimitedMessage)
+    {
+        var fullText = text.TrimEnd();
+        var displayText = fullText.Length <= MaximumConsolePreviewLength
+            ? fullText
+            : fullText[..MaximumConsolePreviewLength] + Environment.NewLine + previewLimitedMessage;
+        return new(error ? "!" : "│", displayText,
+            Resource(error ? "ErrorBrush" : "MutedBrush"), Resource(error ? "ErrorBrush" : "MutedBrush"),
+            CopyValue: fullText);
+    }
     public static TranscriptLine Diagnostic(string text, bool error = true) => new(error ? "×" : "⚠", text,
         Resource(error ? "ErrorBrush" : "WarningBrush"), Resource(error ? "ErrorBrush" : "WarningBrush"));
     public static TranscriptLine System(string text) => new("·", text, Resource("MutedBrush"), Resource("MutedBrush"));

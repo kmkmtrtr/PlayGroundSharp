@@ -16,6 +16,8 @@ public sealed class ResultSnapshotFactory
     public const int MaximumNodes = 50_000;
     public const int MaximumStringLength = 10 * 1024 * 1024;
     public const int MaximumTextCharacters = 10 * 1024 * 1024;
+    public const int MaximumExceptionTextLength = 64 * 1024;
+    private const int MaximumExceptionDepth = 8;
 
     public ResultSnapshot Create(object? value) => Create(
         value,
@@ -23,11 +25,26 @@ public sealed class ResultSnapshotFactory
         new HashSet<object>(ReferenceComparer.Instance),
         new SnapshotBudget(MaximumNodes, MaximumTextCharacters));
 
-    public static ExceptionInfo CreateException(Exception exception) => new(
+    public ResultSnapshot Create(object? value, int maximumNodes, int maximumTextCharacters)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumNodes);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumTextCharacters);
+        return Create(
+            value,
+            0,
+            new HashSet<object>(ReferenceComparer.Instance),
+            new SnapshotBudget(maximumNodes, maximumTextCharacters));
+    }
+
+    public static ExceptionInfo CreateException(Exception exception) => CreateException(exception, 0);
+
+    private static ExceptionInfo CreateException(Exception exception, int depth) => new(
         exception.GetType().FullName ?? exception.GetType().Name,
-        exception.Message,
-        exception.StackTrace,
-        exception.InnerException is null ? null : CreateException(exception.InnerException));
+        Truncate(exception.Message, MaximumExceptionTextLength),
+        exception.StackTrace is null ? null : Truncate(exception.StackTrace, MaximumExceptionTextLength),
+        depth >= MaximumExceptionDepth || exception.InnerException is null
+            ? null
+            : CreateException(exception.InnerException, depth + 1));
 
     private ResultSnapshot Create(object? value, int depth, HashSet<object> path, SnapshotBudget budget)
     {
@@ -76,7 +93,11 @@ public sealed class ResultSnapshotFactory
         if (value is Exception exception)
         {
             var info = CreateException(exception);
-            return new(SnapshotKind.Exception, $"{info.TypeName}: {info.Message}", typeName);
+            var display = budget.TakeText(
+                $"{info.TypeName}: {info.Message}",
+                MaximumExceptionTextLength,
+                out var truncated);
+            return new(SnapshotKind.Exception, display, typeName, IsTruncated: truncated);
         }
         if (depth >= MaximumDepth)
         {
@@ -107,9 +128,11 @@ public sealed class ResultSnapshotFactory
                 {
                     properties.Add(new(property.Name, Create(property.GetValue(value), depth + 1, path, budget)));
                 }
-                catch (Exception error) when (error is TargetInvocationException or MethodAccessException)
+                catch (Exception error)
                 {
-                    properties.Add(new(property.Name, new(SnapshotKind.Exception, error.InnerException?.Message ?? error.Message, null)));
+                    if (budget.TryTakeNode())
+                        properties.Add(new(property.Name,
+                            CreateExceptionSnapshot(error, property.PropertyType.FullName, budget)));
                 }
             }
 
@@ -139,16 +162,40 @@ public sealed class ResultSnapshotFactory
     {
         var items = new List<ResultSnapshot>();
         var totalCount = enumerable is ICollection collection ? collection.Count : (int?)null;
-        var enumerator = enumerable.GetEnumerator();
+        IEnumerator enumerator;
         try
         {
-            while (items.Count < MaximumItems && budget.CanTakeNode && enumerator.MoveNext())
+            enumerator = enumerable.GetEnumerator();
+        }
+        catch (Exception error)
+        {
+            return CreateExceptionSnapshot(error, typeName, budget);
+        }
+        try
+        {
+            var reachedEnd = false;
+            var enumerationFailed = false;
+            while (items.Count < MaximumItems && budget.CanTakeNode)
             {
-                items.Add(Create(enumerator.Current, depth + 1, path, budget));
+                try
+                {
+                    if (!enumerator.MoveNext())
+                    {
+                        reachedEnd = true;
+                        break;
+                    }
+                    items.Add(Create(enumerator.Current, depth + 1, path, budget));
+                }
+                catch (Exception error)
+                {
+                    if (budget.TryTakeNode()) items.Add(CreateExceptionSnapshot(error, null, budget));
+                    enumerationFailed = true;
+                    break;
+                }
             }
             var truncated = totalCount is { } count
-                ? items.Count < count
-                : !budget.CanTakeNode || items.Count == MaximumItems && enumerator.MoveNext();
+                ? enumerationFailed || items.Count < count
+                : enumerationFailed || !reachedEnd;
             return new(
                 SnapshotKind.Sequence,
                 totalCount is { } knownCount ? $"{knownCount:N0} items" : $"{items.Count:N0} captured items",
@@ -159,9 +206,33 @@ public sealed class ResultSnapshotFactory
         }
         finally
         {
-            (enumerator as IDisposable)?.Dispose();
+            try
+            {
+                (enumerator as IDisposable)?.Dispose();
+            }
+            catch
+            {
+                // A broken enumerator must not invalidate the accepted submission.
+            }
         }
     }
+
+    private static ResultSnapshot CreateExceptionSnapshot(Exception error, string? typeName, SnapshotBudget budget)
+    {
+        var actual = error is TargetInvocationException { InnerException: { } inner } ? inner : error;
+        var display = budget.TakeText(
+            $"{actual.GetType().Name}: {actual.Message}",
+            MaximumExceptionTextLength,
+            out var truncated);
+        return new(
+            SnapshotKind.Exception,
+            display,
+            typeName ?? actual.GetType().FullName,
+            IsTruncated: truncated);
+    }
+
+    private static string Truncate(string value, int maximumLength) =>
+        value.Length <= maximumLength ? value : value[..maximumLength];
 
     private ResultSnapshot CreateJsonElement(
         JsonElement element,

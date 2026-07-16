@@ -10,9 +10,15 @@ using PlayGroundSharp.LanguageService;
 
 namespace PlayGroundSharp.App;
 
-public sealed record VariableItem(string Name, string TypeName, string Value, bool IsReadOnly)
+public sealed record VariableItem(
+    string Name,
+    string TypeName,
+    string Value,
+    bool IsReadOnly,
+    ResultSnapshot Snapshot)
 {
     public string Kind => IsReadOnly ? "const" : "var";
+    public string CopyText => SnapshotTextFormatter.FormatFull(Snapshot);
 }
 
 public sealed record LibraryItem(string Kind, string Name, string Version, string Source, string? Path);
@@ -550,10 +556,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 SetLocalizedStatus("Status.Running");
                 break;
             case MessageKinds.ConsoleOut:
-                Transcript.Add(TranscriptLine.Console(envelope.ReadPayload<ConsoleEvent>().Text, false));
+                Transcript.Add(CreateConsoleLine(envelope.ReadPayload<ConsoleEvent>().Text, false));
                 break;
             case MessageKinds.ConsoleError:
-                Transcript.Add(TranscriptLine.Console(envelope.ReadPayload<ConsoleEvent>().Text, true));
+                Transcript.Add(CreateConsoleLine(envelope.ReadPayload<ConsoleEvent>().Text, true));
                 break;
             case MessageKinds.Diagnostics:
                 foreach (var diagnostic in envelope.ReadPayload<DiagnosticsEvent>().Diagnostics)
@@ -570,7 +576,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             case MessageKinds.Variables:
                 VariableItems.Clear();
                 foreach (var variable in envelope.ReadPayload<VariablesEvent>().Variables)
-                    VariableItems.Add(new(variable.Name, variable.TypeName, FormatSnapshot(variable.Value), variable.IsReadOnly));
+                    VariableItems.Add(new(
+                        variable.Name,
+                        variable.TypeName,
+                        FormatSnapshot(variable.Value),
+                        variable.IsReadOnly,
+                        variable.Value));
                 break;
             case MessageKinds.Completed:
                 var completed = envelope.ReadPayload<ExecutionCompletedEvent>();
@@ -1043,6 +1054,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         return SnapshotTextFormatter.FormatCompact(snapshot);
     }
+
+    private TranscriptLine CreateConsoleLine(string text, bool error) => TranscriptLine.Console(
+        text,
+        error,
+        Localize("Output.ConsolePreviewLimited", text.TrimEnd().Length));
 
     private void SignalExecutionFinished()
     {

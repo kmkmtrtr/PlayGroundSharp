@@ -20,6 +20,8 @@ public sealed record ScriptExecutionResult(
 public sealed class ScriptSession
 {
     private const int MaximumVariableDisplayLength = 512;
+    private const int MaximumVariableSnapshotNodes = 512;
+    private const int MaximumVariableSnapshotTextCharacters = 256 * 1024;
     private readonly SessionGlobals globals = new();
     private readonly ResultSnapshotFactory snapshots = new();
     private readonly List<string> submissions = [];
@@ -93,8 +95,23 @@ public sealed class ScriptSession
                 globals.Out.Set(submissionIndex, candidate.ReturnValue);
             }
 
-            return new(true, hasReturnValue, candidate.ReturnValue,
-                hasReturnValue ? snapshots.Create(candidate.ReturnValue) : null, [], null);
+            ResultSnapshot? snapshot = null;
+            if (hasReturnValue)
+            {
+                try
+                {
+                    snapshot = snapshots.Create(candidate.ReturnValue);
+                }
+                catch (Exception error)
+                {
+                    snapshot = new(
+                        SnapshotKind.Exception,
+                        $"Snapshot failed: {error.GetType().Name}: {error.Message}",
+                        candidate.ReturnValue?.GetType().FullName);
+                }
+            }
+
+            return new(true, hasReturnValue, candidate.ReturnValue, snapshot, [], null);
         }
         finally
         {
@@ -160,14 +177,15 @@ public sealed class ScriptSession
     {
         try
         {
-            var snapshot = snapshots.Create(variable.Value);
+            var snapshot = snapshots.Create(
+                variable.Value,
+                MaximumVariableSnapshotNodes,
+                MaximumVariableSnapshotTextCharacters);
             var display = snapshot.Display;
             var truncated = display?.Length > MaximumVariableDisplayLength;
             return snapshot with
             {
                 Display = truncated ? display![..MaximumVariableDisplayLength] : display,
-                Properties = null,
-                Items = null,
                 IsTruncated = snapshot.IsTruncated || truncated
             };
         }

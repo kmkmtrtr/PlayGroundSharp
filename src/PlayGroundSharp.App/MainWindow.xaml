@@ -98,6 +98,10 @@
                     </MenuItem>
                     <MenuItem Header="{DynamicResource Menu.Edit}" Style="{StaticResource HeaderMenuItemStyle}">
                         <MenuItem Header="{DynamicResource Menu.FocusInput}" Click="FocusInput_Click" InputGestureText="Ctrl+L" />
+                        <Separator />
+                        <MenuItem Header="{DynamicResource Menu.CopyTranscript}" Click="CopyTranscript_Click" />
+                        <MenuItem Header="{DynamicResource Menu.SaveTranscript}" Click="SaveTranscript_Click" />
+                        <Separator />
                         <MenuItem Header="{DynamicResource Menu.ClearTranscript}" Command="{Binding ClearCommand}" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource Menu.Data}" Style="{StaticResource HeaderMenuItemStyle}">
@@ -392,6 +396,7 @@
                                         <TreeView.ItemContainerStyle>
                                             <Style TargetType="TreeViewItem">
                                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                                <Setter Property="AutomationProperties.Name" Value="{Binding Preview}" />
                                                 <Setter Property="Padding" Value="0,1" />
                                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                             </Style>
@@ -497,8 +502,22 @@
                                 ItemContainerStyle="{StaticResource WorkspaceTabItemStyle}">
                         <TabItem Header="{DynamicResource Tab.Variables}">
                             <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">
-                                <ListView ItemsSource="{Binding VariableItems}" AutomationProperties.Name="VariableList" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
-                                          ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                <ListView x:Name="VariableList" ItemsSource="{Binding VariableItems}" AutomationProperties.Name="VariableList" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
+                                          ScrollViewer.HorizontalScrollBarVisibility="Auto" ToolTip="{DynamicResource Variables.InteractionHint}"
+                                          MouseDoubleClick="VariableItem_MouseDoubleClick" PreviewKeyDown="VariableItem_PreviewKeyDown"
+                                          PreviewMouseRightButtonDown="VariableItem_PreviewMouseRightButtonDown"
+                                          ContextMenuOpening="VariableList_ContextMenuOpening">
+                                    <ListView.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="{DynamicResource Ui.Copy}" Click="CopyVariable_Click" />
+                                            <MenuItem Header="{DynamicResource Ui.Inspect}" Click="InspectVariable_Click" />
+                                        </ContextMenu>
+                                    </ListView.ContextMenu>
+                                    <ListView.ItemContainerStyle>
+                                        <Style TargetType="ListViewItem">
+                                            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                                        </Style>
+                                    </ListView.ItemContainerStyle>
                                     <ListView.View>
                                         <GridView>
                                             <GridViewColumn Header="{DynamicResource Column.Kind}" DisplayMemberBinding="{Binding Kind}" Width="48" />

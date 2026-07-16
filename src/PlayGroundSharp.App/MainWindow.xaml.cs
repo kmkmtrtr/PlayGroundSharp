@@ -862,7 +862,11 @@ public partial class MainWindow : Window
             try
             {
                 if (await viewModel.AddUsingAsync(requiredNamespace))
+                {
                     viewModel.SetLocalizedStatus("Status.AddedUsing", requiredNamespace);
+                    viewModel.Transcript.Add(TranscriptLine.System(
+                        viewModel.Localize("Message.UsingAutoAdded", requiredNamespace)));
+                }
             }
             catch (Exception error)
             {

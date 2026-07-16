@@ -489,7 +489,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             if (imports.Contains(value, StringComparer.Ordinal)) return false;
             imports.Add(value);
             UsingItems.Add(value);
-            await RefreshTypeExplorerAsync();
+            _ = RefreshTypeExplorerAsync();
             return true;
         }
         finally

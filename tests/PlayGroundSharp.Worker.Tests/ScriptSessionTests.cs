@@ -212,6 +212,22 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task AddedUsingEnablesAnExtensionMethodAfterSessionStateExists()
+    {
+        var session = new ScriptSession();
+        session.AddReference(typeof(NumberExtensions).Assembly.Location);
+        var declaration = await session.ExecuteAsync(1, "var value = 2;");
+
+        session.AddUsing("PlayGroundSharp.TestFixture");
+        var result = await session.ExecuteAsync(2, "value.Billions()");
+
+        Assert.True(declaration.StateAccepted);
+        Assert.True(result.StateAccepted, string.Join(Environment.NewLine,
+            result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.Equal("2000000000", result.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task RemovesAndRestoresUsingForFutureSubmissions()
     {
         var session = new ScriptSession();

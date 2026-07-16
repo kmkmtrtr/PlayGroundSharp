@@ -103,8 +103,7 @@ public sealed class CSharpLanguageService
             var root = await workspaceDocument.Document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             var model = await workspaceDocument.Document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
             var absolutePosition = workspaceDocument.CurrentOffset + position;
-            var access = root?.DescendantNodes().OfType<MemberAccessExpressionSyntax>()
-                .LastOrDefault(node => node.OperatorToken.SpanStart == absolutePosition - 1);
+            var access = root is null ? null : FindMemberAccessAtPosition(root, absolutePosition);
             var receiverType = access is null ? null : model?.GetTypeInfo(access.Expression, cancellationToken).Type;
             if (receiverType is null && access is not null && model is not null)
             {
@@ -597,8 +596,7 @@ public sealed class CSharpLanguageService
         var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
         if (root is null || model is null) return;
         var absolutePosition = currentOffset + position;
-        var access = root.DescendantNodes().OfType<MemberAccessExpressionSyntax>()
-            .LastOrDefault(node => node.OperatorToken.SpanStart == absolutePosition - 1);
+        var access = FindMemberAccessAtPosition(root, absolutePosition);
         var receiverType = access is null ? null : model.GetTypeInfo(access.Expression, cancellationToken).Type;
         if (receiverType is null || access is null) return;
 
@@ -669,6 +667,14 @@ public sealed class CSharpLanguageService
             ? code.Insert(trailingToken.SpanStart, ";")
             : code;
     }
+
+    private static MemberAccessExpressionSyntax? FindMemberAccessAtPosition(SyntaxNode root, int position) =>
+        root.DescendantNodes()
+            .OfType<MemberAccessExpressionSyntax>()
+            .Where(node => node.OperatorToken.Span.End <= position &&
+                           node.SpanStart <= position && node.Span.End >= position)
+            .OrderBy(static node => node.Span.Length)
+            .FirstOrDefault();
 
     private static string? CompleteMemberDeclaration(string code, int insertionPosition)
     {

@@ -99,14 +99,15 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
-    public async Task MarksTheNamespaceRequiredByAnUnimportedExtension()
+    public async Task MarksTheNamespaceRequiredByAnUnimportedExtensionAfterTypingPrefix()
     {
         var context = new SessionContext(
             ["var hoge = 1;"],
             SessionContext.DefaultImports,
             [typeof(NumberExtensions).Assembly.Location]);
 
-        var items = await service.GetCompletionsAsync(context, "hoge.", "hoge.".Length);
+        const string code = "hoge.Bil";
+        var items = await service.GetCompletionsAsync(context, code, code.Length);
         var extension = Assert.Single(items, static item => item.DisplayText == "Billions");
 
         Assert.Equal("PlayGroundSharp.TestFixture", extension.NamespaceHint);

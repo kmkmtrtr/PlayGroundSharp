@@ -10,16 +10,21 @@ public sealed record TranscriptLine(
     Brush TextBrush,
     string? InputCode = null,
     ResultSnapshot? Snapshot = null,
-    string? CopyValue = null)
+    string? CopyValue = null,
+    IReadOnlyList<ConsoleSnapshotNode>? SnapshotRoots = null)
 {
     public bool IsInspectable => Snapshot is not null;
+    public bool IsStructured => SnapshotRoots is not null;
     public bool IsInput => InputCode is not null;
     public bool IsCopyable => Snapshot is not null || CopyValue is not null;
     public string CopyText => CopyValue ?? (Snapshot is null ? Text : SnapshotTextFormatter.FormatFull(Snapshot));
 
     public static TranscriptLine Input(int index, string code) => new(">", code, Resource("AccentBrush"), Resource("ForegroundBrush"), code);
     public static TranscriptLine Output(int index, string text, ResultSnapshot snapshot) =>
-        new(string.Empty, text, Brushes.Transparent, Resource("ForegroundBrush"), Snapshot: snapshot);
+        new(string.Empty, text, Brushes.Transparent, Resource("ForegroundBrush"), Snapshot: snapshot,
+            SnapshotRoots: snapshot.Properties is not null || snapshot.Items is not null
+                ? [ConsoleSnapshotNode.CreateRoot(snapshot)]
+                : null);
     public static TranscriptLine Console(string text, bool error) => new(error ? "!" : "│", text.TrimEnd(),
         Resource(error ? "ErrorBrush" : "MutedBrush"), Resource(error ? "ErrorBrush" : "MutedBrush"),
         CopyValue: text.TrimEnd());

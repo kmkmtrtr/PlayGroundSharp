@@ -999,6 +999,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private string FormatResultSnapshot(ResultSnapshot snapshot)
     {
+        if (snapshot.Properties is not null || snapshot.Items is not null)
+            return SnapshotTextFormatter.FormatCompact(snapshot);
         var preview = SnapshotTextFormatter.FormatPreview(snapshot);
         var notices = new List<string>();
         if (preview.IsLimited) notices.Add(Localize("Output.PreviewLimited"));

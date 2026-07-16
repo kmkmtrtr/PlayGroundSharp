@@ -67,7 +67,8 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
 - **NuGet**: search nuget.org, review package metadata and install the displayed exact version
 - **Libraries**: list imported packages, local DLLs and package runtime assemblies with versions and sources
-- **Inspect** on a result: open its bounded property/item tree in a separate window
+- **Structured results**: expand JSON, objects and arrays directly in the transcript; large captured collections are grouped into index ranges
+- **Inspect** on a result: open the same bounded property/item tree with search, path copy and full captured-value export in a separate window
 - **File**: save or open a `.pgsworkspace` containing submissions, draft input, usings, DLL references and exact package versions
 - **Data**: insert bounded or streaming snippets for large text, byte, JSON-array and JSON Lines files
 - **Help** or `F1`: open the built-in guide for input, IntelliSense, symbols, workspaces, large files, dependencies and security
@@ -103,7 +104,7 @@ Data.ReadLines(@"C:\data\large.csv").Take(100)
 await Data.ReadJsonArrayAsync(@"C:\data\large.json", take: 100)
 ```
 
-`PreviewText` and `ReadBytes` are capped at 1 MiB per call. JSON arrays are streamed and retain only the requested items (maximum 10,000); JSON Lines is exposed as an `IAsyncEnumerable<JsonElement>`. The existing result snapshot limit still displays at most 100 collection items.
+`PreviewText` and `ReadBytes` are capped at 1 MiB per call. JSON arrays are streamed and retain only the requested items (maximum 10,000); JSON Lines is exposed as an `IAsyncEnumerable<JsonElement>`. Result snapshots capture up to 10,000 collection items and 50,000 total nodes. Captured structures are expandable inline instead of being cut to the transcript's former 200-item text preview.
 
 ## Commands
 

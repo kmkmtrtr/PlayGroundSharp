@@ -14,8 +14,8 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 08 | `:package add Humanizer.Core --version 3.0.10`, `:using add Humanizer`, then `"hello_world".Humanize()` | exact version shown and `hello world` |
 | 09 | Add the built fixture DLL and type its namespace | execution and completion see fixture type |
 | 10 | Submit `while (true) { }`, then Stop | App survives; Worker restarts; state-loss notice |
-| 11 | `JsonNode.Parse("{\"answer\":42}")` | formatted JSON result |
-| 12 | `Enumerable.Range(1, 101)` | 100 items and truncation marker |
+| 11 | `JsonNode.Parse("{\"hoge\":[1,2,3,4,5,6],\"fuga\":[{\"piyo\":123},{\"piyo\":456}]}")` | a Chrome-style expandable root summary appears; `hoge` and `fuga` can be expanded independently |
+| 12 | `Enumerable.Range(0, 250).ToArray()` | the inline tree exposes all captured values through `[0 … 99]`, `[100 … 199]` and `[200 … 249]` range nodes |
 | 13 | Execute `var answer = 42`, open **Session > Variables** | `answer`, `System.Int32`, and `42` are shown |
 | 14 | Execute an object/sequence and click **Inspect** | a separate expandable snapshot tree opens |
 | 15 | Switch **Session > Theme** to Dark and restart | dark colors apply immediately and persist |

@@ -343,17 +343,48 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{Binding Prefix}" Foreground="{Binding PrefixBrush}" FontFamily="Cascadia Mono,Consolas"
                                            FontSize="14" FontWeight="SemiBold" />
-                                <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" FontFamily="Cascadia Mono,Consolas"
-                                           FontSize="14" LineHeight="20" Foreground="{Binding TextBrush}" MouseLeftButtonUp="TranscriptLine_MouseLeftButtonUp">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Cursor" Value="Arrow" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsInput}" Value="True"><Setter Property="Cursor" Value="Hand" /></DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                <Grid Grid.Column="1">
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontFamily="Cascadia Mono,Consolas"
+                                               FontSize="14" LineHeight="20" Foreground="{Binding TextBrush}" MouseLeftButtonUp="TranscriptLine_MouseLeftButtonUp">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Cursor" Value="Arrow" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInput}" Value="True"><Setter Property="Cursor" Value="Hand" /></DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsStructured}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TreeView ItemsSource="{Binding SnapshotRoots}" Background="Transparent" BorderThickness="0"
+                                              Padding="0" FontFamily="Cascadia Mono,Consolas" FontSize="14"
+                                              Foreground="{DynamicResource ForegroundBrush}" HorizontalContentAlignment="Stretch">
+                                        <TreeView.Style>
+                                            <Style TargetType="TreeView">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsStructured}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TreeView.Style>
+                                        <TreeView.Resources>
+                                            <HierarchicalDataTemplate DataType="{x:Type local:ConsoleSnapshotNode}" ItemsSource="{Binding Children}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource ForegroundBrush}" />
+                                                    <TextBlock Text="{Binding Separator}" Foreground="{DynamicResource ForegroundBrush}" />
+                                                    <TextBlock Text="{Binding Preview}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </HierarchicalDataTemplate>
+                                        </TreeView.Resources>
+                                        <TreeView.ItemContainerStyle>
+                                            <Style TargetType="TreeViewItem">
+                                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                                <Setter Property="Padding" Value="0,1" />
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            </Style>
+                                        </TreeView.ItemContainerStyle>
+                                    </TreeView>
+                                </Grid>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
                                     <Button Content="{DynamicResource Ui.Copy}" Style="{StaticResource MiniButtonStyle}"
                                             Visibility="{Binding IsCopyable, Converter={StaticResource BooleanToVisibilityConverter}}"

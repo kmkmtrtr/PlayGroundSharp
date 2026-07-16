@@ -7,6 +7,7 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
         Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="Window_Deactivated"
+        SizeChanged="Window_SizeChanged"
         PreviewKeyDown="Window_PreviewKeyDown" PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown">
     <Window.Resources>
         <DataTemplate x:Key="CompletionItemTemplate">
@@ -72,7 +73,7 @@
                         </Button.Style>
                     </Button>
                     <Border Width="1" Height="20" Background="{DynamicResource BorderBrush}" Margin="7,0" />
-                    <Button Content="■" Style="{StaticResource DangerIconToolbarButtonStyle}" Command="{Binding CancelCommand}" IsEnabled="{Binding IsRunning}"
+                    <Button Content="■" Style="{StaticResource DangerIconToolbarButtonStyle}" Command="{Binding CancelCommand}" IsEnabled="{Binding CanCancel}"
                             ToolTip="{DynamicResource Tooltip.Stop}" AutomationProperties.Name="{DynamicResource Ui.Stop}" FontSize="13" />
                     <Button Content="↻" Style="{StaticResource IconToolbarButtonStyle}" Command="{Binding RestartWorkerCommand}"
                             ToolTip="{DynamicResource Tooltip.Restart}" AutomationProperties.Name="{DynamicResource Ui.Restart}" />
@@ -249,6 +250,7 @@
                                 <TreeView.ItemContainerStyle>
                                     <Style TargetType="TreeViewItem">
                                         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=OneTime}" />
+                                        <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                         <Setter Property="Padding" Value="1" />
                                     </Style>
@@ -565,6 +567,11 @@
                                 <ListBox Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="NuGetSearchResults" BorderThickness="0"
                                          Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="AutomationProperties.Name" Value="{Binding PackageId}" />
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
@@ -596,6 +603,11 @@
                             <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <ListView ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="ImportedLibraryList" BorderThickness="0" Background="Transparent"
                                           Foreground="{DynamicResource ForegroundBrush}" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                    <ListView.ItemContainerStyle>
+                                        <Style TargetType="ListViewItem">
+                                            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                                        </Style>
+                                    </ListView.ItemContainerStyle>
                                     <ListView.View>
                                         <GridView>
                                             <GridViewColumn Header="{DynamicResource Column.Kind}" DisplayMemberBinding="{Binding Kind}" Width="72" />
@@ -655,12 +667,15 @@
                                 </Border>
                                 <TextBlock Text="{DynamicResource Settings.ExecutionKey}" Margin="0,14,0,4" FontWeight="SemiBold" />
                                 <ComboBox ItemsSource="{Binding ExecutionKeyOptions}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          AutomationProperties.Name="{DynamicResource Settings.ExecutionKey}"
                                           SelectedValue="{Binding ExecutionKeyMode}" HorizontalAlignment="Stretch" />
                                 <TextBlock Text="{DynamicResource Settings.Theme}" Margin="0,14,0,4" FontWeight="SemiBold" />
                                 <ComboBox ItemsSource="{Binding ThemeOptions}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          AutomationProperties.Name="{DynamicResource Settings.Theme}"
                                           SelectedValue="{Binding ThemeMode}" HorizontalAlignment="Stretch" />
                                 <TextBlock Text="{DynamicResource Settings.Language}" Margin="0,14,0,4" FontWeight="SemiBold" />
                                 <ComboBox ItemsSource="{Binding LanguageOptions}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          AutomationProperties.Name="{DynamicResource Settings.Language}"
                                           SelectedValue="{Binding LanguageMode}" HorizontalAlignment="Stretch" />
                                 <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="11" Margin="0,16,0,0">
                                     <TextBlock Text="{DynamicResource Settings.Security}" TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}" />

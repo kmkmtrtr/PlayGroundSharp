@@ -91,4 +91,21 @@ public sealed class WorkspaceFileTests
             if (File.Exists(path)) File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task RejectsWorkspaceThatWouldRestoreTooManyPackages()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.pgsworkspace");
+        var document = new WorkspaceDocument(
+            WorkspaceDocument.CurrentVersion,
+            DateTime.UtcNow,
+            [],
+            [],
+            [],
+            Enumerable.Range(0, 101).Select(index => new WorkspacePackage($"Package.{index}", "1.0.0")).ToArray(),
+            string.Empty);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => WorkspaceFile.SaveAsync(path, document));
+        Assert.False(File.Exists(path));
+    }
 }

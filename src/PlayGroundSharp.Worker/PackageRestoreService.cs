@@ -125,7 +125,14 @@ public sealed partial class PackageRestoreService
         }
         finally
         {
-            if (Directory.Exists(temporaryDirectory)) Directory.Delete(temporaryDirectory, recursive: true);
+            try
+            {
+                if (Directory.Exists(temporaryDirectory)) Directory.Delete(temporaryDirectory, recursive: true);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                // A successful restore must not be reported as failed because an antivirus still holds a temp file.
+            }
         }
     }
 

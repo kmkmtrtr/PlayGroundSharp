@@ -43,11 +43,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly List<string> submissions = [];
     private readonly List<string> imports = [.. SessionContext.DefaultImports];
     private readonly List<string> references = [];
+    private readonly List<string> localReferences = [];
     private readonly List<(string Id, string Version)> packages = [];
     private readonly List<string> history = [];
     private CancellationTokenSource? diagnosticDelay;
     private CancellationTokenSource? typeExplorerSearchDelay;
     private CancellationTokenSource? typeExplorerRefresh;
+    private CancellationTokenSource? packageOperationCancellation;
     private IReadOnlyList<SymbolExplorerEntry> typeExplorerEntries = [];
     private int diagnosticErrorCount;
     private int diagnosticWarningCount;
@@ -69,7 +71,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string sessionStatus = "0 submissions";
     [ObservableProperty] private string diagnosticStatus = "0 errors, 0 warnings";
     [ObservableProperty] private string cursorStatus = "Ln 1, Col 1";
-    [ObservableProperty] private bool isRunning;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanCancel))]
+    private bool isRunning;
     [ObservableProperty] private bool isWorkerConnected;
     [ObservableProperty] private bool isReferenceDrawerOpen;
     [ObservableProperty] private bool isTypeExplorerOpen = true;
@@ -79,7 +83,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string packageSearchText = string.Empty;
     [ObservableProperty] private string packageSearchMessage = "Search packages on nuget.org";
     [ObservableProperty] private bool includePrereleasePackages;
-    [ObservableProperty] private bool isPackageSearchBusy;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanCancel))]
+    private bool isPackageSearchBusy;
     [ObservableProperty] private bool isWorkspaceBusy;
     [ObservableProperty] private bool isSessionChanging = true;
     [ObservableProperty] private string newUsingText = string.Empty;
@@ -88,6 +94,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private AppLanguageMode languageMode = InitialSettings.LanguageMode;
 
     public ObservableCollection<TranscriptLine> Transcript { get; } = [];
+    public bool CanCancel => IsRunning || IsPackageSearchBusy;
     public ObservableCollection<string> PackageItems { get; } = [];
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
@@ -164,7 +171,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         DateTime.UtcNow,
         [.. submissions],
         [.. imports],
-        [.. references],
+        [.. localReferences],
         packages.Select(static package => new WorkspacePackage(package.Id, package.Version)).ToArray(),
         InputText);
 
@@ -183,6 +190,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             imports.Clear();
             imports.AddRange(document.Imports.Distinct(StringComparer.Ordinal));
             references.Clear();
+            localReferences.Clear();
             packages.Clear();
             history.Clear();
             historyPosition = 0;
@@ -216,6 +224,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 }
                 await worker.AddReferenceAsync(path, cancellationToken);
                 references.Add(path);
+                localReferences.Add(path);
                 ReferenceItems.Add(path);
                 AddAssemblyLibrary(path, "Workspace");
             }
@@ -303,7 +312,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task ExecuteAsync()
     {
         var code = InputText;
-        if (IsRunning || HasPendingSessionMutation || string.IsNullOrWhiteSpace(code)) return;
+        if (IsRunning || string.IsNullOrWhiteSpace(code)) return;
+        if (HasPendingSessionMutation)
+        {
+            SetLocalizedStatus("Status.SessionBusy");
+            return;
+        }
         if (!IsWorkerConnected)
         {
             SetLocalizedStatus("Status.WorkerDisconnected");
@@ -311,6 +325,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         if (code.TrimStart().StartsWith(':'))
         {
+            history.Add(code);
+            historyPosition = history.Count;
+            historyDraft = string.Empty;
+            Transcript.Add(TranscriptLine.Input(submissions.Count + 1, code));
             InputText = string.Empty;
             try
             {
@@ -350,8 +368,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task CancelAsync()
     {
-        if (!IsRunning) return;
+        if (!CanCancel) return;
         SetLocalizedStatus("Status.Cancelling");
+        if (IsPackageSearchBusy)
+        {
+            await worker.CancelAsync();
+            return;
+        }
         var completion = executionCompletion?.Task;
         await worker.CancelAsync();
         var timeout = Task.Delay(TimeSpan.FromSeconds(1.5));
@@ -648,6 +671,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 SetSessionStatus("Session.Memory", submissions.Count, completed.WorkerMemoryBytes / 1024 / 1024);
                 break;
             case MessageKinds.Cancelled:
+                if (IsPackageSearchBusy)
+                {
+                    packageOperationCancellation?.Cancel();
+                    break;
+                }
                 IsRunning = false;
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
@@ -830,12 +858,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
         IsPackageSearchBusy = true;
+        var operationCancellation = new CancellationTokenSource();
+        packageOperationCancellation = operationCancellation;
         SetPackageSearchMessage("Package.Searching");
         SetLocalizedStatus("Status.SearchingPackages");
         try
         {
-            await worker.SearchPackagesAsync(PackageSearchText, IncludePrereleasePackages);
+            await worker.SearchPackagesAsync(
+                PackageSearchText, IncludePrereleasePackages, cancellationToken: operationCancellation.Token);
             SetLocalizedStatus("Status.Ready");
+        }
+        catch (OperationCanceledException)
+        {
+            SetPackageSearchMessage("Package.Cancelled");
+            SetLocalizedStatus("Status.Ready");
+            Transcript.Add(TranscriptLine.System(Localize("Message.PackageOperationCancelled")));
         }
         catch (Exception error)
         {
@@ -844,6 +881,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         finally
         {
+            if (ReferenceEquals(packageOperationCancellation, operationCancellation))
+                packageOperationCancellation = null;
+            operationCancellation.Dispose();
             IsPackageSearchBusy = false;
         }
     }
@@ -873,6 +913,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         IsPackageSearchBusy = true;
+        var operationCancellation = new CancellationTokenSource();
+        packageOperationCancellation = operationCancellation;
         SetLocalizedStatus("Status.RestoringPackage");
         if (version is null)
             SetPackageSearchMessage("Package.InstallingLatest", packageId);
@@ -880,13 +922,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SetPackageSearchMessage("Package.Installing", packageId, version);
         try
         {
-            await worker.AddPackageAsync(packageId, version);
+            await worker.AddPackageAsync(packageId, version, operationCancellation.Token);
             SetLocalizedStatus("Status.Ready");
             var installed = packages.FirstOrDefault(item => item.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase));
             if (installed == default)
                 SetPackageSearchMessage("Package.Installed", packageId);
             else
                 SetPackageSearchMessage("Package.InstalledVersion", installed.Id, installed.Version);
+        }
+        catch (OperationCanceledException)
+        {
+            SetPackageSearchMessage("Package.Cancelled");
+            SetLocalizedStatus("Status.Ready");
+            Transcript.Add(TranscriptLine.System(Localize("Message.PackageOperationCancelled")));
         }
         catch (Exception error)
         {
@@ -895,6 +943,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         finally
         {
+            if (ReferenceEquals(packageOperationCancellation, operationCancellation))
+                packageOperationCancellation = null;
+            operationCancellation.Dispose();
             IsPackageSearchBusy = false;
         }
     }
@@ -910,6 +961,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             await worker.AddReferenceAsync(path);
+            if (!localReferences.Contains(path, StringComparer.OrdinalIgnoreCase)) localReferences.Add(path);
             if (!references.Contains(path, StringComparer.OrdinalIgnoreCase))
             {
                 references.Add(path);
@@ -1174,7 +1226,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private TranscriptLine CreateConsoleLine(string text, bool error) => TranscriptLine.Console(
         text,
         error,
-        Localize("Output.ConsolePreviewLimited", text.TrimEnd().Length));
+        Localize("Output.ConsolePreviewLimited", text.Length));
 
     private void SignalExecutionFinished()
     {
@@ -1191,6 +1243,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         typeExplorerSearchDelay?.Dispose();
         typeExplorerRefresh?.Cancel();
         typeExplorerRefresh?.Dispose();
+        packageOperationCancellation?.Cancel();
+        packageOperationCancellation?.Dispose();
         await worker.DisposeAsync();
     }
 }

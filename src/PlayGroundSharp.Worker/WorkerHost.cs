@@ -10,7 +10,7 @@ public sealed class WorkerHost(string pipeName)
     private readonly ScriptSession session = new();
     private readonly PackageRestoreService packageRestore = new();
     private readonly PackageSearchService packageSearch = new();
-    private CancellationTokenSource? executionCancellation;
+    private volatile CancellationTokenSource? operationCancellation;
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
@@ -30,19 +30,16 @@ public sealed class WorkerHost(string pipeName)
     {
         try
         {
-            if (executionCancellation is not null && envelope.Kind is not MessageKinds.Cancel and not MessageKinds.Execute)
-                throw new InvalidOperationException("Session changes are unavailable while a submission is running.");
+            if (operationCancellation is not null && envelope.Kind is not MessageKinds.Cancel)
+                throw new InvalidOperationException("Session changes are unavailable while another operation is running.");
             switch (envelope.Kind)
             {
                 case MessageKinds.Execute:
-                    if (executionCancellation is not null)
-                    {
-                        throw new InvalidOperationException("Another submission is already running.");
-                    }
-                    _ = ExecuteAsync(transport, envelope, hostToken);
+                    StartOperation(transport, envelope, hostToken,
+                        token => ExecuteAsync(transport, envelope, hostToken, token));
                     break;
                 case MessageKinds.Cancel:
-                    executionCancellation?.Cancel();
+                    CancelCurrentOperation();
                     break;
                 case MessageKinds.Reset:
                     session.Reset();
@@ -61,10 +58,12 @@ public sealed class WorkerHost(string pipeName)
                     await SendContextAsync(transport, envelope.CorrelationId, hostToken).ConfigureAwait(false);
                     break;
                 case MessageKinds.AddPackage:
-                    await AddPackageAsync(transport, envelope, hostToken).ConfigureAwait(false);
+                    StartOperation(transport, envelope, hostToken,
+                        token => AddPackageAsync(transport, envelope, token));
                     break;
                 case MessageKinds.SearchPackages:
-                    await SearchPackagesAsync(transport, envelope, hostToken).ConfigureAwait(false);
+                    StartOperation(transport, envelope, hostToken,
+                        token => SearchPackagesAsync(transport, envelope, token));
                     break;
                 default:
                     throw new InvalidDataException($"Unknown message kind '{envelope.Kind}'.");
@@ -77,38 +76,95 @@ public sealed class WorkerHost(string pipeName)
         }
     }
 
-    private async Task ExecuteAsync(PipeTransport transport, PipeEnvelope envelope, CancellationToken hostToken)
+    private void CancelCurrentOperation()
     {
-        var request = envelope.ReadPayload<ExecuteRequest>();
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(hostToken);
-        executionCancellation = linked;
-        await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Started, envelope.CorrelationId,
-            new ExecutionStartedEvent(request.SubmissionIndex)), hostToken).ConfigureAwait(false);
         try
         {
-            var result = await session.ExecuteAsync(request.SubmissionIndex, request.Code,
-                text => transport.WriteAsync(PipeEnvelope.Create(MessageKinds.ConsoleOut, envelope.CorrelationId, new ConsoleEvent(text)), hostToken).GetAwaiter().GetResult(),
-                text => transport.WriteAsync(PipeEnvelope.Create(MessageKinds.ConsoleError, envelope.CorrelationId, new ConsoleEvent(text)), hostToken).GetAwaiter().GetResult(),
-                linked.Token).ConfigureAwait(false);
-            if (result.Diagnostics.Count > 0)
-                await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Diagnostics, envelope.CorrelationId, new DiagnosticsEvent(result.Diagnostics)), hostToken).ConfigureAwait(false);
-            if (result.Snapshot is not null)
-                await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Result, envelope.CorrelationId, new ResultEvent(request.SubmissionIndex, result.Snapshot)), hostToken).ConfigureAwait(false);
-            if (result.Exception is not null)
-                await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.RuntimeError, envelope.CorrelationId, new RuntimeErrorEvent(result.Exception)), hostToken).ConfigureAwait(false);
-            await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Variables, envelope.CorrelationId,
-                new VariablesEvent(session.GetVariables())), hostToken).ConfigureAwait(false);
-            await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Completed, envelope.CorrelationId,
-                new ExecutionCompletedEvent(request.SubmissionIndex, result.StateAccepted, Process.GetCurrentProcess().WorkingSet64)), hostToken).ConfigureAwait(false);
+            operationCancellation?.Cancel();
         }
-        catch (OperationCanceledException)
+        catch (ObjectDisposedException)
         {
-            await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Cancelled, envelope.CorrelationId, new CancelledEvent(true)), hostToken).ConfigureAwait(false);
+            // The operation completed between reading the field and requesting cancellation.
+        }
+    }
+
+    private void StartOperation(
+        PipeTransport transport,
+        PipeEnvelope envelope,
+        CancellationToken hostToken,
+        Func<CancellationToken, Task> operation)
+    {
+        var linked = CancellationTokenSource.CreateLinkedTokenSource(hostToken);
+        operationCancellation = linked;
+        _ = RunOperationAsync(transport, envelope, hostToken, linked, operation);
+    }
+
+    private async Task RunOperationAsync(
+        PipeTransport transport,
+        PipeEnvelope envelope,
+        CancellationToken hostToken,
+        CancellationTokenSource cancellation,
+        Func<CancellationToken, Task> operation)
+    {
+        try
+        {
+            await operation(cancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            await TryWriteAsync(transport, PipeEnvelope.Create(
+                MessageKinds.Cancelled, envelope.CorrelationId, new CancelledEvent(true)), hostToken).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            await TryWriteAsync(transport, PipeEnvelope.Create(
+                MessageKinds.Error, envelope.CorrelationId, new WorkerErrorEvent(error.Message)), hostToken).ConfigureAwait(false);
         }
         finally
         {
-            executionCancellation = null;
+            if (ReferenceEquals(operationCancellation, cancellation)) operationCancellation = null;
+            cancellation.Dispose();
         }
+    }
+
+    private static async Task TryWriteAsync(
+        PipeTransport transport,
+        PipeEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await transport.WriteAsync(envelope, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The App detects a closed transport and replaces this Worker.
+        }
+    }
+
+    private async Task ExecuteAsync(
+        PipeTransport transport,
+        PipeEnvelope envelope,
+        CancellationToken hostToken,
+        CancellationToken operationToken)
+    {
+        var request = envelope.ReadPayload<ExecuteRequest>();
+        await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Started, envelope.CorrelationId,
+            new ExecutionStartedEvent(request.SubmissionIndex)), hostToken).ConfigureAwait(false);
+        var result = await session.ExecuteAsync(request.SubmissionIndex, request.Code,
+            text => transport.WriteAsync(PipeEnvelope.Create(MessageKinds.ConsoleOut, envelope.CorrelationId, new ConsoleEvent(text)), hostToken).GetAwaiter().GetResult(),
+            text => transport.WriteAsync(PipeEnvelope.Create(MessageKinds.ConsoleError, envelope.CorrelationId, new ConsoleEvent(text)), hostToken).GetAwaiter().GetResult(),
+            operationToken).ConfigureAwait(false);
+        if (result.Diagnostics.Count > 0)
+            await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Diagnostics, envelope.CorrelationId, new DiagnosticsEvent(result.Diagnostics)), hostToken).ConfigureAwait(false);
+        if (result.Snapshot is not null)
+            await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Result, envelope.CorrelationId, new ResultEvent(request.SubmissionIndex, result.Snapshot)), hostToken).ConfigureAwait(false);
+        if (result.Exception is not null)
+            await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.RuntimeError, envelope.CorrelationId, new RuntimeErrorEvent(result.Exception)), hostToken).ConfigureAwait(false);
+        await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Variables, envelope.CorrelationId,
+            new VariablesEvent(session.GetVariables())), hostToken).ConfigureAwait(false);
+        await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Completed, envelope.CorrelationId,
+            new ExecutionCompletedEvent(request.SubmissionIndex, result.StateAccepted, Process.GetCurrentProcess().WorkingSet64)), hostToken).ConfigureAwait(false);
     }
 
     private Task SendContextAsync(PipeTransport transport, Guid correlationId, CancellationToken cancellationToken)

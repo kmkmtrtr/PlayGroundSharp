@@ -17,6 +17,7 @@ public sealed record TranscriptLine(
     public bool IsInspectable => Snapshot is not null;
     public bool IsStructured => SnapshotRoots is not null;
     public bool IsInput => InputCode is not null;
+    public bool IsConsole => CopyValue is not null;
     public bool IsCopyable => InputCode is not null || Snapshot is not null || CopyValue is not null;
     public bool IsSavable => Snapshot is not null || CopyValue is not null;
     public string CopyText => CopyValue ?? (Snapshot is null ? Text : SnapshotTextFormatter.FormatFull(Snapshot));
@@ -29,13 +30,13 @@ public sealed record TranscriptLine(
                 : null);
     public static TranscriptLine Console(string text, bool error, string previewLimitedMessage)
     {
-        var fullText = text.TrimEnd();
-        var displayText = fullText.Length <= MaximumConsolePreviewLength
-            ? fullText
-            : fullText[..MaximumConsolePreviewLength] + Environment.NewLine + previewLimitedMessage;
+        var displaySource = text.TrimEnd('\r', '\n');
+        var displayText = displaySource.Length <= MaximumConsolePreviewLength
+            ? displaySource
+            : displaySource[..MaximumConsolePreviewLength] + Environment.NewLine + previewLimitedMessage;
         return new(error ? "!" : "│", displayText,
             Resource(error ? "ErrorBrush" : "MutedBrush"), Resource(error ? "ErrorBrush" : "MutedBrush"),
-            CopyValue: fullText);
+            CopyValue: text);
     }
     public static TranscriptLine Diagnostic(string text, bool error = true) => new(error ? "×" : "⚠", text,
         Resource(error ? "ErrorBrush" : "WarningBrush"), Resource(error ? "ErrorBrush" : "WarningBrush"));

@@ -20,6 +20,8 @@ namespace PlayGroundSharp.App;
 public partial class MainWindow : Window
 {
     private const int WmMouseHorizontalWheel = 0x020E;
+    private const int MaximumDroppedPathCount = 500;
+    private const double DualPaneMinimumWidth = 1050;
     private readonly MainViewModel viewModel = new();
     private IReadOnlyList<CompletionCandidate> allCompletionItems = [];
     private CancellationTokenSource? completionCancellation;
@@ -132,6 +134,8 @@ public partial class MainWindow : Window
     {
         if (e.NewValue is true)
         {
+            if (ActualWidth < DualPaneMinimumWidth && viewModel.IsReferenceDrawerOpen)
+                viewModel.IsReferenceDrawerOpen = false;
             TypeExplorerColumn.Width = typeExplorerWidth;
             TypeExplorerSplitterColumn.Width = new(5);
             return;
@@ -146,6 +150,8 @@ public partial class MainWindow : Window
     {
         if (e.NewValue is true)
         {
+            if (ActualWidth < DualPaneMinimumWidth && viewModel.IsTypeExplorerOpen)
+                viewModel.IsTypeExplorerOpen = false;
             ReferenceDrawerSplitterColumn.Width = new(5);
             ReferenceDrawerColumn.Width = referenceDrawerWidth;
             return;
@@ -153,6 +159,13 @@ public partial class MainWindow : Window
         if (ReferenceDrawerColumn.ActualWidth > 0) referenceDrawerWidth = new(ReferenceDrawerColumn.ActualWidth);
         ReferenceDrawerSplitterColumn.Width = new(0);
         ReferenceDrawerColumn.Width = new(0);
+    }
+
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.NewSize.Width < DualPaneMinimumWidth &&
+            viewModel.IsTypeExplorerOpen && viewModel.IsReferenceDrawerOpen)
+            viewModel.IsTypeExplorerOpen = false;
     }
 
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -237,6 +250,12 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
             FocusEditor();
+        }
+        else if (e.Key == Key.Escape && viewModel.CanCancel &&
+                 !AssistPopup.IsOpen && !SymbolDetailPopup.IsOpen)
+        {
+            e.Handled = true;
+            await viewModel.CancelAsync();
         }
     }
 
@@ -325,7 +344,8 @@ public partial class MainWindow : Window
 
     private void Editor_PreviewDragOver(object sender, DragEventArgs e)
     {
-        var canDrop = TryGetDroppedPaths(e.Data, out _);
+        var canDrop = e.Data.GetDataPresent(DataFormats.FileDrop) &&
+                      e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 };
         e.Effects = canDrop ? DragDropEffects.Copy : DragDropEffects.None;
         DropOverlay.Visibility = canDrop ? Visibility.Visible : Visibility.Collapsed;
         e.Handled = true;
@@ -337,7 +357,7 @@ public partial class MainWindow : Window
     private void Editor_PreviewDrop(object sender, DragEventArgs e)
     {
         DropOverlay.Visibility = Visibility.Collapsed;
-        if (!TryGetDroppedPaths(e.Data, out var paths))
+        if (!TryGetDroppedPaths(e.Data, out var paths, out var omittedCount))
         {
             e.Effects = DragDropEffects.None;
             e.Handled = true;
@@ -350,6 +370,10 @@ public partial class MainWindow : Window
         e.Handled = true;
         HideAssist();
         Editor.Focus();
+        if (omittedCount > 0)
+            viewModel.Transcript.Add(TranscriptLine.Diagnostic(
+                viewModel.Localize("Message.DropPathsLimited", MaximumDroppedPathCount, omittedCount),
+                error: false));
 
         if (paths.Length > 1)
         {
@@ -446,13 +470,15 @@ public partial class MainWindow : Window
         Editor.Focus();
     }
 
-    private static bool TryGetDroppedPaths(IDataObject data, out string[] paths)
+    private static bool TryGetDroppedPaths(IDataObject data, out string[] paths, out int omittedCount)
     {
-        paths = data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] dropped
+        var availablePaths = data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] dropped
             ? dropped.Where(static path => !string.IsNullOrWhiteSpace(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray()
             : [];
+        omittedCount = Math.Max(0, availablePaths.Length - MaximumDroppedPathCount);
+        paths = availablePaths.Take(MaximumDroppedPathCount).ToArray();
         return paths.Length > 0;
     }
 
@@ -585,6 +611,12 @@ public partial class MainWindow : Window
         var text = new StringBuilder();
         foreach (var line in lines)
         {
+            if (line.IsConsole)
+            {
+                text.Append(line.CopyText);
+                continue;
+            }
+            if (text.Length > 0 && text[^1] is not ('\r' or '\n')) text.AppendLine();
             if (line.Prefix.Length > 0) text.Append(line.Prefix).Append(' ');
             text.AppendLine(line.CopyText);
         }
@@ -656,7 +688,7 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 HideAssist();
             }
-            else if (viewModel.IsRunning)
+            else if (viewModel.CanCancel)
             {
                 e.Handled = true;
                 await viewModel.CancelAsync();
@@ -700,8 +732,12 @@ public partial class MainWindow : Window
     {
         viewModel.InputText = Editor.Text;
         if (assistMode == AssistMode.Signature) ScheduleSignatureHelpRefresh();
+        else if (IsDynamicCommandCompletionStart(Editor.Text)) _ = ShowCompletionAsync();
         else if (assistMode == AssistMode.Completion) ApplyCompletionFilter();
     }
+
+    private static bool IsDynamicCommandCompletionStart(string text) =>
+        text is ":using add " or ":using remove ";
 
     private async Task ShowCompletionAsync()
     {

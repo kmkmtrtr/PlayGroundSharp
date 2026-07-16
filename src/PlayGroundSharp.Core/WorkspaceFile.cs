@@ -54,7 +54,14 @@ public static class WorkspaceFile
         }
         finally
         {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            try
+            {
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                // Preserve the original save outcome if a scanner still holds an abandoned temp file.
+            }
         }
     }
 
@@ -82,8 +89,8 @@ public static class WorkspaceFile
         if (document.Submissions is null || document.Imports is null || document.References is null ||
             document.Packages is null || document.InputText is null)
             throw new InvalidDataException("Workspace contains missing fields.");
-        if (document.Submissions.Count > 10_000 || document.Imports.Count > 10_000 ||
-            document.References.Count > 10_000 || document.Packages.Count > 10_000)
+        if (document.Submissions.Count > 10_000 || document.Imports.Count > 1_000 ||
+            document.References.Count > 10_000 || document.Packages.Count > 100)
             throw new InvalidDataException("Workspace contains too many entries.");
         if (document.Submissions.Any(static value => value is null) ||
             document.Imports.Any(static value => string.IsNullOrWhiteSpace(value)) ||

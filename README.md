@@ -19,6 +19,16 @@ dotnet run --project src/PlayGroundSharp.App/PlayGroundSharp.App.csproj -c Debug
 
 The App starts the same executable in hidden `--worker` mode as a separate child process. User code always runs in that child process, not in WPF.
 
+## WebAssembly preview
+
+An experimental Blazor WebAssembly UI is included. It currently runs the UI in the browser and sends execution requests to a local ASP.NET Core host, which starts an isolated Worker process for each browser session.
+
+```powershell
+dotnet run --project src/PlayGroundSharp.Web/PlayGroundSharp.Web.csproj -c Debug
+```
+
+Open `http://localhost:5188`. The preview supports stateful C# submissions, `Enter` to execute, `Shift+Enter` for a newline, expandable structured results, variables and using management. NuGet, DLL references, workspace persistence and IntelliSense are not implemented yet. Its execution API accepts loopback connections only and is not intended for deployment to an external server; submitted code still runs with the current user's permissions.
+
 ## Publish
 
 ```powershell

@@ -3,6 +3,8 @@
     <Project Path="src/PlayGroundSharp.App/PlayGroundSharp.App.csproj" />
     <Project Path="src/PlayGroundSharp.Core/PlayGroundSharp.Core.csproj" />
     <Project Path="src/PlayGroundSharp.LanguageService/PlayGroundSharp.LanguageService.csproj" />
+    <Project Path="src/PlayGroundSharp.Web/PlayGroundSharp.Web.csproj" />
+    <Project Path="src/PlayGroundSharp.Web.Client/PlayGroundSharp.Web.Client.csproj" />
     <Project Path="src/PlayGroundSharp.Worker/PlayGroundSharp.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">

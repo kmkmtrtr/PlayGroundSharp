@@ -1,0 +1,58 @@
+@if (HasChildren)
+{
+    <details class="snapshot-node" open="@(Depth < 2)">
+        <summary>
+            <span class="snapshot-kind">@KindLabel</span>
+            <span class="snapshot-display">@Snapshot.Display</span>
+            @if (Snapshot.IsTruncated)
+            {
+                <span class="snapshot-warning">一部表示</span>
+            }
+        </summary>
+        <div class="snapshot-children">
+            @if (Snapshot.Properties is not null)
+            {
+                @foreach (var property in Snapshot.Properties)
+                {
+                    <div class="snapshot-row" @key="property">
+                        <span class="snapshot-key">@property.Name</span>
+                        <SnapshotView Snapshot="property.Value" Depth="@(Depth + 1)" />
+                    </div>
+                }
+            }
+            @if (Snapshot.Items is not null)
+            {
+                @for (var index = 0; index < Snapshot.Items.Count; index++)
+                {
+                    var item = Snapshot.Items[index];
+                    <div class="snapshot-row" @key="index">
+                        <span class="snapshot-key">[@index]</span>
+                        <SnapshotView Snapshot="item" Depth="@(Depth + 1)" />
+                    </div>
+                }
+            }
+        </div>
+    </details>
+}
+else
+{
+    <span class="snapshot-value snapshot-@Snapshot.Kind.ToString().ToLowerInvariant()" title="@Snapshot.TypeName">@Snapshot.Display</span>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public required ResultSnapshot Snapshot { get; set; }
+
+    [Parameter]
+    public int Depth { get; set; }
+
+    private bool HasChildren => Snapshot.Properties is { Count: > 0 } || Snapshot.Items is { Count: > 0 };
+
+    private string KindLabel => Snapshot.Kind switch
+    {
+        SnapshotKind.Sequence => Snapshot.TotalCount is { } count ? $"配列 {count:N0}" : "配列",
+        SnapshotKind.Json => "JSON",
+        SnapshotKind.Object => "Object",
+        _ => Snapshot.Kind.ToString()
+    };
+}

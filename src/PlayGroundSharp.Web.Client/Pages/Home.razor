@@ -1,0 +1,428 @@
+@page "/"
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>PlayGroundSharp Web</PageTitle>
+
+<header class="topbar">
+    <div class="brand">
+        <div class="brand-mark">C#</div>
+        <div>
+            <h1>PlayGroundSharp <span>Web</span></h1>
+            <p>Blazor WebAssembly preview</p>
+        </div>
+    </div>
+    <div class="topbar-actions">
+        <span class="status-pill @StatusClass"><span></span>@status</span>
+        <button class="ghost-button" @onclick="ResetAsync" disabled="@isBusy">セッションをリセット</button>
+    </div>
+</header>
+
+<div class="preview-notice">
+    <strong>ローカルプレビュー</strong>
+    UIはWebAssemblyで動作し、C#はローカルの分離Workerで実行します。NuGet・DLL・IntelliSenseは今後の対応です。
+</div>
+
+<main class="workspace">
+    <section class="primary-column">
+        <div class="panel editor-panel">
+            <div class="panel-heading">
+                <div>
+                    <span class="eyebrow">SUBMISSION @(submissionIndex + 1)</span>
+                    <h2>C#を入力</h2>
+                </div>
+                <div class="key-help"><kbd>Enter</kbd> 実行 <kbd>Shift</kbd>＋<kbd>Enter</kbd> 改行</div>
+            </div>
+            <textarea class="code-editor" @bind="code" @bind:event="oninput" @ref="editor" @onkeydown="HandleEditorKeyDownAsync"
+                      spellcheck="false" aria-label="C# code editor"></textarea>
+            <div class="editor-footer">
+                <span>@LineCount 行</span>
+                <button class="run-button" @onclick="ExecuteAsync" disabled="@(isBusy || string.IsNullOrWhiteSpace(code))">
+                    @if (isBusy)
+                    {
+                        <span class="spinner"></span><span>実行中</span>
+                    }
+                    else
+                    {
+                        <span>実行</span><span class="run-icon">↵</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        <section class="history-section">
+            <div class="section-title">
+                <div>
+                    <span class="eyebrow">OUTPUT</span>
+                    <h2>実行結果</h2>
+                </div>
+                @if (history.Count > 0)
+                {
+                    <button class="text-button" @onclick="ClearHistory">表示をクリア</button>
+                }
+            </div>
+
+            @if (history.Count == 0)
+            {
+                <div class="empty-output">
+                    <div class="empty-icon">{ }</div>
+                    <strong>まだ実行結果はありません</strong>
+                    <span>例: <code>Enumerable.Range(1, 5).Select(x =&gt; new { x, square = x * x }).ToArray()</code></span>
+                </div>
+            }
+            else
+            {
+                @foreach (var item in history.AsEnumerable().Reverse())
+                {
+                    <article class="submission-card" @key="item.Index">
+                        <div class="submission-code">
+                            <span>#@item.Index</span><pre>@item.Code</pre>
+                            <button class="copy-button" title="入力と結果をコピー" @onclick="() => CopyAsync(item)">コピー</button>
+                        </div>
+                        <div class="submission-result">
+                            @if (item.StandardOutput.Count > 0)
+                            {
+                                <pre class="console-output">@string.Concat(item.StandardOutput)</pre>
+                            }
+                            @foreach (var diagnostic in item.Diagnostics)
+                            {
+                                <div class="diagnostic diagnostic-@diagnostic.Level.ToString().ToLowerInvariant()">
+                                    <strong>@diagnostic.Id</strong>
+                                    <span>@diagnostic.Message</span>
+                                    <small>@diagnostic.StartLine:@diagnostic.StartColumn</small>
+                                </div>
+                            }
+                            @if (item.Error is not null)
+                            {
+                                <div class="runtime-error"><strong>@item.Error.TypeName</strong><span>@item.Error.Message</span></div>
+                            }
+                            @if (item.Result is not null)
+                            {
+                                <div class="result-header">
+                                    <span>result</span><code>@DisplayType(item.Result)</code>
+                                </div>
+                                <SnapshotView Snapshot="item.Result" />
+                            }
+                            @if (item.Result is null && item.Diagnostics.Count == 0 && item.Error is null && item.StandardOutput.Count == 0)
+                            {
+                                <span class="void-result">実行完了（戻り値なし）</span>
+                            }
+                        </div>
+                    </article>
+                }
+            }
+        </section>
+    </section>
+
+    <aside class="side-column">
+        <section class="panel side-panel">
+            <div class="side-heading"><div><span class="eyebrow">SESSION</span><h2>変数</h2></div><span class="count-badge">@variables.Count</span></div>
+            @if (variables.Count == 0)
+            {
+                <p class="side-empty">実行後の変数がここに表示されます。</p>
+            }
+            else
+            {
+                <div class="variable-list">
+                    @foreach (var variable in variables)
+                    {
+                        <details class="variable-item" @key="variable.Name">
+                            <summary><code>@variable.Name</code><span>@ShortTypeName(variable.TypeName)</span></summary>
+                            <SnapshotView Snapshot="variable.Value" />
+                        </details>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel side-panel">
+            <div class="side-heading"><div><span class="eyebrow">CONTEXT</span><h2>using</h2></div><span class="count-badge">@usings.Count</span></div>
+            <div class="using-add">
+                <input @bind="newUsing" @bind:event="oninput" placeholder="System.Net.Http" aria-label="追加する名前空間" />
+                <button @onclick="AddUsingAsync" disabled="@(isBusy || string.IsNullOrWhiteSpace(newUsing))">追加</button>
+            </div>
+            <div class="using-list">
+                @foreach (var item in usings)
+                {
+                    <div class="using-chip" @key="item"><code>@item</code><button title="削除（実行状態をリセット）" @onclick="() => RemoveUsingAsync(item)" disabled="@isBusy">×</button></div>
+                }
+            </div>
+        </section>
+
+        <section class="panel roadmap-panel">
+            <span class="eyebrow">NEXT</span>
+            <h2>Wasm版の次候補</h2>
+            <ul>
+                <li><span></span>Roslyn IntelliSense</li>
+                <li><span></span>NuGetパッケージ追加</li>
+                <li><span></span>Web Worker内実行の検証</li>
+                <li><span></span>ファイルのドラッグ＆ドロップ</li>
+            </ul>
+        </section>
+    </aside>
+</main>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="toast @messageKind" role="status"><span>@message</span><button @onclick="() => message = null">×</button></div>
+}
+
+@code {
+    private readonly List<SubmissionView> history = [];
+    private IReadOnlyList<VariableInfo> variables = [];
+    private IReadOnlyList<string> usings = [];
+    private Guid? sessionId;
+    private ElementReference editor;
+    private IJSObjectReference? module;
+    private IJSObjectReference? editorBinding;
+    private string code = "Enumerable.Range(1, 5)\n    .Select(x => new { x, square = x * x })\n    .ToArray()";
+    private string newUsing = string.Empty;
+    private string status = "接続中";
+    private string? message;
+    private string messageKind = "info";
+    private bool isBusy;
+    private int submissionIndex;
+
+    private int LineCount => string.IsNullOrEmpty(code) ? 1 : code.Count(character => character == '\n') + 1;
+    private string StatusClass => sessionId is null ? "offline" : isBusy ? "busy" : "online";
+
+    protected override async Task OnInitializedAsync() => await EnsureSessionAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./playground.js");
+        editorBinding = await module.InvokeAsync<IJSObjectReference>("attachEditor", editor);
+        await module.InvokeVoidAsync("focusEditor", editor);
+    }
+
+    private Task HandleEditorKeyDownAsync(KeyboardEventArgs args) =>
+        args.Key == "Enter" && !args.ShiftKey && !args.IsComposing ? ExecuteAsync() : Task.CompletedTask;
+
+    private async Task EnsureSessionAsync()
+    {
+        if (sessionId is not null) return;
+        try
+        {
+            var response = await Http.PostAsync("api/sessions", null);
+            response.EnsureSuccessStatusCode();
+            var created = await response.Content.ReadFromJsonAsync<WebSessionCreated>()
+                ?? throw new InvalidDataException("セッション応答が空です。");
+            sessionId = created.SessionId;
+            usings = created.Usings;
+            status = "Worker接続済み";
+        }
+        catch (Exception error)
+        {
+            status = "接続エラー";
+            ShowMessage(error.Message, "error");
+        }
+    }
+
+    private async Task ExecuteAsync()
+    {
+        if (isBusy || string.IsNullOrWhiteSpace(code)) return;
+        await EnsureSessionAsync();
+        if (sessionId is null) return;
+
+        isBusy = true;
+        status = "実行中";
+        var nextIndex = submissionIndex + 1;
+        var view = new SubmissionView(nextIndex, code);
+        try
+        {
+            var response = await Http.PostAsJsonAsync($"api/sessions/{sessionId}/execute", new ExecuteRequest(nextIndex, code));
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail);
+            }
+            var events = await response.Content.ReadFromJsonAsync<PipeEnvelope[]>() ?? [];
+            ApplyEvents(view, events);
+            submissionIndex = nextIndex;
+            history.Add(view);
+            code = string.Empty;
+            status = "Worker接続済み";
+        }
+        catch (Exception error)
+        {
+            status = "再接続が必要";
+            sessionId = null;
+            ShowMessage($"実行に失敗しました: {error.Message}", "error");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void ApplyEvents(SubmissionView view, IEnumerable<PipeEnvelope> events)
+    {
+        foreach (var envelope in events)
+        {
+            switch (envelope.Kind)
+            {
+                case MessageKinds.ConsoleOut:
+                case MessageKinds.ConsoleError:
+                    view.StandardOutput.Add(envelope.ReadPayload<ConsoleEvent>().Text);
+                    break;
+                case MessageKinds.Diagnostics:
+                    view.Diagnostics.AddRange(envelope.ReadPayload<DiagnosticsEvent>().Diagnostics);
+                    break;
+                case MessageKinds.Result:
+                    view.Result = envelope.ReadPayload<ResultEvent>().Snapshot;
+                    break;
+                case MessageKinds.RuntimeError:
+                    view.Error = envelope.ReadPayload<RuntimeErrorEvent>().Exception;
+                    break;
+                case MessageKinds.Variables:
+                    variables = envelope.ReadPayload<VariablesEvent>().Variables;
+                    break;
+                case MessageKinds.SessionChanged:
+                    usings = envelope.ReadPayload<SessionChangedEvent>().Usings;
+                    break;
+                case MessageKinds.Error:
+                    throw new InvalidOperationException(envelope.ReadPayload<WorkerErrorEvent>().Message);
+            }
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        if (isBusy) return;
+        isBusy = true;
+        try
+        {
+            await EnsureSessionAsync();
+            if (sessionId is null) return;
+            var events = await PostAndReadEventsAsync<object?>($"api/sessions/{sessionId}/reset", null);
+            ApplyEvents(new SubmissionView(0, string.Empty), events);
+            variables = [];
+            history.Clear();
+            submissionIndex = 0;
+            status = "Worker接続済み";
+            ShowMessage("セッションをリセットしました。", "success");
+        }
+        catch (Exception error)
+        {
+            ShowMessage(error.Message, "error");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task AddUsingAsync()
+    {
+        var candidate = newUsing.Trim();
+        if (isBusy || candidate.Length == 0) return;
+        isBusy = true;
+        try
+        {
+            await EnsureSessionAsync();
+            if (sessionId is null) return;
+            var events = await PostAndReadEventsAsync($"api/sessions/{sessionId}/usings/add", new WebUsingRequest(candidate));
+            ApplyEvents(new SubmissionView(0, string.Empty), events);
+            newUsing = string.Empty;
+            ShowMessage($"using {candidate} を追加しました。", "success");
+        }
+        catch (Exception error)
+        {
+            ShowMessage(error.Message, "error");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task RemoveUsingAsync(string candidate)
+    {
+        if (isBusy) return;
+        isBusy = true;
+        try
+        {
+            var events = await PostAndReadEventsAsync($"api/sessions/{sessionId}/usings/remove", new WebUsingRequest(candidate));
+            ApplyEvents(new SubmissionView(0, string.Empty), events);
+            variables = [];
+            history.Clear();
+            submissionIndex = 0;
+            ShowMessage($"using {candidate} を削除し、実行状態をリセットしました。", "success");
+        }
+        catch (Exception error)
+        {
+            ShowMessage(error.Message, "error");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task<PipeEnvelope[]> PostAndReadEventsAsync<T>(string uri, T payload)
+    {
+        using var response = payload is null
+            ? await Http.PostAsync(uri, null)
+            : await Http.PostAsJsonAsync(uri, payload);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(await response.Content.ReadAsStringAsync());
+        }
+        return await response.Content.ReadFromJsonAsync<PipeEnvelope[]>() ?? [];
+    }
+
+    private async Task CopyAsync(SubmissionView item)
+    {
+        if (module is null) return;
+        var result = item.Result?.Display ?? item.Error?.Message ?? string.Concat(item.StandardOutput);
+        await module.InvokeVoidAsync("copyText", $"> {item.Code}\n{result}");
+        ShowMessage("クリップボードへコピーしました。", "success");
+    }
+
+    private void ClearHistory() => history.Clear();
+
+    private void ShowMessage(string text, string kind)
+    {
+        message = text;
+        messageKind = kind;
+    }
+
+    private static string DisplayType(ResultSnapshot snapshot) => snapshot.Kind switch
+    {
+        SnapshotKind.Sequence when snapshot.TypeName?.EndsWith("[]", StringComparison.Ordinal) == true =>
+            $"{ShortTypeName(snapshot.TypeName[..^2])}[]",
+        SnapshotKind.Sequence => "IEnumerable",
+        SnapshotKind.Json => "JSON",
+        _ => ShortTypeName(snapshot.TypeName)
+    };
+
+    private static string ShortTypeName(string? typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName)) return "value";
+        var genericMarker = typeName.IndexOf('`');
+        var trimmed = genericMarker >= 0 ? typeName[..genericMarker] : typeName;
+        var assemblyMarker = trimmed.IndexOf(',');
+        if (assemblyMarker >= 0) trimmed = trimmed[..assemblyMarker];
+        if (trimmed.Contains("AnonymousType", StringComparison.Ordinal)) return "anonymous";
+        var separator = Math.Max(trimmed.LastIndexOf('.'), trimmed.LastIndexOf('+'));
+        return separator >= 0 ? trimmed[(separator + 1)..] : trimmed;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (editorBinding is not null) await editorBinding.InvokeVoidAsync("dispose");
+        if (module is not null) await module.DisposeAsync();
+    }
+
+    private sealed class SubmissionView(int index, string code)
+    {
+        public int Index { get; } = index;
+        public string Code { get; } = code;
+        public List<string> StandardOutput { get; } = [];
+        public List<DiagnosticInfo> Diagnostics { get; } = [];
+        public ResultSnapshot? Result { get; set; }
+        public ExceptionInfo? Error { get; set; }
+    }
+}

@@ -16,7 +16,8 @@ public sealed record TranscriptLine(
     public bool IsInspectable => Snapshot is not null;
     public bool IsStructured => SnapshotRoots is not null;
     public bool IsInput => InputCode is not null;
-    public bool IsCopyable => Snapshot is not null || CopyValue is not null;
+    public bool IsCopyable => InputCode is not null || Snapshot is not null || CopyValue is not null;
+    public bool IsSavable => Snapshot is not null || CopyValue is not null;
     public string CopyText => CopyValue ?? (Snapshot is null ? Text : SnapshotTextFormatter.FormatFull(Snapshot));
 
     public static TranscriptLine Input(int index, string code) => new(">", code, Resource("AccentBrush"), Resource("ForegroundBrush"), code);

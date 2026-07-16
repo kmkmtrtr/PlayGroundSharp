@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -29,6 +30,7 @@ public partial class MainWindow : Window
     private GridLength typeExplorerWidth = new(286);
     private GridLength referenceDrawerWidth = new(470);
     private HwndSource? windowSource;
+    private bool transcriptAutoScroll = true;
 
     public MainWindow()
     {
@@ -37,7 +39,14 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         App.ApplyTheme(viewModel.ThemeMode);
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("C#");
-        viewModel.Transcript.CollectionChanged += (_, _) => Dispatcher.BeginInvoke(TranscriptScroll.ScrollToEnd);
+        viewModel.Transcript.CollectionChanged += (_, args) =>
+        {
+            if (args.Action == NotifyCollectionChangedAction.Reset) transcriptAutoScroll = true;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (transcriptAutoScroll) TranscriptScroll.ScrollToEnd();
+            });
+        };
         Editor.TextArea.TextEntered += async (_, args) =>
         {
             if (args.Text == ":") await ShowCompletionAsync();
@@ -876,6 +885,11 @@ public partial class MainWindow : Window
                 DataContext: TranscriptLine line,
                 ContextMenu: { } menu
             }) return;
+        if (!line.IsCopyable && !line.IsSavable && !line.IsInspectable)
+        {
+            e.Handled = true;
+            return;
+        }
         foreach (var item in menu.Items.OfType<MenuItem>()) item.DataContext = line;
     }
 
@@ -950,6 +964,14 @@ public partial class MainWindow : Window
             0,
             TranscriptScroll.ScrollableHeight));
         e.Handled = true;
+    }
+
+    private void TranscriptScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        // Extent changes are caused by arriving output. Preserve the user's previous
+        // sticky-scroll choice until they explicitly move the viewport.
+        if (e.ExtentHeightChange != 0) return;
+        transcriptAutoScroll = TranscriptScroll.ScrollableHeight - TranscriptScroll.VerticalOffset <= 2;
     }
 
     private enum AssistMode { None, Completion, Signature }

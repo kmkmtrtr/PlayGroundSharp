@@ -14,6 +14,7 @@ public partial class ResultInspectorWindow : Window
     private readonly ResultSnapshot snapshot;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private SnapshotTreeNode? selectedNode;
+    private CancellationTokenSource? searchCancellation;
 
     public ResultInspectorWindow(ResultSnapshot snapshot, AppLanguageMode languageMode)
     {
@@ -24,8 +25,13 @@ public partial class ResultInspectorWindow : Window
         InitializeComponent();
         DataContext = this;
         SetSelectedNode(Roots[0]);
-        searchTimer.Tick += (_, _) => ApplySearch();
-        Closed += (_, _) => searchTimer.Stop();
+        searchTimer.Tick += async (_, _) => await ApplySearchAsync();
+        Closed += (_, _) =>
+        {
+            searchTimer.Stop();
+            searchCancellation?.Cancel();
+            searchCancellation?.Dispose();
+        };
     }
 
     public ObservableCollection<SnapshotTreeNode> Roots { get; }
@@ -38,14 +44,41 @@ public partial class ResultInspectorWindow : Window
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        searchCancellation?.Cancel();
         searchTimer.Stop();
         searchTimer.Start();
     }
 
-    private void ApplySearch()
+    private async Task ApplySearchAsync()
     {
         searchTimer.Stop();
-        var root = SnapshotTreeNode.CreateFilteredRoot(snapshot, languageMode, SearchBox.Text, out var matches);
+        searchCancellation?.Cancel();
+        searchCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        var cancellationToken = cancellation.Token;
+        searchCancellation = cancellation;
+        var query = SearchBox.Text;
+        SearchStatus.Text = string.IsNullOrWhiteSpace(query)
+            ? string.Empty
+            : AppLocalization.Text(languageMode, "Inspector.Searching");
+
+        SnapshotTreeNode? root;
+        int matches;
+        try
+        {
+            (root, matches) = await Task.Run(() =>
+            {
+                var filteredRoot = SnapshotTreeNode.CreateFilteredRoot(
+                    snapshot, languageMode, query, out var matchCount, cancellationToken);
+                return (filteredRoot, matchCount);
+            }, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (cancellationToken.IsCancellationRequested || !string.Equals(query, SearchBox.Text, StringComparison.Ordinal)) return;
         Roots.Clear();
         if (root is not null)
         {
@@ -58,7 +91,7 @@ public partial class ResultInspectorWindow : Window
             DetailText.Clear();
             PathText.Text = string.Empty;
         }
-        SearchStatus.Text = string.IsNullOrWhiteSpace(SearchBox.Text)
+        SearchStatus.Text = string.IsNullOrWhiteSpace(query)
             ? string.Empty
             : root is null
                 ? AppLocalization.Text(languageMode, "Inspector.NoMatches")

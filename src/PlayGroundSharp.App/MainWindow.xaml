@@ -326,7 +326,8 @@
             <ScrollViewer x:Name="TranscriptScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="20,16,18,6"
                           AutomationProperties.Name="ConsoleSurface"
                           PreviewMouseLeftButtonDown="ConsoleSurface_PreviewMouseLeftButtonDown"
-                          PreviewMouseWheel="TranscriptScroll_PreviewMouseWheel">
+                          PreviewMouseWheel="TranscriptScroll_PreviewMouseWheel"
+                          ScrollChanged="TranscriptScroll_ScrollChanged">
                 <Grid MinHeight="{Binding ViewportHeight, ElementName=TranscriptScroll}">
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -341,7 +342,7 @@
                                     <ContextMenu>
                                         <MenuItem Header="{DynamicResource Ui.Copy}" IsEnabled="{Binding IsCopyable}"
                                                   Click="CopyTranscriptLine_Click" />
-                                        <MenuItem Header="{DynamicResource Ui.Save}" IsEnabled="{Binding IsCopyable}"
+                                        <MenuItem Header="{DynamicResource Ui.Save}" IsEnabled="{Binding IsSavable}"
                                                   Click="SaveTranscriptLine_Click" />
                                         <Separator />
                                         <MenuItem Header="{DynamicResource Ui.Inspect}" IsEnabled="{Binding IsInspectable}"

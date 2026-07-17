@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using PlayGroundSharp.Core;
 
@@ -11,6 +12,10 @@ internal static class SnapshotTextFormatter
 {
     private const int PreviewCharacterLimit = 20_000;
     private const int PreviewItemLimit = 200;
+    private static readonly JsonSerializerOptions DisplayJsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     public static SnapshotFormatResult FormatPreview(ResultSnapshot snapshot) =>
         Format(snapshot, PreviewCharacterLimit, PreviewItemLimit);
@@ -28,6 +33,8 @@ internal static class SnapshotTextFormatter
                    (snapshot.IsTruncated ? " …" : string.Empty);
         return (snapshot.Display ?? snapshot.Kind.ToString()) + (snapshot.IsTruncated ? " …" : string.Empty);
     }
+
+    internal static string QuoteJsonString(string value) => JsonSerializer.Serialize(value, DisplayJsonOptions);
 
     private static SnapshotFormatResult Format(ResultSnapshot snapshot, int characterLimit, int itemLimit)
     {
@@ -71,7 +78,7 @@ internal static class SnapshotTextFormatter
                 if (!CanWriteItem()) break;
                 Append(written++ == 0 ? Environment.NewLine : "," + Environment.NewLine);
                 AppendIndent(depth + 1);
-                Append(JsonSerializer.Serialize(property.Name));
+                Append(QuoteJsonString(property.Name));
                 Append(": ");
                 Write(property.Value, depth + 1);
                 if (characterLimitReached || itemLimitReached) break;
@@ -124,7 +131,7 @@ internal static class SnapshotTextFormatter
             {
                 var remaining = Math.Max(0, characterLimit - builder.Length - 2);
                 var value = display.Length <= remaining ? display : display[..remaining];
-                Append(JsonSerializer.Serialize(value));
+                Append(QuoteJsonString(value));
                 if (value.Length < display.Length) characterLimitReached = true;
             }
             else

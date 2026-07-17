@@ -62,6 +62,11 @@ public sealed class ResultSnapshotFactory
             var display = budget.TakeText(text, MaximumStringLength, out var truncated);
             return new(SnapshotKind.String, display, typeName, IsTruncated: truncated);
         }
+        if (value is char character)
+        {
+            var display = budget.TakeText(character.ToString(), 1, out var truncated);
+            return new(SnapshotKind.String, display, typeName, IsTruncated: truncated);
+        }
         if (value is bool boolean)
         {
             return new(SnapshotKind.Boolean, boolean ? "true" : "false", typeName);

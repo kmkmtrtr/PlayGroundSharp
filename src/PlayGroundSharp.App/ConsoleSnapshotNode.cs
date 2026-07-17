@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using PlayGroundSharp.Core;
 
@@ -148,7 +147,7 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
         var labelTruncated = display.Length > 160;
         if (labelTruncated) display = display[..160];
         var value = snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid
-            ? JsonSerializer.Serialize(display)
+            ? SnapshotTextFormatter.QuoteJsonString(display)
             : display;
         return labelTruncated || snapshot.IsTruncated ? value + "…" : value;
     }
@@ -157,5 +156,5 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
         value.Length > 0 && (char.IsLetter(value[0]) || value[0] == '_') &&
         value.Skip(1).All(static character => char.IsLetterOrDigit(character) || character == '_')
             ? value
-            : JsonSerializer.Serialize(value);
+            : SnapshotTextFormatter.QuoteJsonString(value);
 }

@@ -343,6 +343,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        InputText = string.Empty;
         isPreparingExecution = true;
         try
         {
@@ -359,7 +360,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         historyPosition = history.Count;
         historyDraft = string.Empty;
         Transcript.Add(TranscriptLine.Input(index, code));
-        if (InputText == code) InputText = string.Empty;
         executionCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         IsRunning = true;
         SetLocalizedStatus("Status.Compiling");

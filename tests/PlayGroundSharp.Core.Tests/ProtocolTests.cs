@@ -99,4 +99,21 @@ public sealed class ProtocolTests
         Assert.Equal(2, metadata.GetProperty("capturedCount").GetInt32());
         Assert.Equal(3, metadata.GetProperty("totalCount").GetInt32());
     }
+
+    [Fact]
+    public void SnapshotJsonExportKeepsReadableUnicodeAndHtmlCharacters()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Object,
+            "1 property",
+            "Example",
+            Properties: [new("message", new(SnapshotKind.String, "日本語 <tag>", "System.String"))]);
+
+        var json = SnapshotJsonFormatter.Format(snapshot);
+        using var document = JsonDocument.Parse(json);
+
+        Assert.Contains("日本語 <tag>", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\u", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("日本語 <tag>", document.RootElement.GetProperty("message").GetString());
+    }
 }

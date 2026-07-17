@@ -20,6 +20,21 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public void CapturesCharactersAndCharacterArraysAsReadableScalars()
+    {
+        var character = factory.Create('あ');
+        var characters = factory.Create("abc".ToCharArray());
+
+        Assert.Equal(SnapshotKind.String, character.Kind);
+        Assert.Equal("System.Char", character.TypeName);
+        Assert.Equal("あ", character.Display);
+        Assert.Equal(SnapshotKind.Sequence, characters.Kind);
+        var items = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(characters.Items);
+        Assert.Equal(["a", "b", "c"], items.Select(static item => item.Display));
+        Assert.All(items, static item => Assert.Equal(SnapshotKind.String, item.Kind));
+    }
+
+    [Fact]
     public void DetectsCyclesAndMaximumItems()
     {
         var node = new Node();

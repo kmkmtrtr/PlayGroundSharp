@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using PlayGroundSharp.Core;
 
@@ -243,7 +242,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
     private static string AppendPropertyPath(string path, string propertyName) =>
         IsSimpleIdentifier(propertyName)
             ? $"{path}.{propertyName}"
-            : $"{path}[{JsonSerializer.Serialize(propertyName)}]";
+            : $"{path}[{SnapshotTextFormatter.QuoteJsonString(propertyName)}]";
 
     private static bool IsSimpleIdentifier(string value) =>
         value.Length > 0 && (char.IsLetter(value[0]) || value[0] == '_') &&

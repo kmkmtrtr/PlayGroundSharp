@@ -30,6 +30,27 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public async Task DisposeWaitsForAnInProgressWriteAndRejectsLaterWrites()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var stream = new BlockingWriteStream();
+        var transport = new PipeTransport(stream);
+        var envelope = PipeEnvelope.Create(MessageKinds.Execute, Guid.NewGuid(), new ExecuteRequest(1, "1 + 2"));
+
+        var write = transport.WriteAsync(envelope, timeout.Token);
+        await stream.WriteStarted.WaitAsync(timeout.Token);
+
+        var dispose = transport.DisposeAsync().AsTask();
+        Assert.False(dispose.IsCompleted);
+
+        stream.ReleaseWrite();
+        await write;
+        await dispose;
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => transport.WriteAsync(envelope, timeout.Token));
+    }
+
+    [Fact]
     public void PackageSearchResultsRoundTripAsNeutralDtos()
     {
         var payload = new PackageSearchResultsEvent("json", 1,
@@ -115,5 +136,46 @@ public sealed class ProtocolTests
         Assert.Contains("日本語 <tag>", json, StringComparison.Ordinal);
         Assert.DoesNotContain("\\u", json, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("日本語 <tag>", document.RootElement.GetProperty("message").GetString());
+    }
+
+    private sealed class BlockingWriteStream : Stream
+    {
+        private readonly TaskCompletionSource writeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource releaseWrite = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task WriteStarted => writeStarted.Task;
+
+        public void ReleaseWrite() => releaseWrite.TrySetResult();
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => 0;
+
+        public override long Position
+        {
+            get => 0;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => 0;
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            writeStarted.TrySetResult();
+            await releaseWrite.Task.WaitAsync(cancellationToken);
+        }
     }
 }

@@ -36,6 +36,45 @@ public sealed class WorkerProcessTests
     }
 
     [Fact]
+    public async Task WorkerExitsCleanlyWhenClientDisconnectsDuringAConsoleWrite()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-disconnect-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName);
+        var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        PipeTransport? transport = null;
+        try
+        {
+            await pipe.ConnectAsync(timeout.Token);
+            transport = new PipeTransport(pipe);
+            var correlationId = Guid.NewGuid();
+            await transport.WriteAsync(PipeEnvelope.Create(
+                MessageKinds.Execute,
+                correlationId,
+                new ExecuteRequest(1, "Console.WriteLine(new string('x', 5_000_000)); 42")), timeout.Token);
+
+            var started = await transport.ReadAsync(timeout.Token);
+            Assert.Equal(MessageKinds.Started, started?.Kind);
+
+            // Leave the large console event unread so the Worker is likely still flushing it
+            // when the client goes away, matching a rapid application shutdown.
+            await Task.Delay(1_000, timeout.Token);
+            await transport.DisposeAsync();
+            pipe.Dispose();
+
+            await process.WaitForExitAsync(timeout.Token);
+            Assert.Equal(0, process.ExitCode);
+        }
+        finally
+        {
+            if (transport is not null) await transport.DisposeAsync();
+            pipe.Dispose();
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public async Task WorkerAbnormalExitCanBeDetectedAndReplacementStarted()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));

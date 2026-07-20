@@ -3,12 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:PlayGroundSharp.App"
         Title="{DynamicResource Inspector.Title}" Width="760" Height="560" MinWidth="480" MinHeight="340"
-        Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}">
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
+        PreviewKeyDown="Window_PreviewKeyDown">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="2*" />
+            <RowDefinition x:Name="SnapshotTreeRow" Height="2*" />
             <RowDefinition Height="5" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />

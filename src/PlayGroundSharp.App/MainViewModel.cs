@@ -31,8 +31,9 @@ public sealed partial class UiOption<T>(T value, string label) : ObservableObjec
 
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
-    private const int MaximumExplorerSearchResults = 400;
+    private const int MaximumExplorerSearchResults = 250;
     private static readonly AppSettings InitialSettings = SettingsStore.Load();
+    private AppSettings settings = InitialSettings;
     private static readonly string[] Commands =
     [
         ":help", ":clear", ":reset", ":using list", ":using add ", ":using remove ",
@@ -76,8 +77,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanCancel))]
     private bool isRunning;
     [ObservableProperty] private bool isWorkerConnected;
-    [ObservableProperty] private bool isReferenceDrawerOpen;
-    [ObservableProperty] private bool isTypeExplorerOpen = true;
+    [ObservableProperty] private bool isReferenceDrawerOpen = InitialSettings.IsReferenceDrawerOpen;
+    [ObservableProperty] private bool isTypeExplorerOpen = InitialSettings.IsTypeExplorerOpen;
     [ObservableProperty] private string typeExplorerSearchText = string.Empty;
     [ObservableProperty] private string typeExplorerStatus = "Loading types…";
     [ObservableProperty] private SymbolExplorerNode? selectedExplorerNode;
@@ -614,13 +615,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _ = UpdateDiagnosticsAfterDelayAsync(value, diagnosticDelay.Token);
     }
 
-    partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SettingsStore.Save(new(value, ThemeMode, LanguageMode));
+    partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SaveSettings();
 
     partial void OnTypeExplorerSearchTextChanged(string value) => ScheduleTypeExplorerRebuild();
 
     partial void OnThemeModeChanged(AppThemeMode value)
     {
-        SettingsStore.Save(new(ExecutionKeyMode, value, LanguageMode));
+        SaveSettings();
         App.ApplyTheme(value);
         for (var index = 0; index < Transcript.Count; index++)
             Transcript[index] = Transcript[index].WithCurrentTheme();
@@ -628,7 +629,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     partial void OnLanguageModeChanged(AppLanguageMode value)
     {
-        SettingsStore.Save(new(ExecutionKeyMode, ThemeMode, value));
+        SaveSettings();
         App.ApplyLanguage(value);
         UpdateThemeOptionLabels(value);
         Status = Localize(statusLocalizationKey, statusLocalizationArguments);
@@ -646,6 +647,55 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         ThemeOptions[1].Label = languageMode == AppLanguageMode.Japanese ? "ダーク" : "Dark";
     }
 
+    internal AppSettings SavedSettings => settings;
+
+    internal void SaveWindowLayout(
+        Rect bounds,
+        bool isMaximized,
+        double savedTypeExplorerWidth,
+        double savedReferenceDrawerWidth,
+        int workspaceTabIndex,
+        double completionListWidth)
+    {
+        settings = settings with
+        {
+            WindowWidth = bounds.Width,
+            WindowHeight = bounds.Height,
+            WindowLeft = bounds.Left,
+            WindowTop = bounds.Top,
+            IsWindowMaximized = isMaximized,
+            IsTypeExplorerOpen = IsTypeExplorerOpen,
+            IsReferenceDrawerOpen = IsReferenceDrawerOpen,
+            TypeExplorerWidth = savedTypeExplorerWidth,
+            ReferenceDrawerWidth = savedReferenceDrawerWidth,
+            WorkspaceTabIndex = workspaceTabIndex,
+            CompletionListWidth = completionListWidth
+        };
+        SaveSettings();
+    }
+
+    internal void SaveInspectorLayout(double width, double height, double treeHeight)
+    {
+        settings = settings with
+        {
+            InspectorWidth = width,
+            InspectorHeight = height,
+            InspectorTreeHeight = treeHeight
+        };
+        SaveSettings();
+    }
+
+    private void SaveSettings()
+    {
+        settings = settings with
+        {
+            ExecutionKeyMode = ExecutionKeyMode,
+            ThemeMode = ThemeMode,
+            LanguageMode = LanguageMode
+        };
+        SettingsStore.Save(settings);
+    }
+
     private SessionContext Context => new([.. submissions], [.. imports], [.. references]);
 
     private async Task UpdateDiagnosticsAfterDelayAsync(string code, CancellationToken cancellationToken)
@@ -656,6 +706,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var context = Context;
             var diagnostics = await Task.Run(
                 () => languageService.GetDiagnosticsAsync(context, code, cancellationToken), cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !string.Equals(InputText, code, StringComparison.Ordinal))
+                return;
             var errors = diagnostics.Count(static item => item.Level == DiagnosticLevel.Error);
             var warnings = diagnostics.Count(static item => item.Level == DiagnosticLevel.Warning);
             diagnosticErrorCount = errors;
@@ -663,6 +715,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             DiagnosticStatus = Localize("Diagnostics.Count", errors, warnings);
         }
         catch (OperationCanceledException) { }
+        catch (Exception)
+        {
+            if (!cancellationToken.IsCancellationRequested && string.Equals(InputText, code, StringComparison.Ordinal))
+            {
+                diagnosticErrorCount = 0;
+                diagnosticWarningCount = 0;
+                DiagnosticStatus = Localize("Diagnostics.Unavailable");
+            }
+        }
     }
 
     private void HandleWorkerEvent(PipeEnvelope envelope)

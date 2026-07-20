@@ -29,10 +29,12 @@ public partial class MainWindow : Window
     private CancellationTokenSource? signatureHelpCancellation;
     private CancellationTokenSource? quickInfoCancellation;
     private readonly DispatcherTimer signatureHelpTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
+    private readonly DispatcherTimer completionDescriptionTimer = new() { Interval = TimeSpan.FromMilliseconds(140) };
     private AssistMode assistMode;
     private int completionFilterStart;
     private GridLength typeExplorerWidth = new(286);
     private GridLength referenceDrawerWidth = new(470);
+    private GridLength completionListWidth = new(390);
     private HwndSource? windowSource;
     private bool transcriptAutoScroll = true;
 
@@ -41,11 +43,12 @@ public partial class MainWindow : Window
         App.ApplyLanguage(viewModel.LanguageMode);
         InitializeComponent();
         DataContext = viewModel;
+        ApplySavedWindowLayout();
         App.ApplyTheme(viewModel.ThemeMode);
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("C#");
         viewModel.Transcript.CollectionChanged += (_, args) =>
         {
-            if (args.Action == NotifyCollectionChangedAction.Reset) transcriptAutoScroll = true;
+            if (args.Action == NotifyCollectionChangedAction.Reset) SetTranscriptAutoScroll(true);
             Dispatcher.BeginInvoke(() =>
             {
                 if (transcriptAutoScroll) TranscriptScroll.ScrollToEnd();
@@ -70,10 +73,16 @@ public partial class MainWindow : Window
             signatureHelpTimer.Stop();
             await ShowSignatureHelpAsync();
         };
+        completionDescriptionTimer.Tick += async (_, _) =>
+        {
+            completionDescriptionTimer.Stop();
+            await LoadCompletionDescriptionAsync();
+        };
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
+        EnsureResponsivePanes();
         windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         windowSource?.AddHook(WindowMessageHook);
         await viewModel.InitializeAsync();
@@ -82,6 +91,7 @@ public partial class MainWindow : Window
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
+        SaveWindowLayout();
         windowSource?.RemoveHook(WindowMessageHook);
         windowSource = null;
         completionCancellation?.Cancel();
@@ -90,9 +100,63 @@ public partial class MainWindow : Window
         completionDescriptionCancellation?.Dispose();
         signatureHelpCancellation?.Cancel();
         signatureHelpCancellation?.Dispose();
+        completionDescriptionTimer.Stop();
         quickInfoCancellation?.Cancel();
         quickInfoCancellation?.Dispose();
         await viewModel.DisposeAsync();
+    }
+
+    private void ApplySavedWindowLayout()
+    {
+        var settings = viewModel.SavedSettings;
+        Width = settings.WindowWidth;
+        Height = settings.WindowHeight;
+        typeExplorerWidth = new(settings.TypeExplorerWidth);
+        referenceDrawerWidth = new(settings.ReferenceDrawerWidth);
+        completionListWidth = new(settings.CompletionListWidth);
+        CompletionListColumn.Width = completionListWidth;
+        WorkspaceTabs.SelectedIndex = settings.WorkspaceTabIndex;
+
+        if (settings.WindowLeft is { } left && settings.WindowTop is { } top &&
+            IsWindowPositionVisible(left, top, settings.WindowWidth, settings.WindowHeight))
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = left;
+            Top = top;
+        }
+        if (settings.IsWindowMaximized) WindowState = WindowState.Maximized;
+    }
+
+    private void SaveWindowLayout()
+    {
+        var bounds = WindowState == WindowState.Normal
+            ? new Rect(Left, Top, ActualWidth, ActualHeight)
+            : RestoreBounds;
+        var explorerWidth = TypeExplorerColumn.ActualWidth > 0
+            ? TypeExplorerColumn.ActualWidth
+            : typeExplorerWidth.Value;
+        var drawerWidth = ReferenceDrawerColumn.ActualWidth > 0
+            ? ReferenceDrawerColumn.ActualWidth
+            : referenceDrawerWidth.Value;
+        viewModel.SaveWindowLayout(
+            bounds,
+            WindowState == WindowState.Maximized,
+            explorerWidth,
+            drawerWidth,
+            WorkspaceTabs.SelectedIndex,
+            completionListWidth.Value);
+    }
+
+    private static bool IsWindowPositionVisible(double left, double top, double width, double height)
+    {
+        var savedBounds = new Rect(left, top, width, height);
+        var virtualScreen = new Rect(
+            SystemParameters.VirtualScreenLeft,
+            SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth,
+            SystemParameters.VirtualScreenHeight);
+        var intersection = Rect.Intersect(savedBounds, virtualScreen);
+        return intersection.Width >= 120 && intersection.Height >= 80;
     }
 
     private void TypeExplorerTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
@@ -134,7 +198,7 @@ public partial class MainWindow : Window
     {
         if (e.NewValue is true)
         {
-            if (ActualWidth < DualPaneMinimumWidth && viewModel.IsReferenceDrawerOpen)
+            if (IsLoaded && ActualWidth < DualPaneMinimumWidth && viewModel.IsReferenceDrawerOpen)
                 viewModel.IsReferenceDrawerOpen = false;
             TypeExplorerColumn.Width = typeExplorerWidth;
             TypeExplorerSplitterColumn.Width = new(5);
@@ -150,7 +214,7 @@ public partial class MainWindow : Window
     {
         if (e.NewValue is true)
         {
-            if (ActualWidth < DualPaneMinimumWidth && viewModel.IsTypeExplorerOpen)
+            if (IsLoaded && ActualWidth < DualPaneMinimumWidth && viewModel.IsTypeExplorerOpen)
                 viewModel.IsTypeExplorerOpen = false;
             ReferenceDrawerSplitterColumn.Width = new(5);
             ReferenceDrawerColumn.Width = referenceDrawerWidth;
@@ -163,7 +227,13 @@ public partial class MainWindow : Window
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (e.NewSize.Width < DualPaneMinimumWidth &&
+        if (IsLoaded) EnsureResponsivePanes();
+        if (IsLoaded && AssistPopup.IsOpen) PrepareAssistPopupLayout();
+    }
+
+    private void EnsureResponsivePanes()
+    {
+        if (ActualWidth < DualPaneMinimumWidth &&
             viewModel.IsTypeExplorerOpen && viewModel.IsReferenceDrawerOpen)
             viewModel.IsTypeExplorerOpen = false;
     }
@@ -250,6 +320,11 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
             FocusEditor();
+        }
+        else if (e.Key == Key.C && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            await CopyTranscriptAsync();
         }
         else if (e.Key == Key.Escape && viewModel.CanCancel &&
                  !AssistPopup.IsOpen && !SymbolDetailPopup.IsOpen)
@@ -558,6 +633,7 @@ public partial class MainWindow : Window
         try
         {
             Clipboard.SetText(await Task.Run(() => item.CopyText));
+            viewModel.SetLocalizedStatus("Status.Copied");
         }
         catch (Exception error)
         {
@@ -565,18 +641,58 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void PackageSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox textBox) return;
+        if (e.Key == Key.Escape && textBox.Text.Length > 0)
+        {
+            e.Handled = true;
+            textBox.Clear();
+            return;
+        }
+        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None) return;
+        e.Handled = true;
+        if (viewModel.SearchPackagesCommand.CanExecute(null))
+            await viewModel.SearchPackagesCommand.ExecuteAsync(null);
+    }
+
+    private void TypeExplorerSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || sender is not TextBox { Text.Length: > 0 } textBox) return;
+        e.Handled = true;
+        textBox.Clear();
+    }
+
+    private async void NewUsingBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox textBox) return;
+        if (e.Key == Key.Escape && textBox.Text.Length > 0)
+        {
+            e.Handled = true;
+            textBox.Clear();
+            return;
+        }
+        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None) return;
+        e.Handled = true;
+        if (viewModel.AddUsingFromGuiCommand.CanExecute(null))
+            await viewModel.AddUsingFromGuiCommand.ExecuteAsync(null);
+    }
+
     private void InspectVariable_Click(object sender, RoutedEventArgs e)
     {
         if (VariableList.SelectedItem is VariableItem item)
-            new ResultInspectorWindow(item.Snapshot, viewModel.LanguageMode) { Owner = this }.Show();
+            new ResultInspectorWindow(item.Snapshot, viewModel) { Owner = this }.Show();
     }
 
-    private async void CopyTranscript_Click(object sender, RoutedEventArgs e)
+    private async void CopyTranscript_Click(object sender, RoutedEventArgs e) => await CopyTranscriptAsync();
+
+    private async Task CopyTranscriptAsync()
     {
         try
         {
             var lines = viewModel.Transcript.ToArray();
             Clipboard.SetText(await Task.Run(() => FormatTranscript(lines)));
+            viewModel.SetLocalizedStatus("Status.Copied");
         }
         catch (Exception error)
         {
@@ -599,6 +715,7 @@ public partial class MainWindow : Window
         {
             var lines = viewModel.Transcript.ToArray();
             await File.WriteAllTextAsync(dialog.FileName, await Task.Run(() => FormatTranscript(lines)));
+            viewModel.SetLocalizedStatus("Status.Saved", dialog.FileName);
         }
         catch (Exception error)
         {
@@ -818,6 +935,7 @@ public partial class MainWindow : Window
         CompletionList.DisplayMemberPath = null;
         CompletionList.ItemTemplate = (DataTemplate)FindResource("SignatureItemTemplate");
         CompletionList.SelectedIndex = Math.Clamp(help.SelectedSignature, 0, help.Signatures.Count - 1);
+        PrepareAssistPopupLayout();
         AssistPopup.IsOpen = true;
         UpdateAssistSummary();
     }
@@ -887,6 +1005,7 @@ public partial class MainWindow : Window
     private void HideAssist()
     {
         var wasCompletion = assistMode == AssistMode.Completion;
+        completionDescriptionTimer.Stop();
         AssistPopup.IsOpen = false;
         CompletionList.ItemsSource = null;
         allCompletionItems = [];
@@ -924,6 +1043,7 @@ public partial class MainWindow : Window
             .ToArray();
         CompletionList.ItemsSource = filtered;
         CompletionList.SelectedIndex = filtered.Length > 0 ? 0 : -1;
+        PrepareAssistPopupLayout();
         AssistPopup.IsOpen = filtered.Length > 0;
         if (filtered.Length == 0)
         {
@@ -933,10 +1053,27 @@ public partial class MainWindow : Window
         viewModel.SetLocalizedStatus("Status.Completions", filtered.Length);
     }
 
+    private void PrepareAssistPopupLayout()
+    {
+        var popupWidth = Math.Clamp(Editor.ActualWidth, 520, 780);
+        AssistPopupBorder.Width = popupWidth;
+        CompletionListColumn.Width = new(Math.Clamp(
+            completionListWidth.Value,
+            CompletionListColumn.MinWidth,
+            popupWidth - 255));
+    }
+
+    private void CompletionSplitter_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (CompletionListColumn.ActualWidth >= CompletionListColumn.MinWidth)
+            completionListWidth = new(CompletionListColumn.ActualWidth);
+    }
+
     private void CompletionList_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateAssistSummary();
 
-    private async void UpdateAssistSummary()
+    private void UpdateAssistSummary()
     {
+        completionDescriptionTimer.Stop();
         completionDescriptionCancellation?.Cancel();
         completionDescriptionCancellation?.Dispose();
         completionDescriptionCancellation = null;
@@ -952,9 +1089,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        ShowAssistSummary(viewModel.Localize("Assist.LoadingDocumentation"));
+        completionDescriptionTimer.Start();
+    }
+
+    private async Task LoadCompletionDescriptionAsync()
+    {
+        if (assistMode != AssistMode.Completion || CompletionList.SelectedItem is not CompletionCandidate candidate)
+            return;
+
         var cancellation = new CancellationTokenSource();
         completionDescriptionCancellation = cancellation;
-        ShowAssistSummary(viewModel.Localize("Assist.LoadingDocumentation"));
         try
         {
             var description = await viewModel.GetCompletionDescriptionAsync(Editor.CaretOffset, candidate, cancellation.Token);
@@ -1101,7 +1246,7 @@ public partial class MainWindow : Window
     private void InspectResult_Click(object sender, RoutedEventArgs e)
     {
         if (GetTranscriptLine(sender)?.Snapshot is { } snapshot)
-            new ResultInspectorWindow(snapshot, viewModel.LanguageMode) { Owner = this }.Show();
+            new ResultInspectorWindow(snapshot, viewModel) { Owner = this }.Show();
     }
 
     private async void CopyTranscriptLine_Click(object sender, RoutedEventArgs e)
@@ -1110,6 +1255,7 @@ public partial class MainWindow : Window
         try
         {
             Clipboard.SetText(await Task.Run(() => line.CopyText));
+            viewModel.SetLocalizedStatus("Status.Copied");
         }
         catch (Exception error)
         {
@@ -1136,6 +1282,7 @@ public partial class MainWindow : Window
                     ? SnapshotJsonFormatter.Format(line.Snapshot)
                     : line.CopyText);
             await File.WriteAllTextAsync(dialog.FileName, text);
+            viewModel.SetLocalizedStatus("Status.Saved", dialog.FileName);
         }
         catch (Exception error)
         {
@@ -1178,8 +1325,29 @@ public partial class MainWindow : Window
     {
         // Extent changes are caused by arriving output. Preserve the user's previous
         // sticky-scroll choice until they explicitly move the viewport.
-        if (e.ExtentHeightChange != 0) return;
-        transcriptAutoScroll = TranscriptScroll.ScrollableHeight - TranscriptScroll.VerticalOffset <= 2;
+        if (e.ExtentHeightChange == 0)
+            SetTranscriptAutoScroll(TranscriptScroll.ScrollableHeight - TranscriptScroll.VerticalOffset <= 2);
+        else
+            UpdateScrollToLatestVisibility();
+    }
+
+    private void ScrollToLatest_Click(object sender, RoutedEventArgs e)
+    {
+        SetTranscriptAutoScroll(true);
+        TranscriptScroll.ScrollToEnd();
+        FocusEditor();
+    }
+
+    private void SetTranscriptAutoScroll(bool enabled)
+    {
+        transcriptAutoScroll = enabled;
+        UpdateScrollToLatestVisibility();
+    }
+
+    private void UpdateScrollToLatestVisibility()
+    {
+        if (!IsLoaded) return;
+        ScrollToLatestButton.Visibility = transcriptAutoScroll ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private enum AssistMode { None, Completion, Signature }

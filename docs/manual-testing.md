@@ -33,6 +33,9 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 27 | In the Web preview, execute stateful code and save a workspace | a `.pgsworkspace` download starts; loading it in Files restores imports, packages, input and accepted submissions |
 | 28 | Open completion with enough candidates, then press `PageDown` and `PageUp` while the editor retains focus | selection moves by one visible page and scrolls into view; `PageUp` returns toward the previous page |
 | 29 | Execute a structured result, right-click it, and use Copy, Save and Inspect; then wheel over the expanded tree | actions target that result without jumping to the active prompt, and the outer transcript scrolls under the pointer |
+| 30 | Resize and move the main window, open and resize both side panes, select a Workspace tab, close and restart | window placement, pane state/width and selected tab are restored; on a narrow window only one side pane remains open |
+| 31 | Scroll away from the latest output and execute another submission | the viewport stays in place and a bottom-right down-arrow returns to the latest output |
+| 32 | Resize the result inspector and its horizontal divider, close it, and inspect another result | the inspector size and tree/detail split are restored; `Ctrl+F`, Enter, Escape, `Ctrl+C` and `Ctrl+Shift+C` work |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 

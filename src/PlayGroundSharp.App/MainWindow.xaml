@@ -113,7 +113,7 @@
                     <MenuItem Header="{DynamicResource Menu.Edit}" Style="{StaticResource HeaderMenuItemStyle}">
                         <MenuItem Header="{DynamicResource Menu.FocusInput}" Click="FocusInput_Click" InputGestureText="Ctrl+L" />
                         <Separator />
-                        <MenuItem Header="{DynamicResource Menu.CopyTranscript}" Click="CopyTranscript_Click" />
+                        <MenuItem Header="{DynamicResource Menu.CopyTranscript}" Click="CopyTranscript_Click" InputGestureText="Ctrl+Shift+C" />
                         <MenuItem Header="{DynamicResource Menu.SaveTranscript}" Click="SaveTranscript_Click" />
                         <Separator />
                         <MenuItem Header="{DynamicResource Menu.ClearTranscript}" Command="{Binding ClearCommand}" />
@@ -166,9 +166,10 @@
                     <Grid Margin="10,10,8,8">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                         <Grid>
-                            <TextBox Text="{Binding TypeExplorerSearchText, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBox x:Name="TypeExplorerSearchBox" Text="{Binding TypeExplorerSearchText, UpdateSourceTrigger=PropertyChanged}"
                                      AutomationProperties.Name="TypeExplorerSearch" ToolTip="{DynamicResource Explorer.FilterTooltip}"
-                                     Height="32" Padding="9,4" VerticalContentAlignment="Center" />
+                                     Height="32" Padding="9,4" VerticalContentAlignment="Center"
+                                     PreviewKeyDown="TypeExplorerSearchBox_PreviewKeyDown" />
                             <TextBlock Text="{DynamicResource Explorer.Filter}" Foreground="{DynamicResource MutedBrush}" Margin="10,0,0,0"
                                        VerticalAlignment="Center" IsHitTestVisible="False">
                                 <TextBlock.Style>
@@ -183,6 +184,9 @@
                             <TreeView x:Name="TypeExplorerTree" ItemsSource="{Binding TypeExplorerItems}" AutomationProperties.Name="TypeExplorerTree"
                                       Background="Transparent" BorderThickness="0" Foreground="{DynamicResource ForegroundBrush}"
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged"
+                                      VirtualizingStackPanel.IsVirtualizing="True"
+                                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                      ScrollViewer.CanContentScroll="True"
                                       PreviewMouseLeftButtonUp="TypeExplorerTree_PreviewMouseLeftButtonUp"
                                       PreviewMouseWheel="TypeExplorerTree_PreviewMouseWheel"
                                       PreviewKeyDown="TypeExplorerTree_PreviewKeyDown">
@@ -343,7 +347,8 @@
                     </ScrollViewer>
                 </Border>
             </Popup>
-            <ScrollViewer x:Name="TranscriptScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="20,16,18,6"
+            <Grid Grid.Column="2">
+            <ScrollViewer x:Name="TranscriptScroll" VerticalScrollBarVisibility="Auto" Padding="20,16,18,6"
                           AutomationProperties.Name="ConsoleSurface"
                           PreviewMouseLeftButtonDown="ConsoleSurface_PreviewMouseLeftButtonDown"
                           PreviewMouseWheel="TranscriptScroll_PreviewMouseWheel"
@@ -452,15 +457,15 @@
                 <Popup x:Name="AssistPopup" Grid.Row="1" Grid.Column="1" PlacementTarget="{Binding ElementName=Editor}"
                        Placement="Bottom" VerticalOffset="4" StaysOpen="True" AllowsTransparency="False"
                        Focusable="False">
-                    <Border Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                            Width="780" Height="310">
+                    <Border x:Name="AssistPopupBorder" Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                            Width="780" MinWidth="520" MaxWidth="780" Height="310">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" />
                                 <RowDefinition Height="30" />
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="390" MinWidth="250" />
+                                <ColumnDefinition x:Name="CompletionListColumn" Width="390" MinWidth="250" />
                                 <ColumnDefinition Width="5" />
                                 <ColumnDefinition Width="*" MinWidth="250" />
                             </Grid.ColumnDefinitions>
@@ -477,7 +482,8 @@
                             </ListBox>
                             <GridSplitter Grid.Column="1" Style="{StaticResource VerticalPaneSplitterStyle}"
                                           AutomationProperties.Name="{DynamicResource Tooltip.ResizeCompletion}"
-                                          ToolTip="{DynamicResource Tooltip.ResizeCompletion}" />
+                                          ToolTip="{DynamicResource Tooltip.ResizeCompletion}"
+                                          DragCompleted="CompletionSplitter_DragCompleted" />
                             <Border x:Name="AssistSummaryPanel" Grid.Column="2" Background="{DynamicResource PanelBrush}" Padding="12,10">
                                 <Grid>
                                     <Grid.RowDefinitions>
@@ -505,6 +511,12 @@
                   </Grid>
                 </Grid>
             </ScrollViewer>
+            <Button x:Name="ScrollToLatestButton" Content="↓" Style="{StaticResource IconToolbarButtonStyle}"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,12"
+                    Visibility="Collapsed" Click="ScrollToLatest_Click"
+                    ToolTip="{DynamicResource Ui.ScrollToLatest}"
+                    AutomationProperties.Name="{DynamicResource Ui.ScrollToLatest}" />
+            </Grid>
             <GridSplitter Grid.Column="3" Style="{StaticResource VerticalPaneSplitterStyle}"
                           AutomationProperties.Name="{DynamicResource Tooltip.ResizeWorkspace}"
                           ToolTip="{DynamicResource Tooltip.ResizeWorkspace}"
@@ -519,7 +531,7 @@
                             <TextBlock Text="{DynamicResource Workspace.Subtitle}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
                         </StackPanel>
                     </Border>
-                    <TabControl Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
+                    <TabControl x:Name="WorkspaceTabs" Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
                                 ItemContainerStyle="{StaticResource WorkspaceTabItemStyle}">
                         <TabItem Header="{DynamicResource Tab.Variables}">
                             <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">
@@ -570,7 +582,8 @@
                                 </Grid.RowDefinitions>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBox Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="NuGetSearchText"
+                                    <TextBox x:Name="PackageSearchBox" Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                             AutomationProperties.Name="NuGetSearchText" PreviewKeyDown="PackageSearchBox_PreviewKeyDown"
                                              ToolTip="{DynamicResource NuGet.SearchTooltip}" />
                                     <Button Grid.Column="1" Content="{DynamicResource NuGet.Search}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.Name="NuGetSearchButton"
                                             Command="{Binding SearchPackagesCommand}" Margin="7,0,0,0" />
@@ -648,7 +661,9 @@
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBox Text="{Binding NewUsingText, UpdateSourceTrigger=PropertyChanged}" Height="32" Padding="9,4"
+                                    <TextBox x:Name="NewUsingBox" Text="{Binding NewUsingText, UpdateSourceTrigger=PropertyChanged}"
+                                             Height="32" Padding="9,4" PreviewKeyDown="NewUsingBox_PreviewKeyDown"
+                                             AutomationProperties.Name="UsingInput"
                                              VerticalContentAlignment="Center" ToolTip="{DynamicResource Usings.InputTooltip}" />
                                     <Button Grid.Column="1" Content="{DynamicResource Usings.Add}" Command="{Binding AddUsingFromGuiCommand}"
                                             Style="{StaticResource AccentButtonStyle}" Margin="7,0,0,0" MinWidth="64" />

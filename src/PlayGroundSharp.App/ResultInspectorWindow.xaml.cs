@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using PlayGroundSharp.Core;
@@ -10,20 +11,28 @@ namespace PlayGroundSharp.App;
 
 public partial class ResultInspectorWindow : Window
 {
+    private readonly MainViewModel viewModel;
     private readonly AppLanguageMode languageMode;
     private readonly ResultSnapshot snapshot;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private SnapshotTreeNode? selectedNode;
     private CancellationTokenSource? searchCancellation;
 
-    public ResultInspectorWindow(ResultSnapshot snapshot, AppLanguageMode languageMode)
+    public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel)
     {
+        this.viewModel = viewModel;
         this.snapshot = snapshot;
-        this.languageMode = languageMode;
+        languageMode = viewModel.LanguageMode;
         Roots = [SnapshotTreeNode.CreateRoot(snapshot, languageMode)];
         selectedNode = Roots[0];
         InitializeComponent();
         DataContext = this;
+        var settings = viewModel.SavedSettings;
+        Width = settings.InspectorWidth;
+        Height = settings.InspectorHeight;
+        SnapshotTreeRow.Height = new(Math.Min(
+            settings.InspectorTreeHeight,
+            Math.Max(120, settings.InspectorHeight - 180)));
         SetSelectedNode(Roots[0]);
         searchTimer.Tick += async (_, _) => await ApplySearchAsync();
         Closed += (_, _) =>
@@ -31,6 +40,10 @@ public partial class ResultInspectorWindow : Window
             searchTimer.Stop();
             searchCancellation?.Cancel();
             searchCancellation?.Dispose();
+            var bounds = WindowState == WindowState.Normal
+                ? new Rect(Left, Top, ActualWidth, ActualHeight)
+                : RestoreBounds;
+            viewModel.SaveInspectorLayout(bounds.Width, bounds.Height, SnapshotTreeRow.ActualHeight);
         };
     }
 
@@ -47,6 +60,49 @@ public partial class ResultInspectorWindow : Window
         searchCancellation?.Cancel();
         searchTimer.Stop();
         searchTimer.Start();
+    }
+
+    private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            return;
+        }
+        if (e.Key == Key.Enter && ReferenceEquals(Keyboard.FocusedElement, SearchBox))
+        {
+            e.Handled = true;
+            searchTimer.Stop();
+            await ApplySearchAsync();
+            return;
+        }
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            if (SearchBox.Text.Length > 0)
+            {
+                SearchBox.Clear();
+                searchTimer.Stop();
+                await ApplySearchAsync();
+            }
+            else
+                Close();
+            return;
+        }
+        if (e.Key != Key.C) return;
+        if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            CopyToClipboard(await Task.Run(() => SnapshotTextFormatter.FormatFull(snapshot)));
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && Keyboard.FocusedElement is not TextBox &&
+                 selectedNode is not null)
+        {
+            e.Handled = true;
+            CopyToClipboard(await Task.Run(() => selectedNode.CopyText));
+        }
     }
 
     private async Task ApplySearchAsync()

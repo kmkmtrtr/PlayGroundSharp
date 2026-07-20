@@ -56,19 +56,20 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Ctrl+Space`: show completion
 - `Tab`: accept the selected completion; added-library types can add their required `using` automatically
 - `Esc`: close completion; while running, request cancellation
+- `Ctrl+Shift+C`: copy the full transcript
 - `Up` / `Down`: move through single-line input history
 - Click a previous `In` line: copy it into the current prompt
 - **Stop**: request cancellation, then terminate/restart an unresponsive Worker after 1.5 seconds
 - **Types**: open a searchable, kind-colored namespace/type/method tree built from active usings, session declarations and dynamically added libraries; each row shows its kind, and type details include direct base classes/interfaces alongside the signature and XML documentation
 - Hover a symbol for a compact signature/summary popup; click it to pin full details. Framework symbols can open their localized Microsoft Learn API page.
 - **Session**: open Variables, NuGet, Libraries, Usings and settings; the Usings page can add or remove namespaces
-- Drag the Explorer and Workspace dividers to resize either sidebar; use a horizontal wheel or `Shift+wheel` to scroll deep Explorer hierarchies
+- Drag the Explorer and Workspace dividers to resize either sidebar; their open state, width, selected Workspace tab and the main window placement are restored on restart. Use a horizontal wheel or `Shift+wheel` to scroll deep Explorer hierarchies.
 - Drag the divider inside completion to resize the candidate and documentation panes
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
 - **NuGet**: search nuget.org, review package metadata and install the displayed exact version
 - **Libraries**: list imported packages, local DLLs and package runtime assemblies with versions and sources
 - **Structured results**: expand JSON, objects and arrays directly in the transcript; large captured collections are grouped into index ranges
-- **Inspect** on a result: open the same bounded property/item tree with search, path copy and full captured-value export in a separate window
+- **Inspect** on a result: open the same bounded property/item tree with search, path copy and full captured-value export in a separate window. Its size and tree/detail split are retained; `Ctrl+F`, `Ctrl+C`, `Ctrl+Shift+C` and `Esc` are available from the keyboard.
 - **File**: save or open a `.pgsworkspace` containing submissions, draft input, usings, DLL references and exact package versions
 - **Data**: insert bounded or streaming snippets for large text, byte, JSON-array and JSON Lines files
 - **Help** or `F1`: open the built-in guide for input, IntelliSense, symbols, workspaces, large files, dependencies and security

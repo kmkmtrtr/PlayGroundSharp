@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PlayGroundSharp.Core;
@@ -82,6 +84,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string typeExplorerSearchText = string.Empty;
     [ObservableProperty] private string typeExplorerStatus = "Loading types…";
     [ObservableProperty] private SymbolExplorerNode? selectedExplorerNode;
+    [ObservableProperty] private string variableFilterText = string.Empty;
     [ObservableProperty] private string packageSearchText = string.Empty;
     [ObservableProperty] private string packageSearchMessage = "Search packages on nuget.org";
     [ObservableProperty] private bool includePrereleasePackages;
@@ -101,6 +104,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
     public ObservableCollection<VariableItem> VariableItems { get; } = [];
+    public ICollectionView VariableItemsView { get; }
     public ObservableCollection<NuGetPackageInfo> PackageSearchItems { get; } = [];
     public ObservableCollection<LibraryItem> LibraryItems { get; } = [];
     public ObservableCollection<SymbolExplorerNode> TypeExplorerItems { get; } = [];
@@ -131,6 +135,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public MainViewModel()
     {
+        VariableItemsView = CollectionViewSource.GetDefaultView(VariableItems);
+        VariableItemsView.Filter = MatchesVariableFilter;
         UpdateThemeOptionLabels(LanguageMode);
         SetLocalizedStatus("Status.StartingWorker");
         SetSessionStatus("Session.Count", 0);
@@ -524,7 +530,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (!IsWorkerConnected) throw new InvalidOperationException(Localize("Message.WorkerUnavailable"));
         if (IsRunning || HasPendingSessionMutation)
             throw new InvalidOperationException(Localize("Message.SessionBusy"));
-        var value = @namespace.Trim();
+        var value = NormalizeUsingInput(@namespace);
         if (imports.Contains(value, StringComparer.Ordinal)) return false;
         IsSessionChanging = true;
         try
@@ -546,7 +552,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task<bool> RemoveUsingAsync(string? @namespace)
     {
-        var value = @namespace?.Trim();
+        var value = @namespace is null ? null : NormalizeUsingInput(@namespace);
         if (string.IsNullOrEmpty(value) || !imports.Contains(value, StringComparer.Ordinal)) return false;
         if (!IsWorkerConnected) throw new InvalidOperationException(Localize("Message.WorkerUnavailable"));
         if (IsRunning || HasPendingSessionMutation)
@@ -589,7 +595,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task AddUsingFromGuiAsync()
     {
-        var value = NewUsingText.Trim();
+        var value = NormalizeUsingInput(NewUsingText);
         if (value.Length == 0) return;
         try
         {
@@ -607,10 +613,29 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private static string NormalizeUsingInput(string value)
+    {
+        value = value.Trim();
+        if (value.StartsWith("global using ", StringComparison.Ordinal))
+            value = value["global using ".Length..].TrimStart();
+        else if (value.StartsWith("using ", StringComparison.Ordinal))
+            value = value["using ".Length..].TrimStart();
+        if (value.EndsWith(';')) value = value[..^1].TrimEnd();
+        return value;
+    }
+
     partial void OnInputTextChanged(string value)
     {
         diagnosticDelay?.Cancel();
         diagnosticDelay?.Dispose();
+        diagnosticDelay = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            diagnosticErrorCount = 0;
+            diagnosticWarningCount = 0;
+            DiagnosticStatus = Localize("Diagnostics.Count", 0, 0);
+            return;
+        }
         diagnosticDelay = new CancellationTokenSource();
         _ = UpdateDiagnosticsAfterDelayAsync(value, diagnosticDelay.Token);
     }
@@ -618,6 +643,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SaveSettings();
 
     partial void OnTypeExplorerSearchTextChanged(string value) => ScheduleTypeExplorerRebuild();
+
+    partial void OnVariableFilterTextChanged(string value) => VariableItemsView.Refresh();
 
     partial void OnThemeModeChanged(AppThemeMode value)
     {
@@ -645,6 +672,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         ThemeOptions[0].Label = languageMode == AppLanguageMode.Japanese ? "ライト" : "Light";
         ThemeOptions[1].Label = languageMode == AppLanguageMode.Japanese ? "ダーク" : "Dark";
+    }
+
+    private bool MatchesVariableFilter(object item)
+    {
+        if (item is not VariableItem variable) return false;
+        var query = VariableFilterText.Trim();
+        return query.Length == 0 ||
+               variable.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               variable.TypeName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               variable.Value.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               variable.Kind.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
     internal AppSettings SavedSettings => settings;
@@ -752,14 +790,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Transcript.Add(TranscriptLine.Diagnostic($"{exception.TypeName}: {exception.Message}"));
                 break;
             case MessageKinds.Variables:
-                VariableItems.Clear();
-                foreach (var variable in envelope.ReadPayload<VariablesEvent>().Variables)
-                    VariableItems.Add(new(
-                        variable.Name,
-                        variable.TypeName,
-                        FormatSnapshot(variable.Value),
-                        variable.IsReadOnly,
-                        variable.Value));
+                using (VariableItemsView.DeferRefresh())
+                {
+                    VariableItems.Clear();
+                    foreach (var variable in envelope.ReadPayload<VariablesEvent>().Variables)
+                        VariableItems.Add(new(
+                            variable.Name,
+                            variable.TypeName,
+                            FormatSnapshot(variable.Value),
+                            variable.IsReadOnly,
+                            variable.Value));
+                }
                 break;
             case MessageKinds.Completed:
                 var completed = envelope.ReadPayload<ExecutionCompletedEvent>();
@@ -905,7 +946,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         else if (command.StartsWith(":using add ", StringComparison.Ordinal))
         {
-            var value = command[":using add ".Length..].Trim();
+            var value = NormalizeUsingInput(command[":using add ".Length..]);
             var added = await AddUsingAsync(value);
             Transcript.Add(TranscriptLine.System(added
                 ? Localize("Message.UsingAdded", value)
@@ -913,7 +954,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         else if (command.StartsWith(":using remove ", StringComparison.Ordinal))
         {
-            var value = command[":using remove ".Length..].Trim();
+            var value = NormalizeUsingInput(command[":using remove ".Length..]);
             if (!await RemoveUsingAsync(value))
                 Transcript.Add(TranscriptLine.System(Localize("Message.UsingMissing", value)));
         }
@@ -1153,6 +1194,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         typeExplorerSearchDelay?.Cancel();
         typeExplorerSearchDelay?.Dispose();
         typeExplorerSearchDelay = new CancellationTokenSource();
+        TypeExplorerStatus = Localize("Explorer.Filtering");
         _ = RebuildTypeExplorerAfterDelayAsync(typeExplorerSearchDelay.Token);
     }
 
@@ -1160,7 +1202,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         try
         {
-            await Task.Delay(180, cancellationToken);
+            await Task.Delay(140, cancellationToken);
             RebuildTypeExplorer();
         }
         catch (OperationCanceledException)

@@ -57,12 +57,13 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Tab`: accept the selected completion; added-library types can add their required `using` automatically
 - `Esc`: close completion; while running, request cancellation
 - `Ctrl+Shift+C`: copy the full transcript
-- `Up` / `Down`: move through single-line input history
+- `Up` / `Down`: move through input history; in a multiline draft this activates on the first/last line and restores the draft when returning to the newest entry
 - Click a previous `In` line: copy it into the current prompt
 - **Stop**: request cancellation, then terminate/restart an unresponsive Worker after 1.5 seconds
+- **Restart** / **Reset**: clear live submission state; when variables, types or methods exist, the toolbar asks for confirmation before discarding them
 - **Types**: open a searchable, kind-colored namespace/type/method tree built from active usings, session declarations and dynamically added libraries; each row shows its kind, and type details include direct base classes/interfaces alongside the signature and XML documentation
 - Hover a symbol for a compact signature/summary popup; click it to pin full details. Framework symbols can open their localized Microsoft Learn API page.
-- **Session**: open Variables, NuGet, Libraries, Usings and settings; the Usings page can add or remove namespaces
+- **Session**: open Variables, NuGet, Libraries, Usings and settings. Variables can be filtered by name, type or displayed value; the Usings page accepts either a namespace or a pasted `using Namespace;` directive and can remove active imports.
 - Drag the Explorer and Workspace dividers to resize either sidebar; their open state, width, selected Workspace tab and the main window placement are restored on restart. Use a horizontal wheel or `Shift+wheel` to scroll deep Explorer hierarchies.
 - Drag the divider inside completion to resize the candidate and documentation panes
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings

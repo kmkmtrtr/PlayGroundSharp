@@ -36,6 +36,10 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 30 | Resize and move the main window, open and resize both side panes, select a Workspace tab, close and restart | window placement, pane state/width and selected tab are restored; on a narrow window only one side pane remains open |
 | 31 | Scroll away from the latest output and execute another submission | the viewport stays in place and a bottom-right down-arrow returns to the latest output |
 | 32 | Resize the result inspector and its horizontal divider, close it, and inspect another result | the inspector size and tree/detail split are restored; `Ctrl+F`, Enter, Escape, `Ctrl+C` and `Ctrl+Shift+C` work |
+| 33 | Declare several variables, open Variables and filter by part of a name, type or value | only matching rows remain; Escape clears the filter |
+| 34 | Enter a two-line draft, move to its first line and press Up, then press Down | the previous submission is recalled and the complete two-line draft is restored |
+| 35 | Paste `using System.Globalization;` into the Usings input and press Enter | `System.Globalization` is added and the input is cleared |
+| 36 | Create session state, click Restart or Reset, then cancel the confirmation | the warning explains the retained/lost state and the current submission state remains intact |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 

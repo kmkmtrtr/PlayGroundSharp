@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private GridLength completionListWidth = new(390);
     private HwndSource? windowSource;
     private bool transcriptAutoScroll = true;
+    private WindowState lastNonMinimizedWindowState = WindowState.Normal;
 
     public MainWindow()
     {
@@ -124,7 +125,11 @@ public partial class MainWindow : Window
             Left = left;
             Top = top;
         }
-        if (settings.IsWindowMaximized) WindowState = WindowState.Maximized;
+        if (settings.IsWindowMaximized)
+        {
+            lastNonMinimizedWindowState = WindowState.Maximized;
+            WindowState = WindowState.Maximized;
+        }
     }
 
     private void SaveWindowLayout()
@@ -140,7 +145,8 @@ public partial class MainWindow : Window
             : referenceDrawerWidth.Value;
         viewModel.SaveWindowLayout(
             bounds,
-            WindowState == WindowState.Maximized,
+            WindowState == WindowState.Maximized ||
+            WindowState == WindowState.Minimized && lastNonMinimizedWindowState == WindowState.Maximized,
             explorerWidth,
             drawerWidth,
             WorkspaceTabs.SelectedIndex,
@@ -229,6 +235,11 @@ public partial class MainWindow : Window
     {
         if (IsLoaded) EnsureResponsivePanes();
         if (IsLoaded && AssistPopup.IsOpen) PrepareAssistPopupLayout();
+    }
+
+    private void Window_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState != WindowState.Minimized) lastNonMinimizedWindowState = WindowState;
     }
 
     private void EnsureResponsivePanes()
@@ -580,6 +591,41 @@ public partial class MainWindow : Window
 
     private void FocusInput_Click(object sender, RoutedEventArgs e) => FocusEditor();
 
+    private void FocusEditorAfterCommand_Click(object sender, RoutedEventArgs e) => FocusEditor();
+
+    private async void RestartWorker_Click(object sender, RoutedEventArgs e)
+    {
+        if (viewModel.HasSessionState && MessageBox.Show(
+                this,
+                viewModel.Localize("Dialog.RestartWarning"),
+                viewModel.Localize("Dialog.RestartTitle"),
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning) != MessageBoxResult.OK)
+        {
+            FocusEditor();
+            return;
+        }
+        if (viewModel.RestartWorkerCommand.CanExecute(null))
+            await viewModel.RestartWorkerCommand.ExecuteAsync(null);
+        FocusEditor();
+    }
+
+    private async void ResetSession_Click(object sender, RoutedEventArgs e)
+    {
+        if (viewModel.HasSessionState && MessageBox.Show(
+                this,
+                viewModel.Localize("Dialog.ResetWarning"),
+                viewModel.Localize("Dialog.ResetTitle"),
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning) != MessageBoxResult.OK)
+        {
+            FocusEditor();
+            return;
+        }
+        if (viewModel.ResetCommand.CanExecute(null)) await viewModel.ResetCommand.ExecuteAsync(null);
+        FocusEditor();
+    }
+
     private async void RemoveUsing_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: string @namespace }) return;
@@ -663,6 +709,13 @@ public partial class MainWindow : Window
         textBox.Clear();
     }
 
+    private void VariableSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || sender is not TextBox { Text.Length: > 0 } textBox) return;
+        e.Handled = true;
+        textBox.Clear();
+    }
+
     private async void NewUsingBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (sender is not TextBox textBox) return;
@@ -715,7 +768,7 @@ public partial class MainWindow : Window
         {
             var lines = viewModel.Transcript.ToArray();
             await File.WriteAllTextAsync(dialog.FileName, await Task.Run(() => FormatTranscript(lines)));
-            viewModel.SetLocalizedStatus("Status.Saved", dialog.FileName);
+            viewModel.SetLocalizedStatus("Status.Saved", Path.GetFileName(dialog.FileName));
         }
         catch (Exception error)
         {
@@ -756,7 +809,8 @@ public partial class MainWindow : Window
             e.Handled = true;
             await InsertCompletionAsync(candidate);
         }
-        else if (assistMode != AssistMode.None && e.Key is Key.Up or Key.Down)
+        else if (assistMode != AssistMode.None && Keyboard.Modifiers == ModifierKeys.None &&
+                 e.Key is Key.Up or Key.Down)
         {
             e.Handled = true;
             CompletionList.SelectedIndex = e.Key == Key.Down
@@ -764,7 +818,8 @@ public partial class MainWindow : Window
                 : Math.Max(CompletionList.SelectedIndex - 1, 0);
             CompletionList.ScrollIntoView(CompletionList.SelectedItem);
         }
-        else if (assistMode != AssistMode.None && e.Key is Key.PageUp or Key.PageDown)
+        else if (assistMode != AssistMode.None && Keyboard.Modifiers == ModifierKeys.None &&
+                 e.Key is Key.PageUp or Key.PageDown)
         {
             e.Handled = true;
             var current = Math.Max(0, CompletionList.SelectedIndex);
@@ -811,7 +866,7 @@ public partial class MainWindow : Window
                 await viewModel.CancelAsync();
             }
         }
-        else if (e.Key == Key.Up && Editor.Document.LineCount == 1)
+        else if (e.Key == Key.Up && Keyboard.Modifiers == ModifierKeys.None && CanNavigateHistory(up: true))
         {
             var value = viewModel.MoveHistory(-1, Editor.Text);
             if (value is not null)
@@ -821,7 +876,7 @@ public partial class MainWindow : Window
                 Editor.CaretOffset = Editor.Text.Length;
             }
         }
-        else if (e.Key == Key.Down && Editor.Document.LineCount == 1)
+        else if (e.Key == Key.Down && Keyboard.Modifiers == ModifierKeys.None && CanNavigateHistory(up: false))
         {
             var value = viewModel.MoveHistory(1, Editor.Text);
             if (value is not null)
@@ -831,6 +886,13 @@ public partial class MainWindow : Window
                 Editor.CaretOffset = Editor.Text.Length;
             }
         }
+    }
+
+    private bool CanNavigateHistory(bool up)
+    {
+        if (Editor.Document.LineCount == 1) return true;
+        var line = Editor.Document.GetLineByOffset(Editor.CaretOffset).LineNumber;
+        return up ? line == 1 : line == Editor.Document.LineCount;
     }
 
     private int GetCompletionPageSize()
@@ -1282,7 +1344,7 @@ public partial class MainWindow : Window
                     ? SnapshotJsonFormatter.Format(line.Snapshot)
                     : line.CopyText);
             await File.WriteAllTextAsync(dialog.FileName, text);
-            viewModel.SetLocalizedStatus("Status.Saved", dialog.FileName);
+            viewModel.SetLocalizedStatus("Status.Saved", Path.GetFileName(dialog.FileName));
         }
         catch (Exception error)
         {

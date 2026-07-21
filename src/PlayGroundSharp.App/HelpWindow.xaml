@@ -19,6 +19,12 @@
                          AutomationProperties.Name="{DynamicResource Help.Title}"
                          BorderThickness="0" Background="Transparent" SelectionChanged="TopicList_SelectionChanged"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                            <Setter Property="AutomationProperties.HelpText" Value="{Binding Subtitle}" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Margin="2">
@@ -31,7 +37,8 @@
                 </ListBox>
             </DockPanel>
         </Border>
-        <ScrollViewer x:Name="DetailScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="34,28,38,32">
+        <ScrollViewer x:Name="DetailScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="34,28,38,32"
+                      AutomationProperties.Name="{Binding SelectedTopic.Title}">
             <StackPanel DataContext="{Binding SelectedTopic}">
                 <TextBlock Text="{Binding Title}" FontSize="25" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding Subtitle}" FontSize="13.5" Foreground="{DynamicResource MutedBrush}"
@@ -53,6 +60,8 @@
                                         </Style>
                                     </Border.Style>
                                     <TextBox Text="{Binding Code}" IsReadOnly="True" BorderThickness="0" Padding="0"
+                                             AutomationProperties.Name="{Binding Heading}"
+                                             AutomationProperties.HelpText="{Binding Body}"
                                              Background="Transparent" FontFamily="Cascadia Mono,Consolas" FontSize="12.5"
                                              TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
                                 </Border>

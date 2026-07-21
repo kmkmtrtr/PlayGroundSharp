@@ -40,6 +40,12 @@ public static class WorkspaceFile
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath)
             ?? throw new ArgumentException("Workspace path has no directory.", nameof(path));
+        var storedDocument = document with
+        {
+            References = document.References
+                .Select(reference => GetStoredReferencePath(directory, reference))
+                .ToArray()
+        };
         Directory.CreateDirectory(directory);
         var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
         try
@@ -47,7 +53,7 @@ public static class WorkspaceFile
             await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                              bufferSize: 65_536, FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
-                await JsonSerializer.SerializeAsync(stream, document, Options, cancellationToken).ConfigureAwait(false);
+                await JsonSerializer.SerializeAsync(stream, storedDocument, Options, cancellationToken).ConfigureAwait(false);
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
                 if (stream.Length > MaximumFileBytes)
                     throw new InvalidDataException("Workspace file exceeds 16 MiB.");
@@ -80,7 +86,27 @@ public static class WorkspaceFile
         var document = await JsonSerializer.DeserializeAsync<WorkspaceDocument>(stream, Options, cancellationToken)
             .ConfigureAwait(false) ?? throw new InvalidDataException("Workspace file is empty or invalid.");
         Validate(document);
-        return document;
+        var directory = file.DirectoryName
+            ?? throw new InvalidDataException("Workspace path has no directory.");
+        return document with
+        {
+            References = document.References
+                .Select(reference => Path.IsPathRooted(reference)
+                    ? Path.GetFullPath(reference)
+                    : Path.GetFullPath(reference, directory))
+                .ToArray()
+        };
+    }
+
+    private static string GetStoredReferencePath(string workspaceDirectory, string reference)
+    {
+        var fullPath = Path.GetFullPath(reference);
+        var relativePath = Path.GetRelativePath(workspaceDirectory, fullPath);
+        if (Path.IsPathRooted(relativePath) || relativePath.Equals("..", StringComparison.Ordinal) ||
+            relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+            relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+            return fullPath;
+        return relativePath;
     }
 
     private static void Validate(WorkspaceDocument document)

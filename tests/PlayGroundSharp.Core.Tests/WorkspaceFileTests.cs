@@ -41,6 +41,47 @@ public sealed class WorkspaceFileTests
     }
 
     [Fact]
+    public async Task KeepsReferencesPortableWhenWorkspaceFolderMoves()
+    {
+        var originalDirectory = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}");
+        var movedDirectory = originalDirectory + "-moved";
+        var libraryDirectory = Path.Combine(originalDirectory, "lib");
+        Directory.CreateDirectory(libraryDirectory);
+        var referencePath = Path.Combine(libraryDirectory, "Example.dll");
+        await File.WriteAllBytesAsync(referencePath, [0]);
+        var workspacePath = Path.Combine(originalDirectory, "portable.pgsworkspace");
+        var document = new WorkspaceDocument(
+            WorkspaceDocument.CurrentVersion,
+            DateTime.UtcNow,
+            [],
+            SessionContext.DefaultImports,
+            [referencePath],
+            [],
+            string.Empty);
+        try
+        {
+            await WorkspaceFile.SaveAsync(workspacePath, document);
+
+            using (var json = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(workspacePath)))
+            {
+                Assert.Equal(Path.Combine("lib", "Example.dll"),
+                    json.RootElement.GetProperty("References")[0].GetString());
+            }
+
+            Directory.Move(originalDirectory, movedDirectory);
+            var movedWorkspacePath = Path.Combine(movedDirectory, "portable.pgsworkspace");
+            var loaded = await WorkspaceFile.LoadAsync(movedWorkspacePath);
+
+            Assert.Equal(Path.Combine(movedDirectory, "lib", "Example.dll"), Assert.Single(loaded.References));
+        }
+        finally
+        {
+            if (Directory.Exists(originalDirectory)) Directory.Delete(originalDirectory, recursive: true);
+            if (Directory.Exists(movedDirectory)) Directory.Delete(movedDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RejectsUnsupportedVersion()
     {
         var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.pgsworkspace");

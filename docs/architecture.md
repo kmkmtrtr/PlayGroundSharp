@@ -37,7 +37,7 @@ Explorer interaction uses progressive disclosure: every row carries a compact sy
 
 ## Workspace persistence
 
-The `.pgsworkspace` format is versioned JSON containing accepted submission text, draft input, active imports, reference paths and exact package versions. It deliberately does not serialize `ScriptState`, assemblies or live values. Loading reconstructs a fresh Worker, restores dependencies and replays submissions in order. This keeps the format portable and avoids unsafe arbitrary-object deserialization, while making replay side effects explicit in a confirmation dialog. Writes use a temporary file followed by atomic replacement; reads are bounded to 16 MiB and validate counts and versions.
+The `.pgsworkspace` format is versioned JSON containing accepted submission text, draft input, active imports, reference paths and exact package versions. It deliberately does not serialize `ScriptState`, assemblies or live values. DLLs inside the workspace directory are stored as relative references so a workspace folder can be moved as a unit; external DLLs retain absolute paths. Loading reconstructs a fresh Worker, restores dependencies and replays submissions in order. This keeps the format portable and avoids unsafe arbitrary-object deserialization, while making replay side effects explicit in a confirmation dialog. Writes use a temporary file followed by atomic replacement; reads are bounded to 16 MiB and validate counts and versions.
 
 ## Result snapshots
 

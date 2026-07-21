@@ -47,9 +47,11 @@
                      Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                      BorderBrush="{DynamicResource BorderBrush}" Padding="6,4" />
             <TextBlock x:Name="SearchStatus" Grid.Column="2" Foreground="{DynamicResource MutedBrush}"
+                       AutomationProperties.LiveSetting="Polite"
                        VerticalAlignment="Center" Margin="10,0,2,0" MinWidth="70" TextAlignment="Right" />
         </Grid>
         <TreeView x:Name="SnapshotTree" Grid.Row="2" ItemsSource="{Binding Roots}"
+                  AutomationProperties.Name="{DynamicResource Inspector.Snapshot}"
                   Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                   BorderBrush="{DynamicResource BorderBrush}" SelectedItemChanged="SnapshotTree_SelectedItemChanged">
             <TreeView.Resources>
@@ -73,6 +75,7 @@
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
                     <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
                     <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+                    <Setter Property="AutomationProperties.HelpText" Value="{Binding Detail}" />
                 </Style>
             </TreeView.ItemContainerStyle>
         </TreeView>
@@ -85,6 +88,7 @@
                        VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}" />
         </DockPanel>
         <TextBox x:Name="DetailText" Grid.Row="5" IsReadOnly="True" TextWrapping="Wrap"
+                 AutomationProperties.Name="{DynamicResource Inspector.Details}"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                  Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                  BorderBrush="{DynamicResource BorderBrush}" FontFamily="Cascadia Mono,Consolas" Padding="8" />

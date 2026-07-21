@@ -46,6 +46,7 @@ public partial class MainWindow : Window
     private Action? quickInfoChordStatusRestore;
     private bool quickInfoChordPending;
     private WindowState lastNonMinimizedWindowState = WindowState.Normal;
+    private bool typeExplorerAutoCollapsed;
     private bool closeInProgress;
     private bool closeCompleted;
 
@@ -187,6 +188,8 @@ public partial class MainWindow : Window
             bounds,
             WindowState == WindowState.Maximized ||
             WindowState == WindowState.Minimized && lastNonMinimizedWindowState == WindowState.Maximized,
+            viewModel.IsTypeExplorerOpen || typeExplorerAutoCollapsed,
+            viewModel.IsReferenceDrawerOpen,
             explorerWidth,
             drawerWidth,
             WorkspaceTabs.SelectedIndex,
@@ -252,6 +255,7 @@ public partial class MainWindow : Window
     {
         if (e.NewValue is true)
         {
+            typeExplorerAutoCollapsed = false;
             if (IsLoaded && ActualWidth < DualPaneMinimumWidth && viewModel.IsReferenceDrawerOpen)
                 viewModel.IsReferenceDrawerOpen = false;
             TypeExplorerColumn.Width = typeExplorerWidth;
@@ -277,6 +281,11 @@ public partial class MainWindow : Window
         if (ReferenceDrawerColumn.ActualWidth > 0) referenceDrawerWidth = new(ReferenceDrawerColumn.ActualWidth);
         ReferenceDrawerSplitterColumn.Width = new(0);
         ReferenceDrawerColumn.Width = new(0);
+        if (typeExplorerAutoCollapsed && !viewModel.IsTypeExplorerOpen)
+        {
+            typeExplorerAutoCollapsed = false;
+            viewModel.IsTypeExplorerOpen = true;
+        }
     }
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -292,9 +301,17 @@ public partial class MainWindow : Window
 
     private void EnsureResponsivePanes()
     {
-        if (ActualWidth < DualPaneMinimumWidth &&
-            viewModel.IsTypeExplorerOpen && viewModel.IsReferenceDrawerOpen)
+        if (ActualWidth < DualPaneMinimumWidth)
+        {
+            if (!viewModel.IsTypeExplorerOpen || !viewModel.IsReferenceDrawerOpen) return;
+            typeExplorerAutoCollapsed = true;
             viewModel.IsTypeExplorerOpen = false;
+            return;
+        }
+
+        if (!typeExplorerAutoCollapsed || viewModel.IsTypeExplorerOpen) return;
+        typeExplorerAutoCollapsed = false;
+        viewModel.IsTypeExplorerOpen = true;
     }
 
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

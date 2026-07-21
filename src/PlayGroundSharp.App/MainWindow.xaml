@@ -685,6 +685,7 @@
                                 <CheckBox Grid.Row="1" Content="{DynamicResource NuGet.IncludePrerelease}" IsChecked="{Binding IncludePrereleasePackages}" Margin="0,7,0,0"
                                           IsEnabled="{Binding CanChangeSession}" />
                                 <TextBlock Grid.Row="2" Text="{Binding PackageSearchMessage}" Margin="0,7" TextWrapping="Wrap"
+                                           AutomationProperties.LiveSetting="Polite"
                                            Foreground="{DynamicResource MutedBrush}" />
                                 <ListBox x:Name="PackageSearchResults" Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="{DynamicResource NuGet.Results}" BorderThickness="0"
                                          Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
@@ -842,7 +843,8 @@
                         </Style>
                     </Ellipse.Style>
                 </Ellipse>
-                <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource ForegroundBrush}" FontSize="11.5" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Status}" AutomationProperties.LiveSetting="Polite"
+                           Foreground="{DynamicResource ForegroundBrush}" FontSize="11.5" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="2" Text="{Binding SessionStatus}" Margin="16,0" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="3" Text="{Binding DiagnosticStatus}" ToolTip="{Binding DiagnosticDetails}"
                            ToolTipService.InitialShowDelay="250" ToolTipService.ShowDuration="20000"

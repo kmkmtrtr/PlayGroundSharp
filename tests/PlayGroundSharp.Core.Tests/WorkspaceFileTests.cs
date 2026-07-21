@@ -15,12 +15,13 @@ public sealed class WorkspaceFileTests
             [.. SessionContext.DefaultImports, "Humanizer"],
             [@"C:\Libraries\Example.dll"],
             [new("Humanizer.Core", "3.0.10")],
-            "answer + 1");
+            "answer + 1 // 日本語 <checked>");
         try
         {
             await WorkspaceFile.SaveAsync(path, expected);
 
             var actual = await WorkspaceFile.LoadAsync(path);
+            var serialized = await File.ReadAllTextAsync(path);
 
             Assert.Equal(expected.Version, actual.Version);
             Assert.Equal(expected.SavedAtUtc, actual.SavedAtUtc);
@@ -29,6 +30,9 @@ public sealed class WorkspaceFileTests
             Assert.Equal(expected.References, actual.References);
             Assert.Equal(expected.Packages, actual.Packages);
             Assert.Equal(expected.InputText, actual.InputText);
+            Assert.Contains("answer + 1 // 日本語 <checked>", serialized, StringComparison.Ordinal);
+            Assert.DoesNotContain("\\u002B", serialized, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\\u65E5", serialized, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {

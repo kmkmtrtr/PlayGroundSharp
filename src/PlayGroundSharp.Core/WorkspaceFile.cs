@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace PlayGroundSharp.Core;
@@ -25,7 +26,8 @@ public static class WorkspaceFile
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     public static async Task SaveAsync(

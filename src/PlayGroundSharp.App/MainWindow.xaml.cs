@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -56,6 +57,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        UpdateEditorAccessibilityName();
         ApplySavedWindowLayout();
         App.ApplyTheme(viewModel.ThemeMode);
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("C#");
@@ -98,10 +100,17 @@ public partial class MainWindow : Window
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(MainViewModel.LanguageMode) || helpWindow is not { IsVisible: true } help) return;
-        help.ApplyLanguage(viewModel.LanguageMode);
-        helpWindowLanguage = viewModel.LanguageMode;
+        if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
+        UpdateEditorAccessibilityName();
+        if (helpWindow is { IsVisible: true } help)
+        {
+            help.ApplyLanguage(viewModel.LanguageMode);
+            helpWindowLanguage = viewModel.LanguageMode;
+        }
     }
+
+    private void UpdateEditorAccessibilityName() =>
+        AutomationProperties.SetName(Editor.TextArea, viewModel.Localize("Input.Editor"));
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {

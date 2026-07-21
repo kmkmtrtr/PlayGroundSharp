@@ -569,6 +569,7 @@
                         </StackPanel>
                     </Border>
                     <TabControl x:Name="WorkspaceTabs" Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
+                                AutomationProperties.Name="{DynamicResource Workspace.Title}"
                                 ItemContainerStyle="{StaticResource WorkspaceTabItemStyle}">
                         <TabItem Header="{DynamicResource Tab.Variables}">
                             <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">

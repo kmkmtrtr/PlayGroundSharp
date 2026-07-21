@@ -79,6 +79,9 @@ public sealed class CSharpLanguageService
     private static readonly Lazy<IReadOnlyList<MetadataReference>> PlatformReferences = new(
         CreatePlatformReferences,
         LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<IReadOnlyList<ReferencedType>> PlatformReferencedTypes = new(
+        CreatePlatformReferencedTypes,
+        LazyThreadSafetyMode.ExecutionAndPublication);
     private static readonly ConcurrentDictionary<string, IReadOnlyList<ReferencedType>> ReferencedTypeCache =
         new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, DocumentationInfo>> DocumentationFileCache =
@@ -826,9 +829,10 @@ public sealed class CSharpLanguageService
         if (prefix.Length < 2 || start > 0 && currentCode[start - 1] == '.') return;
 
         var imported = context.Imports.ToHashSet(StringComparer.Ordinal);
-        var candidates = context.ReferencePaths
-            .Where(File.Exists)
-            .SelectMany(path => ReferencedTypeCache.GetOrAdd(Path.GetFullPath(path), ReadReferencedTypes))
+        var candidates = PlatformReferencedTypes.Value
+            .Concat(context.ReferencePaths
+                .Where(File.Exists)
+                .SelectMany(path => ReferencedTypeCache.GetOrAdd(Path.GetFullPath(path), ReadReferencedTypes)))
             .Where(type => type.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && !imported.Contains(type.Namespace))
             .DistinctBy(static type => (type.Name, type.Namespace))
             .OrderBy(static type => type.Name, StringComparer.OrdinalIgnoreCase)
@@ -851,6 +855,12 @@ public sealed class CSharpLanguageService
                 candidate.Namespace));
         }
     }
+
+    private static IReadOnlyList<ReferencedType> CreatePlatformReferencedTypes() => PlatformReferences.Value
+        .Select(static reference => reference.Display)
+        .Where(static path => path is not null && File.Exists(path))
+        .SelectMany(path => ReferencedTypeCache.GetOrAdd(Path.GetFullPath(path!), ReadReferencedTypes))
+        .ToArray();
 
     private static IReadOnlyList<ReferencedType> ReadReferencedTypes(string path)
     {

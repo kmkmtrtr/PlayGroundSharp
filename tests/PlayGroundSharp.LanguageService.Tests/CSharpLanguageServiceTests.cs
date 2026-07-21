@@ -416,6 +416,18 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task SuggestsUnimportedTypeFromPlatformReference()
+    {
+        const string code = "Reg";
+
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+
+        var candidate = Assert.Single(items, static item =>
+            item.TextToInsert == "Regex" && item.RequiredNamespace == "System.Text.RegularExpressions");
+        Assert.Equal("using System.Text.RegularExpressions", candidate.NamespaceDisplayText);
+    }
+
+    [Fact]
     public void ReturnsNamespacesFromDynamicReferences()
     {
         var context = new SessionContext([], SessionContext.DefaultImports, [typeof(Greeter).Assembly.Location]);

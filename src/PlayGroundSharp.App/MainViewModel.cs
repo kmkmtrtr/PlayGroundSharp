@@ -59,6 +59,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private CancellationTokenSource? packageOperationCancellation;
     private CancellationTokenSource? transientStatusDelay;
     private IReadOnlyList<SymbolExplorerEntry> typeExplorerEntries = [];
+    private IReadOnlyList<DiagnosticInfo> currentDiagnostics = [];
+    private int diagnosticPosition = -1;
     private int diagnosticErrorCount;
     private int diagnosticWarningCount;
     private bool diagnosticsDeferred;
@@ -143,6 +145,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public bool CanOpenWorkspace => !IsPackageSearchBusy && !IsWorkspaceBusy &&
                                     !IsSessionChanging && !IsPreparingExecution;
     public bool CanSaveWorkspace => CanOpenWorkspace && !IsRunning;
+    public bool HasNavigableDiagnostics => currentDiagnostics.Count > 0;
     public ObservableCollection<string> PackageItems { get; } = [];
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
@@ -760,6 +763,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         diagnosticDelay?.Cancel();
         diagnosticDelay?.Dispose();
         diagnosticDelay = null;
+        ClearCurrentDiagnostics();
         diagnosticsDeferred = false;
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -778,8 +782,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             DiagnosticDetails = Localize("Diagnostics.DeferredDetail");
             return;
         }
+        DiagnosticStatus = Localize("Diagnostics.Checking");
+        DiagnosticDetails = Localize("Diagnostics.CheckingDetail");
         diagnosticDelay = new CancellationTokenSource();
-        _ = UpdateDiagnosticsAfterDelayAsync(value, diagnosticDelay.Token);
+        _ = UpdateDiagnosticsAfterDelayAsync(value, diagnosticDelay);
     }
 
     partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SaveSettings();
@@ -846,8 +852,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SessionStatus = Localize(sessionLocalizationKey, sessionLocalizationArguments);
         DiagnosticStatus = diagnosticsDeferred
             ? Localize("Diagnostics.Deferred")
-            : Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
-        if (diagnosticsDeferred) DiagnosticDetails = Localize("Diagnostics.DeferredDetail");
+            : diagnosticDelay is not null
+                ? Localize("Diagnostics.Checking")
+                : Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
+        DiagnosticDetails = diagnosticsDeferred
+            ? Localize("Diagnostics.DeferredDetail")
+            : diagnosticDelay is not null
+                ? Localize("Diagnostics.CheckingDetail")
+                : BuildDiagnosticDetails(currentDiagnostics);
         CursorStatus = Localize("Cursor.Position", cursorLine, cursorColumn);
         if (packageSearchLocalizationKey is not null)
             PackageSearchMessage = Localize(packageSearchLocalizationKey, packageSearchLocalizationArguments);
@@ -922,8 +934,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private SessionContext Context => new([.. submissions], [.. imports], [.. references]);
 
-    private async Task UpdateDiagnosticsAfterDelayAsync(string code, CancellationToken cancellationToken)
+    private async Task UpdateDiagnosticsAfterDelayAsync(string code, CancellationTokenSource delay)
     {
+        var cancellationToken = delay.Token;
         try
         {
             await Task.Delay(250, cancellationToken);
@@ -932,16 +945,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 () => languageService.GetDiagnosticsAsync(context, code, cancellationToken), cancellationToken);
             if (cancellationToken.IsCancellationRequested || !string.Equals(InputText, code, StringComparison.Ordinal))
                 return;
-            var errors = diagnostics.Count(static item => item.Level == DiagnosticLevel.Error);
-            var warnings = diagnostics.Count(static item => item.Level == DiagnosticLevel.Warning);
-            diagnosticErrorCount = errors;
-            diagnosticWarningCount = warnings;
-            DiagnosticStatus = Localize("Diagnostics.Count", errors, warnings);
-            const int detailLimit = 12;
-            DiagnosticDetails = string.Join(Environment.NewLine, diagnostics.Take(detailLimit).Select(static item =>
-                $"{item.Id} ({item.StartLine},{item.StartColumn}): {item.Message}"));
-            if (diagnostics.Count > detailLimit)
-                DiagnosticDetails += Environment.NewLine + Localize("Diagnostics.More", diagnostics.Count - detailLimit);
+            ApplyDiagnostics(code, diagnostics);
         }
         catch (OperationCanceledException) { }
         catch (Exception)
@@ -954,6 +958,71 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 DiagnosticDetails = Localize("Diagnostics.Unavailable");
             }
         }
+        finally
+        {
+            if (ReferenceEquals(diagnosticDelay, delay))
+            {
+                diagnosticDelay = null;
+                delay.Dispose();
+            }
+        }
+    }
+
+    internal bool ApplyDiagnostics(string code, IReadOnlyList<DiagnosticInfo> diagnostics)
+    {
+        if (!string.Equals(InputText, code, StringComparison.Ordinal)) return false;
+        currentDiagnostics = diagnostics
+            .OrderBy(static item => item.StartLine)
+            .ThenBy(static item => item.StartColumn)
+            .ThenByDescending(static item => item.Level)
+            .ToArray();
+        diagnosticPosition = -1;
+        diagnosticErrorCount = currentDiagnostics.Count(static item => item.Level == DiagnosticLevel.Error);
+        diagnosticWarningCount = currentDiagnostics.Count(static item => item.Level == DiagnosticLevel.Warning);
+        DiagnosticStatus = Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
+        DiagnosticDetails = BuildDiagnosticDetails(currentDiagnostics);
+        OnPropertyChanged(nameof(HasNavigableDiagnostics));
+        return true;
+    }
+
+    internal DiagnosticInfo? MoveDiagnostic(int delta)
+    {
+        if (currentDiagnostics.Count == 0) return null;
+        diagnosticPosition = diagnosticPosition < 0
+            ? delta < 0 ? currentDiagnostics.Count - 1 : 0
+            : (diagnosticPosition + Math.Sign(delta) + currentDiagnostics.Count) % currentDiagnostics.Count;
+        var diagnostic = currentDiagnostics[diagnosticPosition];
+        ShowStatusNotification(
+            "Status.DiagnosticLocation",
+            diagnosticPosition + 1,
+            currentDiagnostics.Count,
+            diagnostic.Id,
+            diagnostic.StartLine,
+            diagnostic.StartColumn);
+        return diagnostic;
+    }
+
+    private void ClearCurrentDiagnostics()
+    {
+        if (currentDiagnostics.Count == 0)
+        {
+            diagnosticPosition = -1;
+            return;
+        }
+        currentDiagnostics = [];
+        diagnosticPosition = -1;
+        OnPropertyChanged(nameof(HasNavigableDiagnostics));
+    }
+
+    private string BuildDiagnosticDetails(IReadOnlyList<DiagnosticInfo> diagnostics)
+    {
+        if (diagnostics.Count == 0) return string.Empty;
+        const int detailLimit = 12;
+        var details = string.Join(Environment.NewLine, diagnostics.Take(detailLimit).Select(static item =>
+            $"{item.Id} ({item.StartLine},{item.StartColumn}): {item.Message}"));
+        if (diagnostics.Count > detailLimit)
+            details += Environment.NewLine + Localize("Diagnostics.More", diagnostics.Count - detailLimit);
+        return details + Environment.NewLine + Environment.NewLine + Localize("Diagnostics.NavigateHint");
     }
 
     private void HandleWorkerEvent(PipeEnvelope envelope)

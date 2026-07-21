@@ -56,6 +56,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Ctrl+Space`: show completion
 - `Tab`: accept the selected completion; added-library types can add their required `using` automatically
 - `Esc`: close completion; while running, request cancellation
+- `F8` / `Shift+F8`: move to the next / previous input diagnostic and select its source span
 - `Ctrl+Shift+C`: copy the full transcript
 - `Up` / `Down`: move through input history; in a multiline draft this activates on the first/last line and restores the draft when returning to the newest entry
 - Click a previous `In` line: copy it into the current prompt

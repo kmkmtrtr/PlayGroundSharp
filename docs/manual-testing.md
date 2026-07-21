@@ -40,6 +40,7 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 34 | Enter a two-line draft, move to its first line and press Up, then press Down | the previous submission is recalled and the complete two-line draft is restored |
 | 35 | Paste `using System.Globalization;` into the Usings input and press Enter | `System.Globalization` is added and the input is cleared |
 | 36 | Create session state, click Restart or Reset, then cancel the confirmation | the warning explains the retained/lost state and the current submission state remains intact |
+| 37 | After at least one successful submission, type invalid two-line code, then press `F8` and `Shift+F8` | diagnostics use lines/columns relative to the current input; the corresponding source spans are selected forward and backward |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 

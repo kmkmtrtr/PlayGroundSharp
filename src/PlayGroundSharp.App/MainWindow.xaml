@@ -812,7 +812,21 @@
                 <TextBlock Grid.Column="2" Text="{Binding SessionStatus}" Margin="16,0" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="3" Text="{Binding DiagnosticStatus}" ToolTip="{Binding DiagnosticDetails}"
                            ToolTipService.InitialShowDelay="250" ToolTipService.ShowDuration="20000"
-                           Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,18,0" />
+                           FontSize="11.5" VerticalAlignment="Center" Margin="0,0,18,0"
+                           MouseLeftButtonUp="DiagnosticStatus_MouseLeftButtonUp">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasNavigableDiagnostics}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                    <Setter Property="Cursor" Value="Hand" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
                 <TextBlock Grid.Column="4" Text="{Binding CursorStatus}" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
             </Grid>
         </Border>

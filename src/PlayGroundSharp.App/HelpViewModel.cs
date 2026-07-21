@@ -30,7 +30,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("入力と補完", "C#補完、シグネチャ、診断を現在のセッション状態から生成します。",
         [
-            new("キー操作", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterまたはShift+Enterで改行します。Ctrl+Spaceで補完、Tabで明示選択、↑↓で1件、PageUp/PageDownで1ページ移動し、Escで閉じます。Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。補完Popup中央の境界をドラッグすると候補とドキュメントの幅を変更できます。"),
+            new("キー操作", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterまたはShift+Enterで改行します。Ctrl+Spaceで補完、Tabで明示選択、↑↓で1件、PageUp/PageDownで1ページ移動し、Escで閉じます。F8／Shift+F8で次／前の診断へ、Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。補完Popup中央の境界をドラッグすると候補とドキュメントの幅を変更できます。"),
             new("履歴", "一行入力で上下キーを押すと履歴を移動します。過去の入力行をクリックして現在の入力へコピーできます。"),
             new("ファイルとフォルダのドロップ", "入力欄へドロップすると操作メニューを表示します。パス挿入、JSONやテキストの読み込みコード、フォルダ内ファイルの列挙を選べます。コードを自動実行することはありません。複数パスは配列として挿入します。"),
             new("補完の確定", "候補は入力内容に応じて絞り込まれます。未usingの型や拡張メソッドには「using 名前空間」を表示し、確定時にusingを自動追加します。拡張メソッドを手入力した場合も、名前空間が一意なら実行前に追加します。Enterでは候補を確定せず、Tabまたはダブルクリックだけで挿入します。")
@@ -76,7 +76,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Input and IntelliSense", "Completion and diagnostics use the current session state.",
         [
-            new("Keys", "With Enter-to-run, Shift+Enter inserts a line break; with Ctrl+Enter-to-run, Enter or Shift+Enter inserts one. Ctrl+Space opens completion, Tab explicitly accepts, arrow keys move one item, PageUp/PageDown move one page, and Esc closes it. Ctrl+L focuses input and Ctrl+F focuses symbol search. Drag the center divider to resize completion items and documentation."),
+            new("Keys", "With Enter-to-run, Shift+Enter inserts a line break; with Ctrl+Enter-to-run, Enter or Shift+Enter inserts one. Ctrl+Space opens completion, Tab explicitly accepts, arrow keys move one item, PageUp/PageDown move one page, and Esc closes it. F8/Shift+F8 moves to the next/previous diagnostic, Ctrl+L focuses input, and Ctrl+F focuses symbol search. Drag the center divider to resize completion items and documentation."),
             new("Automatic imports", "Unimported types and extension methods show a 'using Namespace' badge. Accepting one adds that using before inserting the completion."),
             new("Dropping files and folders", "Drop onto the input editor to choose between inserting a path, generating data-reading code, or enumerating a folder. Nothing is executed automatically. Multiple paths are inserted as an array."),
             new("History", "Use Up and Down on a single line, or click a prior input to copy it into the editor.")

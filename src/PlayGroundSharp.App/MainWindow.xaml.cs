@@ -373,7 +373,12 @@ public partial class MainWindow : Window
 
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.F1)
+        if (e.Key == Key.F8 && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
+        {
+            e.Handled = true;
+            NavigateToDiagnostic(Keyboard.Modifiers == ModifierKeys.Shift ? -1 : 1);
+        }
+        else if (e.Key == Key.F1)
         {
             e.Handled = true;
             OpenHelp();
@@ -420,6 +425,28 @@ public partial class MainWindow : Window
             e.Handled = true;
             await CancelFromUiAsync();
         }
+    }
+
+    private void DiagnosticStatus_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left) return;
+        NavigateToDiagnostic(1);
+    }
+
+    private void NavigateToDiagnostic(int delta)
+    {
+        if (viewModel.MoveDiagnostic(delta) is not { } diagnostic) return;
+        HideAssist();
+        var startLine = Math.Clamp(diagnostic.StartLine, 1, Editor.Document.LineCount);
+        var endLine = Math.Clamp(diagnostic.EndLine, startLine, Editor.Document.LineCount);
+        var startDocumentLine = Editor.Document.GetLineByNumber(startLine);
+        var endDocumentLine = Editor.Document.GetLineByNumber(endLine);
+        var start = startDocumentLine.Offset + Math.Clamp(diagnostic.StartColumn - 1, 0, startDocumentLine.Length);
+        var end = endDocumentLine.Offset + Math.Clamp(diagnostic.EndColumn - 1, 0, endDocumentLine.Length);
+        Editor.Select(start, Math.Max(0, end - start));
+        Editor.CaretOffset = start;
+        Editor.ScrollTo(startLine, Math.Max(1, diagnostic.StartColumn));
+        Editor.Focus();
     }
 
     private async void SaveWorkspace_Click(object sender, RoutedEventArgs e) => await SaveWorkspaceAsync();

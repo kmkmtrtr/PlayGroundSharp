@@ -526,10 +526,11 @@ public sealed class CSharpLanguageService
         if (model is null) return [];
         var currentStart = workspaceDocument.CurrentOffset;
         var significantEnd = currentStart + currentCode.TrimEnd().Length;
+        var currentText = SourceText.From(currentCode);
         return model.GetDiagnostics(new TextSpan(currentStart, currentCode.Length), cancellationToken)
             .Where(static diagnostic => diagnostic.Severity != DiagnosticSeverity.Hidden)
             .Where(diagnostic => diagnostic.Id != "CS1002" || diagnostic.Location.SourceSpan.Start < significantEnd)
-            .Select(diagnostic => ToDiagnostic(diagnostic, currentStart))
+            .Select(diagnostic => ToDiagnostic(diagnostic, currentStart, currentText))
             .ToArray();
     }
 
@@ -1215,16 +1216,19 @@ public sealed class CSharpLanguageService
         return new(symbol.Name, symbol.Name, symbol.Name, [tag], SourceNamespace: sourceNamespace);
     }
 
-    private static DiagnosticInfo ToDiagnostic(Diagnostic diagnostic, int offset)
+    private static DiagnosticInfo ToDiagnostic(Diagnostic diagnostic, int currentOffset, SourceText currentText)
     {
-        var span = diagnostic.Location.GetLineSpan().Span;
+        var sourceSpan = diagnostic.Location.SourceSpan;
+        var start = Math.Clamp(sourceSpan.Start - currentOffset, 0, currentText.Length);
+        var end = Math.Clamp(sourceSpan.End - currentOffset, start, currentText.Length);
+        var span = currentText.Lines.GetLinePositionSpan(TextSpan.FromBounds(start, end));
         return new(diagnostic.Id, diagnostic.Severity switch
         {
             DiagnosticSeverity.Error => DiagnosticLevel.Error,
             DiagnosticSeverity.Warning => DiagnosticLevel.Warning,
             _ => DiagnosticLevel.Info
-        }, diagnostic.GetMessage(), span.Start.Line + 1, Math.Max(1, span.Start.Character + 1 - offset),
-            span.End.Line + 1, Math.Max(1, span.End.Character + 1 - offset));
+        }, diagnostic.GetMessage(), span.Start.Line + 1, span.Start.Character + 1,
+            span.End.Line + 1, span.End.Character + 1);
     }
 
     private sealed class WorkspaceDocument(AdhocWorkspace workspace, RoslynDocument document, int currentOffset) : IDisposable

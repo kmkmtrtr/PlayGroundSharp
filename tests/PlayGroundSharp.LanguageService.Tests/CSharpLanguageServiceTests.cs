@@ -258,6 +258,25 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task ReportsDiagnosticPositionsRelativeToTheCurrentSubmission()
+    {
+        var context = new SessionContext(
+            ["var previous = 42;", "var multiLine = new[]\n{\n    previous\n};"],
+            SessionContext.DefaultImports,
+            []);
+        const string code = "var current = missingName;\ncurrent + anotherMissing";
+
+        var diagnostics = await service.GetDiagnosticsAsync(context, code);
+
+        Assert.Contains(diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("missingName", StringComparison.Ordinal) &&
+            diagnostic.StartLine == 1 && diagnostic.StartColumn == 15);
+        Assert.Contains(diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("anotherMissing", StringComparison.Ordinal) &&
+            diagnostic.StartLine == 2 && diagnostic.StartColumn == 11);
+    }
+
+    [Fact]
     public async Task TracksActiveSignatureParameterFromCaretPosition()
     {
         var context = new SessionContext(

@@ -129,6 +129,21 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public void TypeVersionAndStringBuilderStayReadableScalars()
+    {
+        var type = factory.Create(typeof(Dictionary<string, int>));
+        var version = factory.Create(new Version(10, 2, 3, 4));
+        var builder = factory.Create(new System.Text.StringBuilder("abcdef"), 10, 3);
+
+        Assert.Equal(SnapshotKind.String, type.Kind);
+        Assert.StartsWith("System.Collections.Generic.Dictionary`2", type.Display, StringComparison.Ordinal);
+        Assert.Contains("System.String", type.Display, StringComparison.Ordinal);
+        Assert.Equal("10.2.3.4", version.Display);
+        Assert.Equal("abc", builder.Display);
+        Assert.True(builder.IsTruncated);
+    }
+
+    [Fact]
     public void DetectsCyclesAndMaximumItems()
     {
         var node = new Node();

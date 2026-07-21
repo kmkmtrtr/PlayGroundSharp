@@ -111,6 +111,40 @@ public sealed class ResultSnapshotFactory
             var display = budget.TakeText(uri.OriginalString, MaximumStringLength, out var truncated);
             return new(SnapshotKind.String, display, typeName, IsTruncated: truncated);
         }
+        if (value is Type reflectedType)
+        {
+            var display = budget.TakeText(
+                reflectedType.FullName ?? reflectedType.Name,
+                MaximumStringLength,
+                out var truncated);
+            return new(SnapshotKind.String, display, typeof(Type).FullName, IsTruncated: truncated);
+        }
+        if (value is Version version)
+        {
+            var display = budget.TakeText(version.ToString(), MaximumStringLength, out var truncated);
+            return new(SnapshotKind.String, display, typeName, IsTruncated: truncated);
+        }
+        if (value is System.Text.StringBuilder stringBuilder)
+        {
+            try
+            {
+                var sourceLength = stringBuilder.Length;
+                var length = Math.Min(
+                    sourceLength,
+                    Math.Min(MaximumStringLength, budget.RemainingTextCharacters));
+                var textValue = stringBuilder.ToString(0, length);
+                var display = budget.TakeText(textValue, length, out var budgetTruncated);
+                return new(
+                    SnapshotKind.String,
+                    display,
+                    typeName,
+                    IsTruncated: budgetTruncated || length < sourceLength);
+            }
+            catch (Exception error)
+            {
+                return CreateExceptionSnapshot(error, typeName, budget);
+            }
+        }
         if (value is JsonElement element)
         {
             return CreateJsonElement(element, typeName, depth, budget, nodeAlreadyTaken: true);
@@ -578,6 +612,7 @@ public sealed class ResultSnapshotFactory
     private sealed class SnapshotBudget(int remainingNodes, int remainingTextCharacters)
     {
         public bool CanTakeNode => remainingNodes > 0;
+        public int RemainingTextCharacters => remainingTextCharacters;
 
         public bool TryTakeNode()
         {

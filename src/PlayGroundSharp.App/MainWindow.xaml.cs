@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer completionDescriptionTimer = new() { Interval = TimeSpan.FromMilliseconds(140) };
     private AssistMode assistMode;
     private int completionFilterStart;
+    private string? lastCompletionFilterPrefix;
     private GridLength typeExplorerWidth = new(286);
     private GridLength referenceDrawerWidth = new(470);
     private GridLength completionListWidth = new(390);
@@ -51,7 +52,8 @@ public partial class MainWindow : Window
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("C#");
         viewModel.Transcript.CollectionChanged += (_, args) =>
         {
-            if (args.Action == NotifyCollectionChangedAction.Reset) SetTranscriptAutoScroll(true);
+            if (args.Action == NotifyCollectionChangedAction.Reset && viewModel.Transcript.Count == 0)
+                SetTranscriptAutoScroll(true);
             Dispatcher.BeginInvoke(() =>
             {
                 if (transcriptAutoScroll) TranscriptScroll.ScrollToEnd();
@@ -270,12 +272,20 @@ public partial class MainWindow : Window
 
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        var source = e.OriginalSource as DependencyObject;
+        if (AssistPopup.IsOpen &&
+            FindAncestor<ICSharpCode.AvalonEdit.TextEditor>(source) != Editor)
+            HideAssist();
         if (SymbolDetailPopup.IsOpen &&
-            FindAncestor<TreeView>(e.OriginalSource as DependencyObject) != TypeExplorerTree)
+            FindAncestor<TreeView>(source) != TypeExplorerTree)
             SymbolDetailPopup.IsOpen = false;
     }
 
-    private void Window_Deactivated(object? sender, EventArgs e) => SymbolDetailPopup.IsOpen = false;
+    private void Window_Deactivated(object? sender, EventArgs e)
+    {
+        SymbolDetailPopup.IsOpen = false;
+        if (AssistPopup.IsOpen) HideAssist();
+    }
 
     private IntPtr WindowMessageHook(
         IntPtr windowHandle,
@@ -313,9 +323,20 @@ public partial class MainWindow : Window
         while (current is not null)
         {
             if (current is T match) return match;
-            current = VisualTreeHelper.GetParent(current);
+            current = GetParent(current);
         }
         return null;
+    }
+
+    private static DependencyObject? GetParent(DependencyObject current)
+    {
+        if (current is Visual or System.Windows.Media.Media3D.Visual3D)
+            return VisualTreeHelper.GetParent(current);
+        if (current is FrameworkContentElement frameworkContent)
+            return frameworkContent.Parent ?? ContentOperations.GetParent(frameworkContent);
+        if (current is ContentElement content)
+            return ContentOperations.GetParent(content);
+        return LogicalTreeHelper.GetParent(current);
     }
 
     private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
@@ -365,7 +386,7 @@ public partial class MainWindow : Window
                  !AssistPopup.IsOpen && !SymbolDetailPopup.IsOpen)
         {
             e.Handled = true;
-            await viewModel.CancelAsync();
+            await CancelFromUiAsync();
         }
     }
 
@@ -598,10 +619,17 @@ public partial class MainWindow : Window
     {
         if (sender is not FrameworkElement { DataContext: SymbolExplorerNode { DocumentationPath: { } path } }) return;
         var locale = viewModel.LanguageMode == AppLanguageMode.Japanese ? "ja-jp" : "en-us";
-        Process.Start(new ProcessStartInfo($"https://learn.microsoft.com/{locale}/dotnet/api/{path}?view=net-10.0")
+        try
         {
-            UseShellExecute = true
-        });
+            Process.Start(new ProcessStartInfo($"https://learn.microsoft.com/{locale}/dotnet/api/{path}?view=net-10.0")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
     }
 
     private void OpenHelp_Click(object sender, RoutedEventArgs e) => OpenHelp();
@@ -627,6 +655,12 @@ public partial class MainWindow : Window
 
     private void FocusEditorAfterCommand_Click(object sender, RoutedEventArgs e) => FocusEditor();
 
+    private async void Cancel_Click(object sender, RoutedEventArgs e)
+    {
+        await CancelFromUiAsync();
+        FocusEditor();
+    }
+
     private async void RestartWorker_Click(object sender, RoutedEventArgs e)
     {
         if (viewModel.HasSessionState && MessageBox.Show(
@@ -639,8 +673,15 @@ public partial class MainWindow : Window
             FocusEditor();
             return;
         }
-        if (viewModel.RestartWorkerCommand.CanExecute(null))
-            await viewModel.RestartWorkerCommand.ExecuteAsync(null);
+        try
+        {
+            if (viewModel.RestartWorkerCommand.CanExecute(null))
+                await viewModel.RestartWorkerCommand.ExecuteAsync(null);
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
         FocusEditor();
     }
 
@@ -656,7 +697,14 @@ public partial class MainWindow : Window
             FocusEditor();
             return;
         }
-        if (viewModel.ResetCommand.CanExecute(null)) await viewModel.ResetCommand.ExecuteAsync(null);
+        try
+        {
+            if (viewModel.ResetCommand.CanExecute(null)) await viewModel.ResetCommand.ExecuteAsync(null);
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
         FocusEditor();
     }
 
@@ -732,17 +780,44 @@ public partial class MainWindow : Window
 
     private async void PackageSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (sender is not TextBox textBox) return;
-        if (e.Key == Key.Escape && textBox.Text.Length > 0)
+        if (sender is not TextBox textBox || Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            textBox.Clear();
+            if (textBox.Text.Length > 0) textBox.Clear();
+            else FocusEditor();
             return;
         }
-        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key == Key.Down && PackageSearchResults.Items.Count > 0)
+        {
+            e.Handled = true;
+            PackageSearchResults.SelectedIndex = 0;
+            PackageSearchResults.ScrollIntoView(PackageSearchResults.SelectedItem);
+            PackageSearchResults.UpdateLayout();
+            (PackageSearchResults.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem)?.Focus();
+            return;
+        }
+        if (e.Key != Key.Enter) return;
         e.Handled = true;
         if (viewModel.SearchPackagesCommand.CanExecute(null))
             await viewModel.SearchPackagesCommand.ExecuteAsync(null);
+    }
+
+    private async void PackageSearchResults_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            PackageSearchBox.Focus();
+            PackageSearchBox.SelectAll();
+            return;
+        }
+        if (e.Key != Key.Enter || !viewModel.CanChangeSession ||
+            PackageSearchResults.SelectedItem is not NuGetPackageInfo package) return;
+        e.Handled = true;
+        if (viewModel.InstallPackageCommand.CanExecute(package))
+            await viewModel.InstallPackageCommand.ExecuteAsync(package);
     }
 
     private void TypeExplorerSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -789,7 +864,7 @@ public partial class MainWindow : Window
             else FocusEditor();
         }
         else if (e.Key is Key.Down or Key.Enter &&
-                 viewModel.VariableItemsView.Cast<object>().FirstOrDefault() is VariableItem item)
+                 ApplyVariableFilterAndGetFirst() is { } item)
         {
             e.Handled = true;
             VariableList.SelectedItem = item;
@@ -798,16 +873,23 @@ public partial class MainWindow : Window
         }
     }
 
+    private VariableItem? ApplyVariableFilterAndGetFirst()
+    {
+        viewModel.ApplyVariableFilterNow();
+        return viewModel.VariableItemsView.Cast<object>().FirstOrDefault() as VariableItem;
+    }
+
     private async void NewUsingBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (sender is not TextBox textBox) return;
-        if (e.Key == Key.Escape && textBox.Text.Length > 0)
+        if (sender is not TextBox textBox || Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            textBox.Clear();
+            if (textBox.Text.Length > 0) textBox.Clear();
+            else FocusEditor();
             return;
         }
-        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key != Key.Enter) return;
         e.Handled = true;
         if (viewModel.AddUsingFromGuiCommand.CanExecute(null))
             await viewModel.AddUsingFromGuiCommand.ExecuteAsync(null);
@@ -945,7 +1027,7 @@ public partial class MainWindow : Window
             else if (viewModel.CanCancel)
             {
                 e.Handled = true;
-                await viewModel.CancelAsync();
+                await CancelFromUiAsync();
             }
         }
         else if (e.Key == Key.Up && Keyboard.Modifiers == ModifierKeys.None && CanNavigateHistory(up: true))
@@ -967,6 +1049,18 @@ public partial class MainWindow : Window
                 Editor.Text = value;
                 Editor.CaretOffset = Editor.Text.Length;
             }
+        }
+    }
+
+    private async Task CancelFromUiAsync()
+    {
+        try
+        {
+            await viewModel.CancelAsync();
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
         }
     }
 
@@ -1031,6 +1125,7 @@ public partial class MainWindow : Window
         if (cancellation.IsCancellationRequested || !inputUnchanged && !inputAppendedAtEnd)
             return;
         allCompletionItems = items;
+        lastCompletionFilterPrefix = null;
         completionFilterStart = requestText.TrimStart().StartsWith(':')
             ? 0
             : FindCompletionStart(requestText, requestOffset);
@@ -1153,6 +1248,7 @@ public partial class MainWindow : Window
         AssistPopup.IsOpen = false;
         CompletionList.ItemsSource = null;
         allCompletionItems = [];
+        lastCompletionFilterPrefix = null;
         CancelCompletionRequest();
         completionDescriptionCancellation?.Cancel();
         completionDescriptionCancellation?.Dispose();
@@ -1181,6 +1277,8 @@ public partial class MainWindow : Window
             HideAssist();
             return;
         }
+        if (string.Equals(lastCompletionFilterPrefix, prefix, StringComparison.Ordinal)) return;
+        lastCompletionFilterPrefix = prefix;
 
         var filtered = allCompletionItems
             .Where(item => item.FilterText.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
@@ -1414,6 +1512,22 @@ public partial class MainWindow : Window
         {
             await ClipboardService.SetTextAsync(await Task.Run(() => SnapshotJsonFormatter.Format(snapshot)));
             viewModel.SetLocalizedStatus("Status.CopiedJson");
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
+    }
+
+    private async void TranscriptTree_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.C || Keyboard.Modifiers != ModifierKeys.Control ||
+            sender is not TreeView { SelectedItem: ConsoleSnapshotNode node }) return;
+        e.Handled = true;
+        try
+        {
+            await ClipboardService.SetTextAsync(await Task.Run(() => node.CopyText));
+            viewModel.SetLocalizedStatus("Status.Copied");
         }
         catch (Exception error)
         {

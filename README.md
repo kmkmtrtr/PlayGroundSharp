@@ -69,7 +69,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
 - **NuGet**: search nuget.org, review package metadata and install the displayed exact version
 - **Libraries**: list imported packages, local DLLs and package runtime assemblies with versions and sources
-- **Structured results**: expand JSON, objects and arrays directly in the transcript; large captured collections are grouped into index ranges
+- **Structured results**: expand JSON, objects and arrays directly in the transcript; large captured collections are grouped into index ranges. Select a node and press `Ctrl+C` to copy that value.
 - **Inspect** on a result: open the same bounded property/item tree with search, path copy and full captured-value export in a separate window. Its size and tree/detail split are retained; `Ctrl+F`, `Ctrl+C`, `Ctrl+Shift+C` and `Esc` are available from the keyboard.
 - **File**: save or open a `.pgsworkspace` containing submissions, draft input, usings, DLL references and exact package versions
 - **Data**: insert bounded or streaming snippets for large text, byte, JSON-array and JSON Lines files

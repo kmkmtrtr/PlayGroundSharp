@@ -86,9 +86,9 @@
                         </Button.Style>
                     </Button>
                     <Border Width="1" Height="20" Background="{DynamicResource BorderBrush}" Margin="7,0" />
-                    <Button Content="■" Style="{StaticResource DangerIconToolbarButtonStyle}" Command="{Binding CancelCommand}" IsEnabled="{Binding CanCancel}"
+                    <Button Content="■" Style="{StaticResource DangerIconToolbarButtonStyle}" IsEnabled="{Binding CanCancel}"
                             ToolTip="{DynamicResource Tooltip.Stop}" AutomationProperties.Name="{DynamicResource Ui.Stop}" FontSize="13"
-                            Click="FocusEditorAfterCommand_Click" />
+                            Click="Cancel_Click" />
                     <Button Content="↻" Style="{StaticResource IconToolbarButtonStyle}" Click="RestartWorker_Click"
                             ToolTip="{DynamicResource Tooltip.Restart}" AutomationProperties.Name="{DynamicResource Ui.Restart}"
                             IsEnabled="{Binding IsWorkerConnected}" />
@@ -409,7 +409,8 @@
                                     </TextBlock>
                                     <TreeView ItemsSource="{Binding SnapshotRoots}" Background="Transparent" BorderThickness="0"
                                               Padding="0" FontFamily="Cascadia Mono,Consolas" FontSize="14"
-                                              Foreground="{DynamicResource ForegroundBrush}" HorizontalContentAlignment="Stretch">
+                                              Foreground="{DynamicResource ForegroundBrush}" HorizontalContentAlignment="Stretch"
+                                              PreviewKeyDown="TranscriptTree_PreviewKeyDown">
                                         <TreeView.Style>
                                             <Style TargetType="TreeView">
                                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -635,15 +636,14 @@
                             </Grid>
                         </TabItem>
                         <TabItem Header="{DynamicResource Tab.NuGet}">
-                            <Grid Margin="12" TextElement.Foreground="{DynamicResource ForegroundBrush}"
-                                  IsEnabled="{Binding CanChangeSession}">
+                            <Grid Margin="12" TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
-                                <Grid>
+                                <Grid IsEnabled="{Binding CanChangeSession}">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="PackageSearchBox" Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="NuGetSearchText" PreviewKeyDown="PackageSearchBox_PreviewKeyDown"
@@ -651,12 +651,13 @@
                                     <Button Grid.Column="1" Content="{DynamicResource NuGet.Search}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.Name="NuGetSearchButton"
                                             Command="{Binding SearchPackagesCommand}" Margin="7,0,0,0" />
                                 </Grid>
-                                <CheckBox Grid.Row="1" Content="{DynamicResource NuGet.IncludePrerelease}" IsChecked="{Binding IncludePrereleasePackages}" Margin="0,7,0,0" />
+                                <CheckBox Grid.Row="1" Content="{DynamicResource NuGet.IncludePrerelease}" IsChecked="{Binding IncludePrereleasePackages}" Margin="0,7,0,0"
+                                          IsEnabled="{Binding CanChangeSession}" />
                                 <TextBlock Grid.Row="2" Text="{Binding PackageSearchMessage}" Margin="0,7" TextWrapping="Wrap"
                                            Foreground="{DynamicResource MutedBrush}" />
-                                <ListBox Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="NuGetSearchResults" BorderThickness="0"
+                                <ListBox x:Name="PackageSearchResults" Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="NuGetSearchResults" BorderThickness="0"
                                          Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" PreviewKeyDown="PackageSearchResults_PreviewKeyDown">
                                     <ListBox.ItemContainerStyle>
                                         <Style TargetType="ListBoxItem">
                                             <Setter Property="AutomationProperties.Name" Value="{Binding PackageId}" />
@@ -677,7 +678,8 @@
                                                     </StackPanel>
                                                     <Button Grid.Column="1" Grid.RowSpan="2" Content="{DynamicResource NuGet.Install}" Style="{StaticResource AccentButtonStyle}" Padding="10,4"
                                                             Command="{Binding DataContext.InstallPackageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}" />
+                                                            CommandParameter="{Binding}"
+                                                            IsEnabled="{Binding DataContext.CanChangeSession, RelativeSource={RelativeSource AncestorType=Window}}" />
                                                     <TextBlock Grid.Row="1" Text="{Binding Description}" TextWrapping="Wrap" MaxHeight="42" Margin="0,4,8,0" />
                                                     <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}">
                                                         <Run Text="{Binding Authors}"/><Run Text=" · "/><Run Text="{Binding TotalDownloads, StringFormat={}{0:N0}}"/><Run Text="{DynamicResource NuGet.DownloadsSuffix}"/>
@@ -720,10 +722,9 @@
                             </Grid>
                         </TabItem>
                         <TabItem Header="{DynamicResource Tab.Usings}">
-                            <Grid Margin="10" TextElement.Foreground="{DynamicResource ForegroundBrush}"
-                                  IsEnabled="{Binding CanChangeSession}">
+                            <Grid Margin="10" TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                                <Grid>
+                                <Grid IsEnabled="{Binding CanChangeSession}">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="NewUsingBox" Text="{Binding NewUsingText, UpdateSourceTrigger=PropertyChanged}"
                                              Height="32" Padding="9,4" PreviewKeyDown="NewUsingBox_PreviewKeyDown"
@@ -742,6 +743,7 @@
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding}" />
                                                 <Button Grid.Column="1" Content="×" Click="RemoveUsing_Click"
                                                         Style="{StaticResource InlineRemoveButtonStyle}"
+                                                        IsEnabled="{Binding DataContext.CanChangeSession, RelativeSource={RelativeSource AncestorType=Window}}"
                                                         ToolTip="{DynamicResource Usings.Remove}"
                                                         AutomationProperties.Name="{DynamicResource Usings.Remove}" />
                                             </Grid>
@@ -786,7 +788,18 @@
                     <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Ellipse Width="6" Height="6" Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,7,0" />
+                <Ellipse Width="6" Height="6" VerticalAlignment="Center" Margin="0,0,7,0" ToolTip="{Binding Status}">
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse">
+                            <Setter Property="Fill" Value="{DynamicResource MutedBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsWorkerConnected}" Value="True">
+                                    <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
                 <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource ForegroundBrush}" FontSize="11.5" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="2" Text="{Binding SessionStatus}" Margin="16,0" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="3" Text="{Binding DiagnosticStatus}" ToolTip="{Binding DiagnosticDetails}"

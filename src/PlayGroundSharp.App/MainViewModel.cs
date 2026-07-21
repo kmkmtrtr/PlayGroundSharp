@@ -54,6 +54,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly BulkObservableCollection<VariableItem> variableItems = [];
     private CancellationTokenSource? diagnosticDelay;
     private CancellationTokenSource? typeExplorerSearchDelay;
+    private CancellationTokenSource? variableSearchDelay;
     private CancellationTokenSource? typeExplorerRefresh;
     private CancellationTokenSource? packageOperationCancellation;
     private IReadOnlyList<SymbolExplorerEntry> typeExplorerEntries = [];
@@ -140,7 +141,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         new(AppLanguageMode.Japanese, "日本語"),
         new(AppLanguageMode.English, "English")
     ];
-    public IAsyncRelayCommand CancelCommand { get; }
     public IAsyncRelayCommand ResetCommand { get; }
     public IAsyncRelayCommand RestartWorkerCommand { get; }
     public IRelayCommand ClearCommand { get; }
@@ -161,7 +161,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         CursorStatus = Localize("Cursor.Position", 1, 1);
         TypeExplorerStatus = Localize("Explorer.Loading");
         SetPackageSearchMessage("Package.SearchPrompt");
-        CancelCommand = new AsyncRelayCommand(CancelAsync);
         ResetCommand = new AsyncRelayCommand(ResetAsync);
         RestartWorkerCommand = new AsyncRelayCommand(RestartWorkerAsync);
         ClearCommand = new RelayCommand(Transcript.Clear);
@@ -170,8 +169,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SearchPackagesCommand = new AsyncRelayCommand(SearchPackagesAsync);
         InstallPackageCommand = new AsyncRelayCommand<NuGetPackageInfo>(InstallPackageAsync);
         AddUsingFromGuiCommand = new AsyncRelayCommand(AddUsingFromGuiAsync);
-        worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEventSafely(envelope));
-        worker.Disconnected += disconnection => Application.Current.Dispatcher.Invoke(() =>
+        worker.EventReceived += envelope => InvokeOnUi(() => HandleWorkerEventSafely(envelope));
+        worker.Disconnected += disconnection => InvokeOnUi(() =>
         {
             IsWorkerConnected = false;
             SetLocalizedStatus("Status.WorkerDisconnected");
@@ -187,6 +186,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             };
             Transcript.Add(TranscriptLine.System(Localize("Message.WorkerDisconnected", reason)));
         });
+    }
+
+    private static void InvokeOnUi(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted) return;
+        if (dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+        try
+        {
+            dispatcher.Invoke(action);
+        }
+        catch (Exception error) when (dispatcher.HasShutdownStarted &&
+                                      error is InvalidOperationException or TaskCanceledException)
+        {
+            // Notifications racing with application shutdown no longer have a UI consumer.
+        }
     }
 
     public string Localize(string key, params object?[] arguments) =>
@@ -688,7 +707,35 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         RebuildTypeExplorer();
     }
 
-    partial void OnVariableFilterTextChanged(string value) => VariableItemsView.Refresh();
+    partial void OnVariableFilterTextChanged(string value) => ScheduleVariableFilterRefresh();
+
+    internal void ApplyVariableFilterNow()
+    {
+        variableSearchDelay?.Cancel();
+        variableSearchDelay?.Dispose();
+        variableSearchDelay = null;
+        VariableItemsView.Refresh();
+    }
+
+    private void ScheduleVariableFilterRefresh()
+    {
+        variableSearchDelay?.Cancel();
+        variableSearchDelay?.Dispose();
+        variableSearchDelay = new CancellationTokenSource();
+        _ = RefreshVariableFilterAfterDelayAsync(variableSearchDelay.Token);
+    }
+
+    private async Task RefreshVariableFilterAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(120, cancellationToken);
+            VariableItemsView.Refresh();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
 
     partial void OnThemeModeChanged(AppThemeMode value)
     {
@@ -1289,9 +1336,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private void RebuildTypeExplorer()
     {
         var query = TypeExplorerSearchText.Trim();
-        var allMatches = string.IsNullOrEmpty(query)
-            ? typeExplorerEntries
-            : typeExplorerEntries.Where(entry =>
+        IReadOnlyList<SymbolExplorerEntry> filtered;
+        int totalMatchCount;
+        int displayedMatchCount;
+        if (string.IsNullOrEmpty(query))
+        {
+            filtered = typeExplorerEntries;
+            totalMatchCount = typeExplorerEntries.Count;
+            displayedMatchCount = totalMatchCount;
+        }
+        else
+        {
+            var allMatches = typeExplorerEntries.Where(entry =>
                 entry.FullName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 entry.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 entry.Kind.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -1299,19 +1355,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 entry.Summary.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 entry.Parameters.Any(parameter =>
                     parameter.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                    parameter.Summary.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
-        var totalMatchCount = allMatches.Count;
-        var matched = string.IsNullOrEmpty(query)
-            ? allMatches
-            : allMatches.Take(MaximumExplorerSearchResults).ToArray();
-        var parentKeys = matched
-            .Where(static entry => entry.ContainingType is not null)
-            .Select(static entry => (entry.Namespace, TypeName: entry.ContainingType!, entry.AssemblyName))
-            .ToHashSet();
-        var filtered = matched.Concat(typeExplorerEntries.Where(entry =>
-                entry.ContainingType is null && parentKeys.Contains((entry.Namespace, entry.Name, entry.AssemblyName))))
-            .Distinct()
-            .ToArray();
+                    parameter.Summary.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            totalMatchCount = allMatches.Length;
+            var matched = allMatches.Take(MaximumExplorerSearchResults).ToArray();
+            displayedMatchCount = matched.Length;
+            var parentKeys = matched
+                .Where(static entry => entry.ContainingType is not null)
+                .Select(static entry => (entry.Namespace, TypeName: entry.ContainingType!, entry.AssemblyName))
+                .ToHashSet();
+            filtered = matched.Concat(typeExplorerEntries.Where(entry =>
+                    entry.ContainingType is null && parentKeys.Contains((entry.Namespace, entry.Name, entry.AssemblyName))))
+                .Distinct()
+                .ToArray();
+        }
 
         var root = new ExplorerNodeBuilder(string.Empty, string.Empty);
         foreach (var entry in filtered)
@@ -1338,8 +1395,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 typeExplorerEntries.Count(static entry => entry.ContainingType is null && entry.Kind != "method"),
                 typeExplorerEntries.Count(static entry => entry.Kind is "method" or "constructor"),
                 typeExplorerEntries.Count(static entry => entry.Kind == "enum member"))
-            : totalMatchCount > matched.Count
-                ? Localize("Explorer.MatchesLimited", totalMatchCount, matched.Count)
+            : totalMatchCount > displayedMatchCount
+                ? Localize("Explorer.MatchesLimited", totalMatchCount, displayedMatchCount)
                 : Localize("Explorer.Matches", totalMatchCount);
     }
 
@@ -1478,6 +1535,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         diagnosticDelay?.Dispose();
         typeExplorerSearchDelay?.Cancel();
         typeExplorerSearchDelay?.Dispose();
+        variableSearchDelay?.Cancel();
+        variableSearchDelay?.Dispose();
         typeExplorerRefresh?.Cancel();
         typeExplorerRefresh?.Dispose();
         packageOperationCancellation?.Cancel();

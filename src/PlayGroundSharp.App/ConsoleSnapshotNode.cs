@@ -8,6 +8,8 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
 {
     private const int GroupSize = 100;
     private const int DirectChildLimit = 120;
+    private readonly ResultSnapshot? snapshot;
+    private readonly Func<string>? copyTextFactory;
     private readonly Func<IReadOnlyList<ConsoleSnapshotNode>>? childrenFactory;
     private IReadOnlyList<ConsoleSnapshotNode>? children;
 
@@ -15,17 +17,24 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
         string name,
         string preview,
         Func<IReadOnlyList<ConsoleSnapshotNode>>? childrenFactory = null,
-        bool isExpanded = false)
+        bool isExpanded = false,
+        ResultSnapshot? snapshot = null,
+        Func<string>? copyTextFactory = null)
     {
         Name = name;
         Preview = preview;
         this.childrenFactory = childrenFactory;
+        this.snapshot = snapshot;
+        this.copyTextFactory = copyTextFactory;
         this.isExpanded = isExpanded;
     }
 
     public string Name { get; }
     public string Separator => Name.Length == 0 ? string.Empty : ": ";
     public string Preview { get; }
+    public string CopyText => snapshot is not null
+        ? SnapshotTextFormatter.FormatFull(snapshot)
+        : copyTextFactory?.Invoke() ?? Preview;
     public bool HasName => Name.Length > 0;
     public IReadOnlyList<ConsoleSnapshotNode> Children =>
         children ??= childrenFactory?.Invoke() ?? [];
@@ -42,7 +51,7 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
     }
 
     private static ConsoleSnapshotNode Create(string name, ResultSnapshot snapshot, bool isExpanded = false) =>
-        new(name, FormatPreview(snapshot), HasChildren(snapshot) ? () => CreateChildren(snapshot) : null, isExpanded);
+        new(name, FormatPreview(snapshot), HasChildren(snapshot) ? () => CreateChildren(snapshot) : null, isExpanded, snapshot);
 
     private static IReadOnlyList<ConsoleSnapshotNode> CreateChildren(ResultSnapshot snapshot)
     {
@@ -78,7 +87,12 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
                 $"properties {start:N0}–{start + count - 1:N0}",
                 $"{{{count:N0} properties}}",
                 () => properties.Skip(start).Take(count)
-                    .Select(property => Create(property.Name, property.Value)).ToArray()));
+                    .Select(property => Create(property.Name, property.Value)).ToArray(),
+                copyTextFactory: () => SnapshotTextFormatter.FormatFull(new ResultSnapshot(
+                    SnapshotKind.Object,
+                    $"{count:N0} properties",
+                    null,
+                    Properties: properties.Skip(start).Take(count).ToArray()))));
         }
         return groups;
     }
@@ -96,7 +110,13 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
                 $"[{start:N0} … {start + count - 1:N0}]",
                 $"{count:N0} items",
                 () => items.Skip(start).Take(count)
-                    .Select((item, index) => Create($"[{start + index}]", item)).ToArray()));
+                    .Select((item, index) => Create($"[{start + index}]", item)).ToArray(),
+                copyTextFactory: () => SnapshotTextFormatter.FormatFull(new ResultSnapshot(
+                    SnapshotKind.Sequence,
+                    $"{count:N0} items",
+                    snapshot.TypeName,
+                    Items: items.Skip(start).Take(count).ToArray(),
+                    TotalCount: count))));
         }
         AddCaptureLimitNode(groups, snapshot, items.Count);
         return groups;

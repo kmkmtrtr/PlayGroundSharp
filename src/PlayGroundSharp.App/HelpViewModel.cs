@@ -51,7 +51,7 @@ public sealed partial class HelpViewModel : ObservableObject
         [
             new("確認とプレビュー", "Inspectは内容を読まずサイズを返します。PreviewTextとReadBytesは最大1 MiBに制限されます。", "Data.Inspect(@\"C:\\data\\large.json\")\nData.PreviewText(@\"C:\\data\\large.log\", 65536)"),
             new("行ストリーム", "ReadLinesは遅延列挙です。Takeなどで件数を絞ってください。", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)"),
-            new("JSON", "オブジェクト、配列、スカラーを含む1つのJSON値を読み込みます。結果はその場で展開でき、右クリックからコピー、保存、別ウィンドウの詳細表示を利用できます。大きな配列やオブジェクトは最初は折りたたまれ、100件単位の範囲から必要な部分だけ展開できます。", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
+            new("JSON", "オブジェクト、配列、スカラーを含む1つのJSON値を読み込みます。結果はその場で展開でき、ツリーで選択した値はCtrl+C、結果全体は右クリックからコピー、保存、別ウィンドウの詳細表示を利用できます。大きな配列やオブジェクトは最初は折りたたまれ、100件単位の範囲から必要な部分だけ展開できます。", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
             new("JSON配列", "トップレベル配列をストリーム解析し、指定件数だけ保持します。takeは最大10,000件です。", "await Data.ReadJsonArrayAsync(@\"C:\\data\\large.json\", take: 100)"),
             new("JSON Lines", "一行一JSONを非同期列挙します。必要な件数でbreakしてください。", "var rows = new List<JsonElement>();\nawait foreach (var row in Data.ReadJsonLinesAsync(@\"C:\\data\\events.jsonl\"))\n{\n    rows.Add(row);\n    if (rows.Count == 100) break;\n}\nrows")
         ]),
@@ -94,7 +94,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Large files and JSON", "Data helpers avoid loading entire files by default.",
         [
             new("Preview", "PreviewText and ReadBytes are bounded to 1 MiB.", "Data.Inspect(@\"C:\\data\\large.json\")\nData.PreviewText(@\"C:\\data\\large.log\")"),
-            new("JSON", "ReadJsonAsync loads one complete JSON object, array, or scalar. Expand it inline, or right-click the result to copy, save, or inspect it in a separate window. Large structures start collapsed and can be opened in groups of 100 items.", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
+            new("JSON", "ReadJsonAsync loads one complete JSON object, array, or scalar. Expand it inline, press Ctrl+C to copy the selected tree value, or right-click the result to copy, save, or inspect it in a separate window. Large structures start collapsed and can be opened in groups of 100 items.", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
             new("Streaming", "ReadLines is lazy. JSON arrays and JSON Lines are parsed incrementally.", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)\nawait Data.ReadJsonArrayAsync(@\"C:\\data\\large.json\", 100)")
         ]),
         new("Dependencies", "Add NuGet packages, DLLs, and usings to execution and IntelliSense.",

@@ -79,11 +79,13 @@ public partial class ResultInspectorWindow : Window
             SearchBox.SelectAll();
             return;
         }
-        if (e.Key == Key.Enter && ReferenceEquals(Keyboard.FocusedElement, SearchBox))
+        if (e.Key is Key.Enter or Key.Down && Keyboard.Modifiers == ModifierKeys.None &&
+            ReferenceEquals(Keyboard.FocusedElement, SearchBox))
         {
             e.Handled = true;
             searchTimer.Stop();
             await ApplySearchAsync();
+            FocusFirstResult();
             return;
         }
         if (e.Key == Key.Escape)
@@ -141,6 +143,11 @@ public partial class ResultInspectorWindow : Window
         {
             return;
         }
+        catch (Exception error)
+        {
+            if (!cancellationToken.IsCancellationRequested) SetSearchStatus(error.Message);
+            return;
+        }
 
         if (cancellationToken.IsCancellationRequested || !string.Equals(query, SearchBox.Text, StringComparison.Ordinal)) return;
         Roots.Clear();
@@ -160,6 +167,16 @@ public partial class ResultInspectorWindow : Window
             : root is null
                 ? AppLocalization.Text(languageMode, "Inspector.NoMatches")
                 : AppLocalization.Text(languageMode, "Inspector.MatchCount", matches));
+    }
+
+    private void FocusFirstResult()
+    {
+        if (Roots.Count == 0) return;
+        SnapshotTree.UpdateLayout();
+        if (SnapshotTree.ItemContainerGenerator.ContainerFromIndex(0) is not TreeViewItem item) return;
+        item.IsSelected = true;
+        item.BringIntoView();
+        item.Focus();
     }
 
     private void ExpandSelected_Click(object sender, RoutedEventArgs e)

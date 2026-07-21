@@ -435,6 +435,8 @@
                                         </TreeView.Resources>
                                         <TreeView.ItemContainerStyle>
                                             <Style TargetType="TreeViewItem">
+                                                <EventSetter Event="Expanded" Handler="TranscriptTree_ExpansionChanged" />
+                                                <EventSetter Event="Collapsed" Handler="TranscriptTree_ExpansionChanged" />
                                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
                                                 <Setter Property="AutomationProperties.Name" Value="{Binding Preview}" />
                                                 <Setter Property="Padding" Value="0,1" />

@@ -1895,6 +1895,16 @@ public partial class MainWindow : Window
         await CopyTextAsync(() => node.CopyText);
     }
 
+    private void TranscriptTree_ExpansionChanged(object sender, RoutedEventArgs e)
+    {
+        // Expanding a structured result changes the ScrollViewer extent without adding
+        // a transcript row. Re-evaluate sticky scrolling after layout so the jump button
+        // appears when the active prompt is pushed out of view.
+        Dispatcher.BeginInvoke(() => SetTranscriptAutoScroll(
+                TranscriptScroll.ScrollableHeight - TranscriptScroll.VerticalOffset <= 2),
+            DispatcherPriority.Loaded);
+    }
+
     private async Task CopyTextAsync(Func<string> textFactory, string successStatus = "Status.Copied")
     {
         if (copyInProgress) return;

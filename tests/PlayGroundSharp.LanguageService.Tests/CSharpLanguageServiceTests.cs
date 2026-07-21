@@ -8,6 +8,17 @@ public sealed class CSharpLanguageServiceTests
 {
     private readonly CSharpLanguageService service = new();
 
+    [Theory]
+    [InlineData("var value = 42", false)]
+    [InlineData("Enumerable.Range(1, 10).Sum()", false)]
+    [InlineData("record Customer(string Name)", true)]
+    [InlineData("enum Status { Ready, Busy }", true)]
+    [InlineData("int Twice(int value) => value * 2", true)]
+    public void DetectsSubmissionsThatCanChangeTheSymbolExplorer(string code, bool expected)
+    {
+        Assert.Equal(expected, CSharpLanguageService.ContainsSymbolExplorerDeclarations(code));
+    }
+
     [Fact]
     public async Task CompletesSessionVariablesArrayAndLinqMembers()
     {
@@ -220,6 +231,29 @@ public sealed class CSharpLanguageServiceTests
         Assert.Contains(signature.Signatures, static item => item.DisplayText.Contains("Join", StringComparison.Ordinal));
         Assert.Contains(signature.Signatures, static item => !string.IsNullOrWhiteSpace(item.Summary));
         Assert.All(signature.Signatures, static item => Assert.True(item.ActiveParameter is -1 or 0));
+        Assert.Contains(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Theory]
+    [InlineData("1 + 2")]
+    [InlineData("delayed + 1")]
+    [InlineData("var next = delayed + 1")]
+    public async Task DoesNotReportErrorsForValidTrailingExpressions(string currentCode)
+    {
+        var context = new SessionContext(["var delayed = 42;"], SessionContext.DefaultImports, []);
+
+        var diagnostics = await service.GetDiagnosticsAsync(context, currentCode);
+
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public async Task KeepsMissingSemicolonDiagnosticsInsideTheCurrentSubmission()
+    {
+        const string code = "var first = 1\nvar second = 2;";
+
+        var diagnostics = await service.GetDiagnosticsAsync(SessionContext.Empty, code);
+
         Assert.Contains(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 

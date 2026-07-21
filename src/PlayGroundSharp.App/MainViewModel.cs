@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Reflection;
@@ -49,6 +50,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly List<string> localReferences = [];
     private readonly List<(string Id, string Version)> packages = [];
     private readonly List<string> history = [];
+    private readonly BulkObservableCollection<TranscriptLine> transcript = [];
+    private readonly BulkObservableCollection<VariableItem> variableItems = [];
     private CancellationTokenSource? diagnosticDelay;
     private CancellationTokenSource? typeExplorerSearchDelay;
     private CancellationTokenSource? typeExplorerRefresh;
@@ -56,6 +59,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<SymbolExplorerEntry> typeExplorerEntries = [];
     private int diagnosticErrorCount;
     private int diagnosticWarningCount;
+    private bool diagnosticsDeferred;
     private int cursorLine = 1;
     private int cursorColumn = 1;
     private string statusLocalizationKey = "Status.StartingWorker";
@@ -74,6 +78,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string status = "Starting Worker";
     [ObservableProperty] private string sessionStatus = "0 submissions";
     [ObservableProperty] private string diagnosticStatus = "0 errors, 0 warnings";
+    [ObservableProperty] private string diagnosticDetails = string.Empty;
     [ObservableProperty] private string cursorStatus = "Ln 1, Col 1";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
@@ -98,12 +103,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private AppThemeMode themeMode = InitialSettings.ThemeMode;
     [ObservableProperty] private AppLanguageMode languageMode = InitialSettings.LanguageMode;
 
-    public ObservableCollection<TranscriptLine> Transcript { get; } = [];
+    public ObservableCollection<TranscriptLine> Transcript => transcript;
     public bool CanCancel => IsRunning || IsPackageSearchBusy;
     public ObservableCollection<string> PackageItems { get; } = [];
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
-    public ObservableCollection<VariableItem> VariableItems { get; } = [];
+    public ObservableCollection<VariableItem> VariableItems => variableItems;
     public ICollectionView VariableItemsView { get; }
     public ObservableCollection<NuGetPackageInfo> PackageSearchItems { get; } = [];
     public ObservableCollection<LibraryItem> LibraryItems { get; } = [];
@@ -161,6 +166,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             IsRunning = false;
             SignalExecutionFinished();
             VariableItems.Clear();
+            ScheduleDiagnostics(InputText);
             var reason = disconnection.Kind switch
             {
                 WorkerDisconnectionKind.ProcessExited => Localize("Message.WorkerExitCode", disconnection.ExitCode),
@@ -438,6 +444,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         submissions.Clear();
         executingCode = null;
         VariableItems.Clear();
+        ScheduleDiagnostics(InputText);
         SetSessionStatus("Session.StateLost");
         Transcript.Add(TranscriptLine.System(Localize("Message.ForcedRestart")));
     }
@@ -539,6 +546,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             if (imports.Contains(value, StringComparer.Ordinal)) return false;
             imports.Add(value);
             UsingItems.Add(value);
+            ScheduleDiagnostics(InputText);
             _ = RefreshTypeExplorerAsync();
             return true;
         }
@@ -584,6 +592,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }
 
             SetLocalizedStatus("Status.RemovedUsing", value);
+            ScheduleDiagnostics(InputText);
             await RefreshTypeExplorerAsync();
             return true;
         }
@@ -625,15 +634,29 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     partial void OnInputTextChanged(string value)
+        => ScheduleDiagnostics(value);
+
+    private void ScheduleDiagnostics(string value)
     {
         diagnosticDelay?.Cancel();
         diagnosticDelay?.Dispose();
         diagnosticDelay = null;
+        diagnosticsDeferred = false;
         if (string.IsNullOrWhiteSpace(value))
         {
             diagnosticErrorCount = 0;
             diagnosticWarningCount = 0;
             DiagnosticStatus = Localize("Diagnostics.Count", 0, 0);
+            DiagnosticDetails = string.Empty;
+            return;
+        }
+        if (IsRunning || isPreparingExecution)
+        {
+            diagnosticErrorCount = 0;
+            diagnosticWarningCount = 0;
+            diagnosticsDeferred = true;
+            DiagnosticStatus = Localize("Diagnostics.Deferred");
+            DiagnosticDetails = Localize("Diagnostics.DeferredDetail");
             return;
         }
         diagnosticDelay = new CancellationTokenSource();
@@ -650,8 +673,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         SaveSettings();
         App.ApplyTheme(value);
-        for (var index = 0; index < Transcript.Count; index++)
-            Transcript[index] = Transcript[index].WithCurrentTheme();
+        transcript.ReplaceAll(Transcript.Select(static line => line.WithCurrentTheme()).ToArray());
     }
 
     partial void OnLanguageModeChanged(AppLanguageMode value)
@@ -661,7 +683,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         UpdateThemeOptionLabels(value);
         Status = Localize(statusLocalizationKey, statusLocalizationArguments);
         SessionStatus = Localize(sessionLocalizationKey, sessionLocalizationArguments);
-        DiagnosticStatus = Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
+        DiagnosticStatus = diagnosticsDeferred
+            ? Localize("Diagnostics.Deferred")
+            : Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
+        if (diagnosticsDeferred) DiagnosticDetails = Localize("Diagnostics.DeferredDetail");
         CursorStatus = Localize("Cursor.Position", cursorLine, cursorColumn);
         if (packageSearchLocalizationKey is not null)
             PackageSearchMessage = Localize(packageSearchLocalizationKey, packageSearchLocalizationArguments);
@@ -751,6 +776,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             diagnosticErrorCount = errors;
             diagnosticWarningCount = warnings;
             DiagnosticStatus = Localize("Diagnostics.Count", errors, warnings);
+            const int detailLimit = 12;
+            DiagnosticDetails = string.Join(Environment.NewLine, diagnostics.Take(detailLimit).Select(static item =>
+                $"{item.Id} ({item.StartLine},{item.StartColumn}): {item.Message}"));
+            if (diagnostics.Count > detailLimit)
+                DiagnosticDetails += Environment.NewLine + Localize("Diagnostics.More", diagnostics.Count - detailLimit);
         }
         catch (OperationCanceledException) { }
         catch (Exception)
@@ -760,6 +790,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 diagnosticErrorCount = 0;
                 diagnosticWarningCount = 0;
                 DiagnosticStatus = Localize("Diagnostics.Unavailable");
+                DiagnosticDetails = Localize("Diagnostics.Unavailable");
             }
         }
     }
@@ -790,30 +821,27 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Transcript.Add(TranscriptLine.Diagnostic($"{exception.TypeName}: {exception.Message}"));
                 break;
             case MessageKinds.Variables:
-                using (VariableItemsView.DeferRefresh())
-                {
-                    VariableItems.Clear();
-                    foreach (var variable in envelope.ReadPayload<VariablesEvent>().Variables)
-                        VariableItems.Add(new(
-                            variable.Name,
-                            variable.TypeName,
-                            FormatSnapshot(variable.Value),
-                            variable.IsReadOnly,
-                            variable.Value));
-                }
+                variableItems.ReplaceAll(envelope.ReadPayload<VariablesEvent>().Variables.Select(variable => new VariableItem(
+                    variable.Name,
+                    variable.TypeName,
+                    FormatSnapshot(variable.Value),
+                    variable.IsReadOnly,
+                    variable.Value)));
                 break;
             case MessageKinds.Completed:
                 var completed = envelope.ReadPayload<ExecutionCompletedEvent>();
                 if (completed.StateAccepted && executingCode is not null)
                 {
                     submissions.Add(executingCode);
-                    if (!IsWorkspaceBusy) _ = RefreshTypeExplorerAsync();
+                    if (!IsWorkspaceBusy && CSharpLanguageService.ContainsSymbolExplorerDeclarations(executingCode))
+                        _ = RefreshTypeExplorerAsync();
                 }
                 executingCode = null;
                 IsRunning = false;
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 SetSessionStatus("Session.Memory", submissions.Count, completed.WorkerMemoryBytes / 1024 / 1024);
+                ScheduleDiagnostics(InputText);
                 break;
             case MessageKinds.Cancelled:
                 if (IsPackageSearchBusy)
@@ -825,12 +853,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 Transcript.Add(TranscriptLine.System(Localize("Message.ExecutionCancelled")));
+                ScheduleDiagnostics(InputText);
                 break;
             case MessageKinds.Error:
                 Transcript.Add(TranscriptLine.Diagnostic(envelope.ReadPayload<WorkerErrorEvent>().Message));
                 IsRunning = false;
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
+                ScheduleDiagnostics(InputText);
                 break;
             case MessageKinds.PackageProgress:
                 SetLocalizedStatus("Status.RestoringPackage");
@@ -849,6 +879,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                         references.Add(path);
                         ReferenceItems.Add(path);
                     }
+                ScheduleDiagnostics(InputText);
                 if (!IsWorkspaceBusy) _ = RefreshTypeExplorerAsync();
                 Transcript.Add(TranscriptLine.System(Localize("Message.PackageAdded", package.PackageId, package.Version)));
                 break;
@@ -874,6 +905,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             await worker.ResetAsync();
             submissions.Clear();
             VariableItems.Clear();
+            ScheduleDiagnostics(InputText);
             SetSessionStatus("Session.Count", 0);
             Transcript.Add(TranscriptLine.System(Localize("Message.SessionReset")));
             await RefreshTypeExplorerAsync();
@@ -896,6 +928,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             executingCode = null;
             VariableItems.Clear();
             IsRunning = false;
+            ScheduleDiagnostics(InputText);
             SignalExecutionFinished();
             SetLocalizedStatus("Status.Ready");
             SetSessionStatus("Session.Restarted");
@@ -1113,6 +1146,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 ReferenceItems.Add(path);
                 AddAssemblyLibrary(path, "Local DLL");
             }
+            ScheduleDiagnostics(InputText);
             await RefreshTypeExplorerAsync();
             Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceAdded", path)));
         }
@@ -1350,6 +1384,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 ? string.Join('.', new[] { entry.Namespace, entry.ContainingType }.Where(static part => !string.IsNullOrEmpty(part)))
                 : entry.FullName;
             return Regex.Replace(fullName, "<[^>]+>", string.Empty).ToLowerInvariant();
+        }
+    }
+
+    private sealed class BulkObservableCollection<T> : ObservableCollection<T>
+    {
+        public void ReplaceAll(IEnumerable<T> items)
+        {
+            CheckReentrancy();
+            Items.Clear();
+            foreach (var item in items) Items.Add(item);
+            OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+            OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+            OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
         }
     }
 

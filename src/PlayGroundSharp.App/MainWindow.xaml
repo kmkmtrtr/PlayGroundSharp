@@ -115,6 +115,7 @@
                     </MenuItem>
                     <MenuItem Header="{DynamicResource Menu.Edit}" Style="{StaticResource HeaderMenuItemStyle}">
                         <MenuItem Header="{DynamicResource Menu.FocusInput}" Click="FocusInput_Click" InputGestureText="Ctrl+L" />
+                        <MenuItem Header="{DynamicResource Menu.SearchSymbols}" Click="FocusExplorerSearch_Click" InputGestureText="Ctrl+F" />
                         <Separator />
                         <MenuItem Header="{DynamicResource Menu.CopyTranscript}" Click="CopyTranscript_Click" InputGestureText="Ctrl+Shift+C" />
                         <MenuItem Header="{DynamicResource Menu.SaveTranscript}" Click="SaveTranscript_Click" />
@@ -581,9 +582,21 @@
                                     <ListView.View>
                                         <GridView>
                                             <GridViewColumn Header="{DynamicResource Column.Kind}" DisplayMemberBinding="{Binding Kind}" Width="48" />
-                                            <GridViewColumn Header="{DynamicResource Column.Name}" DisplayMemberBinding="{Binding Name}" Width="90" />
-                                            <GridViewColumn Header="{DynamicResource Column.Type}" DisplayMemberBinding="{Binding TypeName}" Width="120" />
-                                            <GridViewColumn Header="{DynamicResource Column.Value}" DisplayMemberBinding="{Binding Value}" Width="180" />
+                                            <GridViewColumn Header="{DynamicResource Column.Name}" Width="110">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate><TextBlock Text="{Binding Name}" ToolTip="{Binding Name}" TextTrimming="CharacterEllipsis" /></DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                            <GridViewColumn Header="{DynamicResource Column.Type}" Width="140">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate><TextBlock Text="{Binding TypeName}" ToolTip="{Binding TypeName}" TextTrimming="CharacterEllipsis" /></DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                            <GridViewColumn Header="{DynamicResource Column.Value}" Width="220">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate><TextBlock Text="{Binding Value}" ToolTip="{Binding Value}" TextTrimming="CharacterEllipsis" /></DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
                                         </GridView>
                                     </ListView.View>
                                 </ListView>
@@ -772,7 +785,9 @@
                 <Ellipse Width="6" Height="6" Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,7,0" />
                 <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource ForegroundBrush}" FontSize="11.5" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="2" Text="{Binding SessionStatus}" Margin="16,0" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="3" Text="{Binding DiagnosticStatus}" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,18,0" />
+                <TextBlock Grid.Column="3" Text="{Binding DiagnosticStatus}" ToolTip="{Binding DiagnosticDetails}"
+                           ToolTipService.InitialShowDelay="250" ToolTipService.ShowDuration="20000"
+                           Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,18,0" />
                 <TextBlock Grid.Column="4" Text="{Binding CursorStatus}" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
             </Grid>
         </Border>

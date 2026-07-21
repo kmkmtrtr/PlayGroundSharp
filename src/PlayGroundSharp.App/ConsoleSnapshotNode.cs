@@ -33,7 +33,13 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
     [ObservableProperty] private bool isExpanded;
 
     public static ConsoleSnapshotNode CreateRoot(ResultSnapshot snapshot) =>
-        Create(string.Empty, snapshot, isExpanded: true);
+        Create(string.Empty, snapshot, isExpanded: ShouldExpandRoot(snapshot));
+
+    private static bool ShouldExpandRoot(ResultSnapshot snapshot)
+    {
+        var count = snapshot.TotalCount ?? snapshot.Properties?.Count ?? snapshot.Items?.Count ?? 0;
+        return count <= DirectChildLimit;
+    }
 
     private static ConsoleSnapshotNode Create(string name, ResultSnapshot snapshot, bool isExpanded = false) =>
         new(name, FormatPreview(snapshot), HasChildren(snapshot) ? () => CreateChildren(snapshot) : null, isExpanded);

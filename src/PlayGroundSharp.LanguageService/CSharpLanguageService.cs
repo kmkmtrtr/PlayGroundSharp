@@ -84,6 +84,18 @@ public sealed class CSharpLanguageService
     private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, DocumentationInfo>> DocumentationFileCache =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Returns whether accepting a submission can add entries to the symbol explorer.</summary>
+    public static bool ContainsSymbolExplorerDeclarations(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return false;
+        var root = CSharpSyntaxTree.ParseText(
+            code,
+            new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script)).GetRoot();
+        return root.DescendantNodes().Any(static node =>
+            node is BaseTypeDeclarationSyntax or DelegateDeclarationSyntax or
+                MethodDeclarationSyntax or LocalFunctionStatementSyntax);
+    }
+
     public async Task<IReadOnlyList<CompletionCandidate>> GetCompletionsAsync(
         SessionContext context,
         string currentCode,
@@ -513,8 +525,10 @@ public sealed class CSharpLanguageService
         var model = await workspaceDocument.Document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
         if (model is null) return [];
         var currentStart = workspaceDocument.CurrentOffset;
+        var significantEnd = currentStart + currentCode.TrimEnd().Length;
         return model.GetDiagnostics(new TextSpan(currentStart, currentCode.Length), cancellationToken)
             .Where(static diagnostic => diagnostic.Severity != DiagnosticSeverity.Hidden)
+            .Where(diagnostic => diagnostic.Id != "CS1002" || diagnostic.Location.SourceSpan.Start < significantEnd)
             .Select(diagnostic => ToDiagnostic(diagnostic, currentStart))
             .ToArray();
     }

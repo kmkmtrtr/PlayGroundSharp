@@ -38,6 +38,8 @@ public partial class MainWindow : Window
     private HwndSource? windowSource;
     private bool transcriptAutoScroll = true;
     private WindowState lastNonMinimizedWindowState = WindowState.Normal;
+    private bool closeInProgress;
+    private bool closeCompleted;
 
     public MainWindow()
     {
@@ -92,6 +94,11 @@ public partial class MainWindow : Window
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (closeCompleted) return;
+        e.Cancel = true;
+        if (closeInProgress) return;
+        closeInProgress = true;
+        IsEnabled = false;
         SaveWindowLayout();
         windowSource?.RemoveHook(WindowMessageHook);
         windowSource = null;
@@ -104,7 +111,19 @@ public partial class MainWindow : Window
         completionDescriptionTimer.Stop();
         quickInfoCancellation?.Cancel();
         quickInfoCancellation?.Dispose();
-        await viewModel.DisposeAsync();
+        try
+        {
+            await viewModel.DisposeAsync();
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Application shutdown cleanup failed: {error}");
+        }
+        finally
+        {
+            closeCompleted = true;
+            Close();
+        }
     }
 
     private void ApplySavedWindowLayout()
@@ -332,6 +351,11 @@ public partial class MainWindow : Window
             e.Handled = true;
             FocusEditor();
         }
+        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            FocusExplorerSearch();
+        }
         else if (e.Key == Key.C && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             e.Handled = true;
@@ -410,22 +434,20 @@ public partial class MainWindow : Window
             CheckFileExists = true
         };
         if (dialog.ShowDialog(this) != true) return;
-        var path = dialog.FileName.Replace("\"", "\"\"");
-        Editor.Text = operation switch
+        var literal = DataSnippetBuilder.ToVerbatimStringLiteral(dialog.FileName);
+        var snippet = operation switch
         {
-            "Inspect" => $"Data.Inspect(@\"{path}\")",
-            "Preview" => $"Data.PreviewText(@\"{path}\", 65536)",
-            "Lines" => $"Data.ReadLines(@\"{path}\").Take(100)",
-            "Json" => $"await Data.ReadJsonAsync(@\"{path}\")",
-            "JsonArray" => $"await Data.ReadJsonArrayAsync(@\"{path}\", take: 100)",
-            "JsonLines" => $"var rows = new List<JsonElement>();{Environment.NewLine}" +
-                           $"await foreach (var row in Data.ReadJsonLinesAsync(@\"{path}\")){Environment.NewLine}" +
-                           $"{{{Environment.NewLine}    rows.Add(row);{Environment.NewLine}" +
-                           $"    if (rows.Count == 100) break;{Environment.NewLine}}}{Environment.NewLine}rows",
-            _ => Editor.Text
+            "Inspect" => $"Data.Inspect({literal})",
+            "Preview" => $"Data.PreviewText({literal}, 65536)",
+            "Lines" => $"Data.ReadLines({literal}).Take(100)",
+            "Json" => $"await Data.ReadJsonAsync({literal})",
+            "JsonArray" => $"await Data.ReadJsonArrayAsync({literal}, take: 100)",
+            "JsonLines" => DataSnippetBuilder.CreateJsonLines(dialog.FileName),
+            _ => null
         };
-        Editor.CaretOffset = Editor.Text.Length;
-        FocusEditor();
+        if (snippet is null) return;
+        InsertDroppedSnippet(snippet);
+        viewModel.SetLocalizedStatus("Status.SnippetInserted");
     }
 
     private void Editor_PreviewDragOver(object sender, DragEventArgs e)
@@ -591,6 +613,18 @@ public partial class MainWindow : Window
 
     private void FocusInput_Click(object sender, RoutedEventArgs e) => FocusEditor();
 
+    private void FocusExplorerSearch_Click(object sender, RoutedEventArgs e) => FocusExplorerSearch();
+
+    private void FocusExplorerSearch()
+    {
+        viewModel.IsTypeExplorerOpen = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            TypeExplorerSearchBox.Focus();
+            TypeExplorerSearchBox.SelectAll();
+        });
+    }
+
     private void FocusEditorAfterCommand_Click(object sender, RoutedEventArgs e) => FocusEditor();
 
     private async void RestartWorker_Click(object sender, RoutedEventArgs e)
@@ -653,8 +687,14 @@ public partial class MainWindow : Window
         InsertDroppedSnippet(item.Name);
     }
 
-    private void VariableItem_PreviewKeyDown(object sender, KeyEventArgs e)
+    private async void VariableItem_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            await CopySelectedVariableAsync();
+            return;
+        }
         if (e.Key is not (Key.Enter or Key.Space) || sender is not ListView { SelectedItem: VariableItem item })
             return;
         e.Handled = true;
@@ -674,6 +714,9 @@ public partial class MainWindow : Window
     }
 
     private async void CopyVariable_Click(object sender, RoutedEventArgs e)
+        => await CopySelectedVariableAsync();
+
+    private async Task CopySelectedVariableAsync()
     {
         if (VariableList.SelectedItem is not VariableItem item) return;
         try
@@ -704,16 +747,53 @@ public partial class MainWindow : Window
 
     private void TypeExplorerSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape || sender is not TextBox { Text.Length: > 0 } textBox) return;
-        e.Handled = true;
-        textBox.Clear();
+        if (sender is not TextBox textBox || Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            if (textBox.Text.Length > 0) textBox.Clear();
+            else FocusEditor();
+        }
+        else if (e.Key is Key.Down or Key.Enter && TypeExplorerTree.Items.Count > 0)
+        {
+            e.Handled = true;
+            FocusFirstExplorerResult(descendToMatch: textBox.Text.Length > 0);
+        }
+    }
+
+    private void FocusFirstExplorerResult(bool descendToMatch)
+    {
+        TypeExplorerTree.UpdateLayout();
+        if (TypeExplorerTree.ItemContainerGenerator.ContainerFromIndex(0) is not TreeViewItem item) return;
+        while (descendToMatch && item.HasItems)
+        {
+            item.IsExpanded = true;
+            item.UpdateLayout();
+            if (item.ItemContainerGenerator.ContainerFromIndex(0) is not TreeViewItem child) break;
+            item = child;
+        }
+        item.IsSelected = true;
+        item.BringIntoView();
+        item.Focus();
     }
 
     private void VariableSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape || sender is not TextBox { Text.Length: > 0 } textBox) return;
-        e.Handled = true;
-        textBox.Clear();
+        if (sender is not TextBox textBox || Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            if (textBox.Text.Length > 0) textBox.Clear();
+            else FocusEditor();
+        }
+        else if (e.Key is Key.Down or Key.Enter &&
+                 viewModel.VariableItemsView.Cast<object>().FirstOrDefault() is VariableItem item)
+        {
+            e.Handled = true;
+            VariableList.SelectedItem = item;
+            VariableList.ScrollIntoView(item);
+            VariableList.Focus();
+        }
     }
 
     private async void NewUsingBox_PreviewKeyDown(object sender, KeyEventArgs e)

@@ -35,6 +35,7 @@ public sealed partial class UiOption<T>(T value, string label) : ObservableObjec
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private const int MaximumExplorerSearchResults = 250;
+    private const int MaximumTranscriptDiagnostics = 100;
     private static readonly AppSettings InitialSettings = SettingsStore.Load();
     private AppSettings settings = InitialSettings;
     private static readonly string[] Commands =
@@ -1078,8 +1079,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Transcript.Add(CreateConsoleLine(envelope.ReadPayload<ConsoleEvent>().Text, true));
                 break;
             case MessageKinds.Diagnostics:
-                foreach (var diagnostic in envelope.ReadPayload<DiagnosticsEvent>().Diagnostics)
-                    Transcript.Add(TranscriptLine.Diagnostic($"{diagnostic.Id} ({diagnostic.StartLine},{diagnostic.StartColumn}): {diagnostic.Message}", diagnostic.Level == DiagnosticLevel.Error));
+                ApplyExecutionDiagnostics(envelope.ReadPayload<DiagnosticsEvent>().Diagnostics);
                 break;
             case MessageKinds.Result:
                 var result = envelope.ReadPayload<ResultEvent>();
@@ -1159,6 +1159,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 ApplyPackageSearchResults(envelope.ReadPayload<PackageSearchResultsEvent>());
                 break;
         }
+    }
+
+    internal void ApplyExecutionDiagnostics(IReadOnlyList<DiagnosticInfo> diagnostics)
+    {
+        foreach (var diagnostic in diagnostics.Take(MaximumTranscriptDiagnostics))
+            Transcript.Add(TranscriptLine.Diagnostic(
+                $"{diagnostic.Id} ({diagnostic.StartLine},{diagnostic.StartColumn}): {diagnostic.Message}",
+                diagnostic.Level == DiagnosticLevel.Error));
+        if (diagnostics.Count > MaximumTranscriptDiagnostics)
+            Transcript.Add(LocalizedDiagnosticLine(
+                "Message.DiagnosticsLimited",
+                false,
+                diagnostics.Count,
+                MaximumTranscriptDiagnostics,
+                diagnostics.Count - MaximumTranscriptDiagnostics));
     }
 
     private void RestoreExecutingInput()

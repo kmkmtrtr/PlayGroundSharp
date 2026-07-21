@@ -144,7 +144,11 @@ public partial class MainWindow : Window
         {
             viewModel.PropertyChanged -= ViewModel_PropertyChanged;
             closeCompleted = true;
-            Close();
+            // DisposeAsync can complete synchronously when the window is closed before
+            // Worker startup finishes. Calling Close again from inside the original
+            // Closing event then trips WPF's "window is already closing" guard. Queue
+            // the final close so the cancelled first close can unwind in every case.
+            _ = Dispatcher.BeginInvoke(() => Close(), DispatcherPriority.Normal);
         }
     }
 

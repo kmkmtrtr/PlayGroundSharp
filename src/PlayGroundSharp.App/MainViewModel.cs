@@ -205,6 +205,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ScheduleDiagnostics(InputText);
             var reason = disconnection.Kind switch
             {
+                WorkerDisconnectionKind.ProcessExited when !string.IsNullOrWhiteSpace(disconnection.Detail) =>
+                    Localize("Message.WorkerExitDetail", disconnection.ExitCode, disconnection.Detail),
                 WorkerDisconnectionKind.ProcessExited => Localize("Message.WorkerExitCode", disconnection.ExitCode),
                 WorkerDisconnectionKind.PipeClosed => Localize("Message.WorkerPipeClosed"),
                 _ => disconnection.Detail ?? Localize("Message.WorkerPipeClosed")

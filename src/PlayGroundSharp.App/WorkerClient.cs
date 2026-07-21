@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Text;
 using PlayGroundSharp.Core;
 
 namespace PlayGroundSharp.App;
@@ -12,7 +13,10 @@ public sealed record WorkerDisconnection(WorkerDisconnectionKind Kind, int? Exit
 /// <summary>Starts, monitors and communicates with the isolated execution Worker.</summary>
 public sealed class WorkerClient : IAsyncDisposable
 {
+    private const int MaximumCapturedErrorCharacters = 16 * 1024;
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource> pending = new();
+    private readonly object errorOutputGate = new();
+    private readonly StringBuilder errorOutput = new();
     private Process? process;
     private NamedPipeClientStream? pipe;
     private PipeTransport? transport;
@@ -38,28 +42,49 @@ public sealed class WorkerClient : IAsyncDisposable
         {
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardError = true,
             WorkingDirectory = AppContext.BaseDirectory
         };
         startInfo.ArgumentList.Add("--worker");
         startInfo.ArgumentList.Add("--pipe");
         startInfo.ArgumentList.Add(pipeName);
         process = Process.Start(startInfo) ?? throw new InvalidOperationException("Worker process could not be started.");
-        process.EnableRaisingEvents = true;
-        var startedProcess = process;
-        process.Exited += (_, _) =>
+        try
         {
-            if (!isStopping)
+            lock (errorOutputGate) errorOutput.Clear();
+            process.ErrorDataReceived += (_, args) => CaptureErrorOutput(args.Data);
+            process.BeginErrorReadLine();
+            var startedProcess = process;
+            process.Exited += (_, _) =>
+            {
+                if (isStopping) return;
+                int? exitCode = null;
+                try
+                {
+                    exitCode = startedProcess.ExitCode;
+                }
+                catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException)
+                {
+                    // Preserve the disconnection notification even if the exit code raced disposal.
+                }
                 ReportDisconnected(generation,
-                    new(WorkerDisconnectionKind.ProcessExited, startedProcess.ExitCode));
-        };
+                    new(WorkerDisconnectionKind.ProcessExited, exitCode, GetCapturedErrorOutput()));
+            };
+            process.EnableRaisingEvents = true;
 
-        pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        connectTimeout.CancelAfter(TimeSpan.FromSeconds(10));
-        await pipe.ConnectAsync(connectTimeout.Token).ConfigureAwait(false);
-        transport = new PipeTransport(pipe);
-        lifetime = new CancellationTokenSource();
-        readLoop = ReadLoopAsync(generation, lifetime.Token);
+            pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            connectTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+            await pipe.ConnectAsync(connectTimeout.Token).ConfigureAwait(false);
+            transport = new PipeTransport(pipe);
+            lifetime = new CancellationTokenSource();
+            readLoop = ReadLoopAsync(generation, lifetime.Token);
+        }
+        catch
+        {
+            await StopAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     public Task ExecuteAsync(int index, string code, CancellationToken cancellationToken = default) =>
@@ -160,6 +185,26 @@ public sealed class WorkerClient : IAsyncDisposable
         if (isStopping || generation != Volatile.Read(ref connectionGeneration) ||
             Interlocked.Exchange(ref disconnectionReported, 1) != 0) return;
         Disconnected?.Invoke(disconnection);
+    }
+
+    private void CaptureErrorOutput(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+        lock (errorOutputGate)
+        {
+            if (errorOutput.Length >= MaximumCapturedErrorCharacters) return;
+            if (errorOutput.Length > 0 &&
+                errorOutput.Length + Environment.NewLine.Length < MaximumCapturedErrorCharacters)
+                errorOutput.AppendLine();
+            var remaining = MaximumCapturedErrorCharacters - errorOutput.Length;
+            if (remaining > 0) errorOutput.Append(line.AsSpan(0, Math.Min(line.Length, remaining)));
+        }
+    }
+
+    private string? GetCapturedErrorOutput()
+    {
+        lock (errorOutputGate)
+            return errorOutput.Length == 0 ? null : errorOutput.ToString();
     }
 
     private void EnsureConnected()

@@ -106,7 +106,7 @@ public partial class ResultInspectorWindow : Window
             e.Handled = true;
             searchTimer.Stop();
             await ApplySearchAsync();
-            FocusFirstResult();
+            FocusFirstResult(descendToMatch: !string.IsNullOrWhiteSpace(SearchBox.Text));
             return;
         }
         if (e.Key == Key.Escape)
@@ -194,11 +194,18 @@ public partial class ResultInspectorWindow : Window
                     : AppLocalization.Text(languageMode, "Inspector.MatchCount", matches));
     }
 
-    private void FocusFirstResult()
+    private void FocusFirstResult(bool descendToMatch = false)
     {
         if (Roots.Count == 0) return;
         SnapshotTree.UpdateLayout();
         if (SnapshotTree.ItemContainerGenerator.ContainerFromIndex(0) is not TreeViewItem item) return;
+        while (descendToMatch && item.HasItems)
+        {
+            item.IsExpanded = true;
+            item.UpdateLayout();
+            if (item.ItemContainerGenerator.ContainerFromIndex(0) is not TreeViewItem child) break;
+            item = child;
+        }
         item.IsSelected = true;
         item.BringIntoView();
         item.Focus();

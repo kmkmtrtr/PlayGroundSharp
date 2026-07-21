@@ -1402,11 +1402,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private bool HasPendingSessionMutation => IsPackageSearchBusy || IsWorkspaceBusy || IsSessionChanging;
 
-    private async Task AddReferenceAsync(string path)
+    internal async Task<bool> AddReferenceAsync(string path)
     {
         if (!IsWorkerConnected) throw new InvalidOperationException(Localize("Message.WorkerUnavailable"));
         if (IsRunning || HasPendingSessionMutation)
             throw new InvalidOperationException(Localize("Message.SessionBusy"));
+        path = Path.GetFullPath(path);
+        if (references.Contains(path, StringComparer.OrdinalIgnoreCase))
+        {
+            Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceActive", path)));
+            return false;
+        }
         IsSessionChanging = true;
         try
         {
@@ -1421,6 +1427,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ScheduleDiagnostics(InputText);
             _ = RefreshTypeExplorerAsync();
             Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceAdded", path)));
+            return true;
         }
         finally
         {

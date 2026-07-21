@@ -71,7 +71,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - Drag the divider inside completion to resize the candidate and documentation panes
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
 - **NuGet**: search nuget.org, review package metadata and install the displayed exact version
-- **Libraries**: list imported packages, local DLLs and package runtime assemblies with versions and sources
+- **Libraries**: add one or more local DLLs and list imported packages, assemblies, versions and sources; dropping a DLL onto the prompt also offers **Add as DLL reference**
 - **Structured results**: expand JSON, objects and arrays directly in the transcript; large captured collections are grouped into index ranges. Select a node and press `Ctrl+C` to copy that value. Inspector search reports the full match count while rendering at most the first 250 matches to keep large snapshots responsive.
 - **Inspect** on a result: open the same bounded property/item tree with search, path copy and full captured-value export in a separate window. Its size and tree/detail split are retained; `Ctrl+F`, `Ctrl+C`, `Ctrl+Shift+C`, `Ctrl+S` and `Esc` are available from the keyboard.
 - **File**: save or open a `.pgsworkspace` containing submissions, draft input, usings, DLL references and exact package versions

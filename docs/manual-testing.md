@@ -42,6 +42,7 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 36 | Create session state, click Restart or Reset, then cancel the confirmation | the warning explains the retained/lost state and the current submission state remains intact |
 | 37 | After at least one successful submission, type invalid two-line code, then press `F8` and `Shift+F8` | diagnostics use lines/columns relative to the current input; the corresponding source spans are selected forward and backward |
 | 38 | Place the caret on a known symbol and press `Ctrl+K`, `Ctrl+I`; then use `F6` and `Shift+F6` | Quick Info remains visible until dismissed; focus cycles through only the currently visible Explorer, console and Workspace panes |
+| 39 | Open **Session > Libraries**, add multiple valid DLLs, then drop a DLL onto the prompt and choose **Add as DLL reference** | each unique assembly is added once, appears in Libraries, and becomes available to completion without inserting or executing code |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 

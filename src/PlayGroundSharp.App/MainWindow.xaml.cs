@@ -686,6 +686,8 @@ public partial class MainWindow : Window
         {
             menu.Items.Add(CreateDropAction("Drop.FileInfo", $"Data.Inspect({literal})"));
             var extension = Path.GetExtension(path);
+            if (extension.Equals(".dll", StringComparison.OrdinalIgnoreCase))
+                menu.Items.Add(CreateDropReferenceAction(path));
             if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
             {
                 menu.Items.Add(CreateDropAction("Drop.ReadJson", $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)"));
@@ -733,6 +735,13 @@ public partial class MainWindow : Window
             InsertDroppedSnippet(snippet);
             viewModel.ShowStatusNotification("Status.DroppedPath");
         };
+        return item;
+    }
+
+    private MenuItem CreateDropReferenceAction(string path)
+    {
+        var item = new MenuItem { Header = viewModel.Localize("Drop.AddReference") };
+        item.Click += async (_, _) => await AddReferencesFromUiAsync([path]);
         return item;
     }
 
@@ -807,6 +816,42 @@ public partial class MainWindow : Window
     {
         MessageBox.Show(this, viewModel.Localize("About.Message"), "PlayGroundSharp", MessageBoxButton.OK, MessageBoxImage.Information);
         FocusEditor();
+    }
+
+    private async void AddDllReference_Click(object sender, RoutedEventArgs e)
+    {
+        if (!viewModel.CanChangeSession) return;
+        var dialog = new OpenFileDialog
+        {
+            Title = viewModel.Localize("Dialog.AssemblyLoadTitle"),
+            Filter = viewModel.Localize("Dialog.AssemblyFileFilter"),
+            CheckFileExists = true,
+            Multiselect = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        await AddReferencesFromUiAsync(dialog.FileNames);
+    }
+
+    private async Task AddReferencesFromUiAsync(IReadOnlyList<string> paths)
+    {
+        var added = 0;
+        try
+        {
+            viewModel.SetStatusOverlay("Status.AddingReferences");
+            foreach (var path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
+                if (await viewModel.AddReferenceAsync(path)) added++;
+            if (added > 0) viewModel.ShowStatusNotification("Status.ReferencesAdded", added);
+            else viewModel.SetLocalizedStatus("Status.Ready");
+        }
+        catch (Exception error)
+        {
+            viewModel.SetLocalizedStatus("Status.Ready");
+            ShowError(error);
+        }
+        finally
+        {
+            FocusEditor();
+        }
     }
 
     private void FocusInput_Click(object sender, RoutedEventArgs e) => FocusEditor();

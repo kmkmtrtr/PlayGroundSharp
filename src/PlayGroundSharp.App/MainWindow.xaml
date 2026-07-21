@@ -720,7 +720,15 @@
                         </TabItem>
                         <TabItem Header="{DynamicResource Tab.Libraries}">
                             <Grid TextElement.Foreground="{DynamicResource ForegroundBrush}">
-                                <ListView ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="ImportedLibraryList" BorderThickness="0" Background="Transparent"
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <Button Content="{DynamicResource Libraries.AddDll}" Style="{StaticResource AccentButtonStyle}"
+                                        HorizontalAlignment="Right" Margin="12,10,12,8" Click="AddDllReference_Click"
+                                        IsEnabled="{Binding CanChangeSession}"
+                                        AutomationProperties.Name="{DynamicResource Libraries.AddDll}" />
+                                <ListView Grid.Row="1" ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="ImportedLibraryList" BorderThickness="0" Background="Transparent"
                                           Foreground="{DynamicResource ForegroundBrush}" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                     <ListView.ItemContainerStyle>
                                         <Style TargetType="ListViewItem">
@@ -736,7 +744,7 @@
                                         </GridView>
                                     </ListView.View>
                                 </ListView>
-                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
                                     <TextBlock Text="{DynamicResource Libraries.Empty}" Foreground="{DynamicResource ForegroundBrush}" FontWeight="SemiBold" HorizontalAlignment="Center" />
                                     <TextBlock Text="{DynamicResource Libraries.EmptyHint}" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,4,0,0" />
                                     <StackPanel.Style>

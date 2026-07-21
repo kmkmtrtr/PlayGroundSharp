@@ -54,6 +54,29 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public void StringKeyedDictionariesUseNamedProperties()
+    {
+        var snapshot = factory.Create(new Dictionary<string, object?>
+        {
+            ["answer"] = 42,
+            ["items"] = new[] { 1, 2 },
+            ["empty"] = null
+        });
+
+        Assert.Equal(SnapshotKind.Object, snapshot.Kind);
+        Assert.Equal(3, snapshot.TotalCount);
+        var properties = Assert.IsAssignableFrom<IReadOnlyList<ResultProperty>>(snapshot.Properties);
+        Assert.Equal(["answer", "items", "empty"], properties.Select(static property => property.Name));
+        Assert.Equal("42", properties[0].Value.Display);
+        Assert.Equal(["1", "2"], properties[1].Value.Items!.Select(static item => item.Display));
+
+        using var document = System.Text.Json.JsonDocument.Parse(SnapshotJsonFormatter.Format(snapshot));
+        Assert.Equal(42, document.RootElement.GetProperty("answer").GetInt32());
+        Assert.Equal(2, document.RootElement.GetProperty("items")[1].GetInt32());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, document.RootElement.GetProperty("empty").ValueKind);
+    }
+
+    [Fact]
     public void DetectsCyclesAndMaximumItems()
     {
         var node = new Node();

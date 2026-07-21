@@ -121,6 +121,10 @@ public sealed class ResultSnapshotFactory
 
         try
         {
+            if (value is IDictionary dictionary && HasOnlyStringKeys(dictionary))
+            {
+                return CreateStringDictionary(dictionary, typeName, depth, path, budget);
+            }
             if (value is Array { Rank: > 1 } array)
             {
                 var indices = new int[array.Rank];
@@ -165,6 +169,60 @@ public sealed class ResultSnapshotFactory
             {
                 path.Remove(value);
             }
+        }
+    }
+
+    private ResultSnapshot CreateStringDictionary(
+        IDictionary dictionary,
+        string typeName,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        var properties = new List<ResultProperty>(Math.Min(dictionary.Count, MaximumItems));
+        var enumerationFailed = false;
+        try
+        {
+            foreach (DictionaryEntry entry in dictionary)
+            {
+                if (properties.Count >= MaximumItems || !budget.CanTakeNode) break;
+                properties.Add(new((string)entry.Key, Create(entry.Value, depth + 1, path, budget)));
+            }
+        }
+        catch (Exception error)
+        {
+            enumerationFailed = true;
+            if (budget.TryTakeNode())
+                properties.Add(new("…", CreateExceptionSnapshot(error, null, budget)));
+        }
+
+        return new(
+            SnapshotKind.Object,
+            $"{dictionary.Count:N0} entries",
+            typeName,
+            Properties: properties,
+            IsTruncated: enumerationFailed || properties.Count < dictionary.Count,
+            TotalCount: dictionary.Count);
+    }
+
+    private static bool HasOnlyStringKeys(IDictionary dictionary)
+    {
+        try
+        {
+            if (dictionary.Count == 0)
+            {
+                return dictionary.GetType().GetInterfaces().Any(static contract =>
+                    contract.IsGenericType &&
+                    contract.GetGenericTypeDefinition() == typeof(IDictionary<,>) &&
+                    contract.GetGenericArguments()[0] == typeof(string));
+            }
+            foreach (var key in dictionary.Keys)
+                if (key is not string) return false;
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 

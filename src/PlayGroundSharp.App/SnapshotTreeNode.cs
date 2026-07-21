@@ -21,6 +21,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         ResultSnapshot snapshot,
         AppLanguageMode languageMode,
         bool isExpanded = false,
+        bool isSearchMatch = false,
         IReadOnlyList<SnapshotTreeNode>? filteredChildren = null,
         Func<IReadOnlyList<SnapshotTreeNode>>? childrenFactory = null)
     {
@@ -30,6 +31,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         children = filteredChildren;
         this.childrenFactory = childrenFactory;
         Path = path;
+        IsSearchMatch = isSearchMatch;
         this.isExpanded = isExpanded;
         var compact = FormatCompact(snapshot, languageMode).ReplaceLineEndings(" ");
         if (compact.Length > MaximumLabelLength) compact = compact[..MaximumLabelLength] + "…";
@@ -40,7 +42,9 @@ public sealed partial class SnapshotTreeNode : ObservableObject
     public string Label { get; }
     public string Detail { get; }
     public string Path { get; }
+    public bool IsSearchMatch { get; }
     [ObservableProperty] private bool isExpanded;
+    [ObservableProperty] private bool isSelected;
     public string CopyText => SnapshotTextFormatter.FormatFull(snapshot);
     public IReadOnlyList<SnapshotTreeNode> Children => children ??= childrenFactory?.Invoke() ?? CreateChildren();
 
@@ -116,6 +120,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
             snapshot,
             languageMode,
             isExpanded: true,
+            isSearchMatch: includeSelf,
             filteredChildren: GroupFilteredChildren(matchingChildren ?? [], path, snapshot, languageMode));
     }
 

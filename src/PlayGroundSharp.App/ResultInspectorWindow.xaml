@@ -54,12 +54,24 @@
                   BorderBrush="{DynamicResource BorderBrush}" SelectedItemChanged="SnapshotTree_SelectedItemChanged">
             <TreeView.Resources>
                 <HierarchicalDataTemplate DataType="{x:Type local:SnapshotTreeNode}" ItemsSource="{Binding Children}">
-                    <TextBlock Text="{Binding Label}" FontFamily="Cascadia Mono,Consolas" />
+                    <TextBlock Text="{Binding Label}" FontFamily="Cascadia Mono,Consolas">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </HierarchicalDataTemplate>
             </TreeView.Resources>
             <TreeView.ItemContainerStyle>
                 <Style TargetType="TreeViewItem">
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
                     <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
                 </Style>
             </TreeView.ItemContainerStyle>

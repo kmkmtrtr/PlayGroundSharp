@@ -20,6 +20,7 @@ public partial class ResultInspectorWindow : Window
     private SnapshotTreeNode? selectedNode;
     private CancellationTokenSource? searchCancellation;
     private string currentSearchStatus = string.Empty;
+    private string appliedQuery = string.Empty;
     private bool copyInProgress;
 
     public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel)
@@ -50,8 +51,7 @@ public partial class ResultInspectorWindow : Window
             viewModel.PropertyChanged -= ViewModel_PropertyChanged;
             searchTimer.Stop();
             notificationTimer.Stop();
-            searchCancellation?.Cancel();
-            searchCancellation?.Dispose();
+            CancelAndDisposeSearch();
             var bounds = WindowState == WindowState.Normal
                 ? new Rect(Left, Top, ActualWidth, ActualHeight)
                 : RestoreBounds;
@@ -106,7 +106,17 @@ public partial class ResultInspectorWindow : Window
             e.Handled = true;
             searchTimer.Stop();
             await ApplySearchAsync();
-            FocusFirstResult(descendToMatch: !string.IsNullOrWhiteSpace(SearchBox.Text));
+            if (!MoveSearchMatch(1)) FocusFirstResult();
+            return;
+        }
+        if (e.Key == Key.F3 &&
+            (Keyboard.Modifiers == ModifierKeys.None || Keyboard.Modifiers == ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            searchTimer.Stop();
+            if (!string.Equals(appliedQuery, SearchBox.Text, StringComparison.Ordinal))
+                await ApplySearchAsync();
+            MoveSearchMatch(Keyboard.Modifiers == ModifierKeys.Shift ? -1 : 1);
             return;
         }
         if (e.Key == Key.Escape)
@@ -139,8 +149,7 @@ public partial class ResultInspectorWindow : Window
     private async Task ApplySearchAsync()
     {
         searchTimer.Stop();
-        searchCancellation?.Cancel();
-        searchCancellation?.Dispose();
+        CancelAndDisposeSearch();
         var cancellation = new CancellationTokenSource();
         var cancellationToken = cancellation.Token;
         searchCancellation = cancellation;
@@ -170,21 +179,24 @@ public partial class ResultInspectorWindow : Window
             if (!cancellationToken.IsCancellationRequested) SetSearchStatus(error.Message);
             return;
         }
+        finally
+        {
+            if (ReferenceEquals(searchCancellation, cancellation))
+            {
+                searchCancellation = null;
+                cancellation.Dispose();
+            }
+        }
 
         if (cancellationToken.IsCancellationRequested || !string.Equals(query, SearchBox.Text, StringComparison.Ordinal)) return;
+        appliedQuery = query;
         Roots.Clear();
         if (root is not null)
         {
             Roots.Add(root);
             SetSelectedNode(root);
         }
-        else
-        {
-            selectedNode = null;
-            UpdateSelectionActions(false);
-            DetailText.Clear();
-            PathText.Text = string.Empty;
-        }
+        else ClearSelection();
         SetSearchStatus(string.IsNullOrWhiteSpace(query)
             ? string.Empty
             : root is null
@@ -209,6 +221,58 @@ public partial class ResultInspectorWindow : Window
         item.IsSelected = true;
         item.BringIntoView();
         item.Focus();
+    }
+
+    private bool MoveSearchMatch(int direction)
+    {
+        if (string.IsNullOrWhiteSpace(appliedQuery)) return false;
+        var matches = new List<(SnapshotTreeNode Node, IReadOnlyList<SnapshotTreeNode> Ancestors)>();
+        foreach (var root in Roots) CollectSearchMatches(root, [], matches);
+        if (matches.Count == 0) return false;
+
+        var currentIndex = matches.FindIndex(match => ReferenceEquals(match.Node, selectedNode));
+        var nextIndex = currentIndex < 0
+            ? direction > 0 ? 0 : matches.Count - 1
+            : (currentIndex + direction + matches.Count) % matches.Count;
+        var target = matches[nextIndex];
+        foreach (var ancestor in target.Ancestors) ancestor.IsExpanded = true;
+        if (selectedNode is not null && !ReferenceEquals(selectedNode, target.Node)) selectedNode.IsSelected = false;
+        target.Node.IsSelected = true;
+        SetSelectedNode(target.Node);
+        Dispatcher.BeginInvoke(() => FocusNode(target.Node), DispatcherPriority.Input);
+        return true;
+    }
+
+    private static void CollectSearchMatches(
+        SnapshotTreeNode node,
+        IReadOnlyList<SnapshotTreeNode> ancestors,
+        ICollection<(SnapshotTreeNode Node, IReadOnlyList<SnapshotTreeNode> Ancestors)> matches)
+    {
+        if (node.IsSearchMatch) matches.Add((node, ancestors));
+        var childAncestors = ancestors.Append(node).ToArray();
+        foreach (var child in node.Children) CollectSearchMatches(child, childAncestors, matches);
+    }
+
+    private void FocusNode(SnapshotTreeNode node)
+    {
+        SnapshotTree.UpdateLayout();
+        if (FindContainer(SnapshotTree, node) is not { } item) return;
+        item.IsSelected = true;
+        item.BringIntoView();
+        item.Focus();
+    }
+
+    private static TreeViewItem? FindContainer(ItemsControl parent, SnapshotTreeNode node)
+    {
+        if (parent.ItemContainerGenerator.ContainerFromItem(node) is TreeViewItem direct) return direct;
+        foreach (var item in parent.Items)
+        {
+            if (parent.ItemContainerGenerator.ContainerFromItem(item) is not TreeViewItem container ||
+                !container.IsExpanded) continue;
+            container.UpdateLayout();
+            if (FindContainer(container, node) is { } descendant) return descendant;
+        }
+        return null;
     }
 
     private void ExpandSelected_Click(object sender, RoutedEventArgs e)
@@ -272,6 +336,30 @@ public partial class ResultInspectorWindow : Window
         UpdateSelectionActions(true);
         DetailText.Text = node.Detail;
         PathText.Text = node.Path;
+    }
+
+    private void ClearSelection()
+    {
+        if (selectedNode is not null) selectedNode.IsSelected = false;
+        selectedNode = null;
+        UpdateSelectionActions(false);
+        DetailText.Clear();
+        PathText.Text = string.Empty;
+    }
+
+    private void CancelAndDisposeSearch()
+    {
+        var cancellation = searchCancellation;
+        searchCancellation = null;
+        if (cancellation is null) return;
+        try
+        {
+            cancellation.Cancel();
+        }
+        finally
+        {
+            cancellation.Dispose();
+        }
     }
 
     private void UpdateSelectionActions(bool enabled)

@@ -176,7 +176,7 @@
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                         <Grid>
                             <TextBox x:Name="TypeExplorerSearchBox" Text="{Binding TypeExplorerSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                     AutomationProperties.Name="TypeExplorerSearch" ToolTip="{DynamicResource Explorer.FilterTooltip}"
+                                     AutomationProperties.Name="{DynamicResource Explorer.Filter}" ToolTip="{DynamicResource Explorer.FilterTooltip}"
                                      Height="32" Padding="9,4" VerticalContentAlignment="Center"
                                      PreviewKeyDown="TypeExplorerSearchBox_PreviewKeyDown" />
                             <TextBlock Text="{DynamicResource Explorer.Filter}" Foreground="{DynamicResource MutedBrush}" Margin="10,0,0,0"
@@ -190,7 +190,7 @@
                             </TextBlock>
                         </Grid>
                         <Grid Grid.Row="1" Margin="0,8,0,0">
-                            <TreeView x:Name="TypeExplorerTree" ItemsSource="{Binding TypeExplorerItems}" AutomationProperties.Name="TypeExplorerTree"
+                            <TreeView x:Name="TypeExplorerTree" ItemsSource="{Binding TypeExplorerItems}" AutomationProperties.Name="{DynamicResource Explorer.Title}"
                                       Background="Transparent" BorderThickness="0" Foreground="{DynamicResource ForegroundBrush}"
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectedItemChanged="TypeExplorerTree_SelectedItemChanged"
                                       VirtualizingStackPanel.IsVirtualizing="True"
@@ -358,7 +358,7 @@
             </Popup>
             <Grid Grid.Column="2">
             <ScrollViewer x:Name="TranscriptScroll" VerticalScrollBarVisibility="Auto" Padding="20,16,18,6"
-                          AutomationProperties.Name="ConsoleSurface"
+                          AutomationProperties.Name="{DynamicResource Ui.AppSubtitle}"
                           PreviewMouseLeftButtonDown="ConsoleSurface_PreviewMouseLeftButtonDown"
                           PreviewMouseWheel="TranscriptScroll_PreviewMouseWheel"
                           ScrollChanged="TranscriptScroll_ScrollChanged">
@@ -453,7 +453,7 @@
                 <TextBlock Grid.Row="1" Text=">" Foreground="{DynamicResource AccentBrush}" FontSize="15" FontWeight="SemiBold"
                            FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" Margin="0,2,0,0" />
                 <avalon:TextEditor x:Name="Editor" Grid.Row="1" Grid.Column="1" MinHeight="24" MaxHeight="280"
-                                   AutomationProperties.Name="InputEditor"
+                                   AutomationProperties.Name="{DynamicResource Input.Editor}"
                                    FontFamily="Cascadia Mono,Consolas" FontSize="14" ShowLineNumbers="False"
                                    Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" CaretOffset="0"
                                    Padding="0,2" BorderThickness="0"
@@ -576,7 +576,7 @@
                                 </Grid.RowDefinitions>
                                 <Grid Margin="12,12,12,8">
                                     <TextBox x:Name="VariableSearchBox" Text="{Binding VariableFilterText, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="VariableSearch" Height="32" Padding="9,4"
+                                             AutomationProperties.Name="{DynamicResource Variables.Filter}" Height="32" Padding="9,4"
                                              VerticalContentAlignment="Center" PreviewKeyDown="VariableSearchBox_PreviewKeyDown" />
                                     <TextBlock Text="{DynamicResource Variables.Filter}" Foreground="{DynamicResource MutedBrush}"
                                                Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
@@ -592,7 +592,7 @@
                                         </TextBlock.Style>
                                     </TextBlock>
                                 </Grid>
-                                <ListView x:Name="VariableList" Grid.Row="1" ItemsSource="{Binding VariableItemsView}" AutomationProperties.Name="VariableList" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
+                                <ListView x:Name="VariableList" Grid.Row="1" ItemsSource="{Binding VariableItemsView}" AutomationProperties.Name="{DynamicResource Tab.Variables}" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
                                           ScrollViewer.HorizontalScrollBarVisibility="Auto" ToolTip="{DynamicResource Variables.InteractionHint}"
                                           MouseDoubleClick="VariableItem_MouseDoubleClick" PreviewKeyDown="VariableItem_PreviewKeyDown"
                                           PreviewMouseRightButtonDown="VariableItem_PreviewMouseRightButtonDown"
@@ -672,9 +672,9 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="PackageSearchBox" Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="NuGetSearchText" PreviewKeyDown="PackageSearchBox_PreviewKeyDown"
+                                             AutomationProperties.Name="{DynamicResource Package.SearchPrompt}" PreviewKeyDown="PackageSearchBox_PreviewKeyDown"
                                              ToolTip="{DynamicResource NuGet.SearchTooltip}" />
-                                    <Button Grid.Column="1" Content="{DynamicResource NuGet.Search}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.Name="NuGetSearchButton"
+                                    <Button Grid.Column="1" Content="{DynamicResource NuGet.Search}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.Name="{DynamicResource NuGet.Search}"
                                             Command="{Binding SearchPackagesCommand}" Margin="7,0,0,0"
                                             IsEnabled="{Binding CanChangeSession}" />
                                 </Grid>
@@ -682,7 +682,7 @@
                                           IsEnabled="{Binding CanChangeSession}" />
                                 <TextBlock Grid.Row="2" Text="{Binding PackageSearchMessage}" Margin="0,7" TextWrapping="Wrap"
                                            Foreground="{DynamicResource MutedBrush}" />
-                                <ListBox x:Name="PackageSearchResults" Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="NuGetSearchResults" BorderThickness="0"
+                                <ListBox x:Name="PackageSearchResults" Grid.Row="3" ItemsSource="{Binding PackageSearchItems}" AutomationProperties.Name="{DynamicResource NuGet.Results}" BorderThickness="0"
                                          Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" PreviewKeyDown="PackageSearchResults_PreviewKeyDown">
                                     <ListBox.ItemContainerStyle>
@@ -728,7 +728,7 @@
                                         HorizontalAlignment="Right" Margin="12,10,12,8" Click="AddDllReference_Click"
                                         IsEnabled="{Binding CanChangeSession}"
                                         AutomationProperties.Name="{DynamicResource Libraries.AddDll}" />
-                                <ListView Grid.Row="1" ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="ImportedLibraryList" BorderThickness="0" Background="Transparent"
+                                <ListView Grid.Row="1" ItemsSource="{Binding LibraryItems}" AutomationProperties.Name="{DynamicResource Tab.Libraries}" BorderThickness="0" Background="Transparent"
                                           Foreground="{DynamicResource ForegroundBrush}" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                     <ListView.ItemContainerStyle>
                                         <Style TargetType="ListViewItem">
@@ -763,13 +763,14 @@
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="NewUsingBox" Text="{Binding NewUsingText, UpdateSourceTrigger=PropertyChanged}"
                                              Height="32" Padding="9,4" PreviewKeyDown="NewUsingBox_PreviewKeyDown"
-                                             AutomationProperties.Name="UsingInput"
+                                             AutomationProperties.Name="{DynamicResource Usings.Input}"
                                              VerticalContentAlignment="Center" ToolTip="{DynamicResource Usings.InputTooltip}" />
                                     <Button Grid.Column="1" Content="{DynamicResource Usings.Add}" Command="{Binding AddUsingFromGuiCommand}"
                                             Style="{StaticResource AccentButtonStyle}" Margin="7,0,0,0" MinWidth="64"
                                             IsEnabled="{Binding CanChangeSession}" />
                                 </Grid>
                                 <ListBox x:Name="UsingList" Grid.Row="1" ItemsSource="{Binding UsingItems}" Margin="0,9,0,0" BorderThickness="0"
+                                         AutomationProperties.Name="{DynamicResource Tab.Usings}"
                                          Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
                                          PreviewKeyDown="UsingList_PreviewKeyDown" ToolTip="{DynamicResource Usings.ListTooltip}">
                                     <ListBox.ItemTemplate>

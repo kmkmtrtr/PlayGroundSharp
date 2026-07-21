@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Dynamic;
+using System.Numerics;
 using PlayGroundSharp.Core;
 using PlayGroundSharp.Worker;
 
@@ -105,6 +106,26 @@ public sealed class ResultSnapshotFactoryTests
         Assert.Equal(["Name", "Score"], properties.Select(static property => property.Name));
         Assert.Equal(["Ada", "99"], properties.Select(static property => property.Value.Display));
         Assert.Equal(2, snapshot.TotalCount);
+    }
+
+    [Fact]
+    public void CommonFrameworkValuesStayReadableScalars()
+    {
+        var date = factory.Create(new DateOnly(2026, 7, 22));
+        var time = factory.Create(new TimeOnly(12, 34, 56));
+        var duration = factory.Create(new TimeSpan(1, 2, 3, 4, 5));
+        var uri = factory.Create(new Uri("https://example.test/日本語", UriKind.Absolute));
+        var half = factory.Create((Half)1.5);
+        var integer = factory.Create(BigInteger.Parse("123456789012345678901234567890"));
+
+        Assert.Equal("2026-07-22", date.Display);
+        Assert.Equal("12:34:56.0000000", time.Display);
+        Assert.Equal("1.02:03:04.0050000", duration.Display);
+        Assert.Equal("https://example.test/日本語", uri.Display);
+        Assert.Equal(SnapshotKind.Number, half.Kind);
+        Assert.Equal("1.5", half.Display);
+        Assert.Equal(SnapshotKind.Number, integer.Kind);
+        Assert.Equal("123456789012345678901234567890", integer.Display);
     }
 
     [Fact]

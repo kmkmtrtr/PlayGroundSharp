@@ -59,7 +59,7 @@ public sealed record SessionContext(
         "System.Runtime", "System.Runtime.Extensions", "System.Runtime.InteropServices", "System.Text", "System.Text.Encoding",
         "System.Text.Encoding.CodePages", "System.Text.Encoding.Extensions", "System.Text.Json",
         "System.Text.RegularExpressions", "System.Threading", "System.Threading.Tasks",
-        "System.Threading.Tasks.Parallel", "System.Threading.Thread", "System.ValueTuple",
+        "System.Threading.Tasks.Parallel", "System.Threading.Thread", "System.ValueTuple", "System.Runtime.Numerics",
         "PlayGroundSharp.Core"
     ], StringComparer.OrdinalIgnoreCase);
 

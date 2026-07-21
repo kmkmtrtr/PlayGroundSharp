@@ -21,6 +21,8 @@ public sealed class ScriptSessionTests
             .Append(typeof(object).Assembly.GetName().Name)
             .Append(typeof(Enumerable).Assembly.GetName().Name)
             .Append(typeof(System.Text.Json.JsonElement).Assembly.GetName().Name)
+            .Append(typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly.GetName().Name)
+            .Append(typeof(System.Numerics.BigInteger).Assembly.GetName().Name)
             .OfType<string>()
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -45,6 +47,18 @@ public sealed class ScriptSessionTests
         Assert.True(result.StateAccepted,
             string.Join(" | ", result.Diagnostics.Select(static diagnostic => $"{diagnostic.Id}: {diagnostic.Message}")));
         Assert.Equal("42", result.Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task SupportsExtendedFrameworkNumericTypes()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            "System.Numerics.BigInteger.Parse(\"123456789012345678901234567890\") + 1");
+
+        Assert.True(result.StateAccepted,
+            string.Join(" | ", result.Diagnostics.Select(static diagnostic => $"{diagnostic.Id}: {diagnostic.Message}")));
+        Assert.Equal("123456789012345678901234567891", result.Snapshot?.Display);
     }
 
     private static string NormalizeUnresolvedReferenceDisplay(string? display)

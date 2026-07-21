@@ -40,7 +40,8 @@ public sealed class ScriptSession
                 typeof(Enumerable).Assembly,
                 typeof(SessionGlobals).Assembly,
                 typeof(JsonElement).Assembly,
-                typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly);
+                typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly,
+                typeof(System.Numerics.BigInteger).Assembly);
     }
 
     public SessionContext Context => new([.. submissions], [.. imports], [.. references]);

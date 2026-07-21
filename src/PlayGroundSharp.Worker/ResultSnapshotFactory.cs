@@ -79,6 +79,13 @@ public sealed class ResultSnapshotFactory
         {
             return new(SnapshotKind.Number, Convert.ToString(value, CultureInfo.InvariantCulture), typeName);
         }
+        if (value is Half or Int128 or UInt128 or System.Numerics.BigInteger)
+        {
+            return new(
+                SnapshotKind.Number,
+                ((IFormattable)value).ToString(null, CultureInfo.InvariantCulture),
+                typeName);
+        }
         if (type.IsEnum)
         {
             return new(SnapshotKind.Enum, value.ToString(), typeName);
@@ -87,9 +94,22 @@ public sealed class ResultSnapshotFactory
         {
             return new(SnapshotKind.DateTime, ((IFormattable)value).ToString("O", CultureInfo.InvariantCulture), typeName);
         }
+        if (value is DateOnly or TimeOnly)
+        {
+            return new(SnapshotKind.DateTime, ((IFormattable)value).ToString("O", CultureInfo.InvariantCulture), typeName);
+        }
+        if (value is TimeSpan duration)
+        {
+            return new(SnapshotKind.String, duration.ToString("c", CultureInfo.InvariantCulture), typeName);
+        }
         if (value is Guid guid)
         {
             return new(SnapshotKind.Guid, guid.ToString("D"), typeName);
+        }
+        if (value is Uri uri)
+        {
+            var display = budget.TakeText(uri.OriginalString, MaximumStringLength, out var truncated);
+            return new(SnapshotKind.String, display, typeName, IsTruncated: truncated);
         }
         if (value is JsonElement element)
         {

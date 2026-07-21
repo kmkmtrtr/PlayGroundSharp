@@ -58,6 +58,16 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task AcceptsExtendedFrameworkNumericTypesInDiagnostics()
+    {
+        const string code = "System.Numerics.BigInteger.Parse(\"123456789012345678901234567890\") + 1";
+
+        var diagnostics = await service.GetDiagnosticsAsync(SessionContext.Empty, code);
+
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public async Task DoesNotExposeLargeDataImplementationTypes()
     {
         const string code = "new Bounded";

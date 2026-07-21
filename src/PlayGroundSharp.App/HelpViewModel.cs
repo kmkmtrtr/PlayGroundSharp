@@ -32,7 +32,7 @@ public sealed partial class HelpViewModel : ObservableObject
         [
             new("キー操作", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterまたはShift+Enterで改行します。Ctrl+Spaceで補完、Tabで明示選択、↑↓で1件、PageUp/PageDownで1ページ移動し、Escで閉じます。Ctrl+K, Ctrl+Iでキャレット位置のクイック情報、F8／Shift+F8で次／前の診断、F6／Shift+F6でペイン移動ができます。Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。"),
             new("履歴", "一行入力で上下キーを押すと履歴を移動します。過去の入力行をクリックして現在の入力へコピーできます。"),
-            new("ファイルとフォルダのドロップ", "入力欄へドロップすると操作メニューを表示します。パス挿入、JSONやテキストの読み込みコード、フォルダ内ファイルの列挙を選べます。コードを自動実行することはありません。複数パスは配列として挿入します。"),
+            new("ファイルとフォルダのドロップ", "入力欄へドロップすると操作メニューを表示します。パス挿入、JSONやテキストの読み込みコード、フォルダ内ファイルの列挙を選べます。.pgsworkspaceは確認後にワークスペースとして開けます。コードを自動実行することはありません。複数パスは配列として挿入します。"),
             new("補完の確定", "候補は入力内容に応じて絞り込まれます。未usingの型や拡張メソッドには「using 名前空間」を表示し、確定時にusingを自動追加します。拡張メソッドを手入力した場合も、名前空間が一意なら実行前に追加します。Enterでは候補を確定せず、Tabまたはダブルクリックだけで挿入します。")
         ]),
         new("シンボル", "名前空間、型、メソッドとドキュメントを探索します。",
@@ -45,7 +45,7 @@ public sealed partial class HelpViewModel : ObservableObject
         [
             new("保存内容", "Submission、入力途中のテキスト、using、DLL参照、NuGetパッケージの正確なバージョンを保存します。実行中オブジェクトそのものは保存しません。"),
             new("読み込み方式", "新しいWorkerを起動し、依存関係を復元してからSubmissionを順番に再実行します。このためファイル書き込みなどの副作用も再実行されます。"),
-            new("利用方法", "ヘッダーの［ファイル］から.pgsworkspaceを保存または開きます。欠落したローカルDLLは警告してスキップします。")
+            new("利用方法", "ヘッダーの［ファイル］から.pgsworkspaceを保存または開きます。入力欄へ.pgsworkspaceをドロップして開くこともできます。欠落したローカルDLLは警告してスキップします。")
         ]),
         new("大容量データ", "巨大なファイル全体を不用意にメモリへ載せないためのDataヘルパーです。",
         [
@@ -78,7 +78,7 @@ public sealed partial class HelpViewModel : ObservableObject
         [
             new("Keys", "With Enter-to-run, Shift+Enter inserts a line break; with Ctrl+Enter-to-run, Enter or Shift+Enter inserts one. Ctrl+Space opens completion, Tab accepts, arrow keys move one item, PageUp/PageDown move one page, and Esc closes it. Ctrl+K, Ctrl+I shows Quick Info at the caret; F8/Shift+F8 moves through diagnostics; F6/Shift+F6 cycles panes. Ctrl+L focuses input and Ctrl+F focuses symbol search."),
             new("Automatic imports", "Unimported types and extension methods show a 'using Namespace' badge. Accepting one adds that using before inserting the completion."),
-            new("Dropping files and folders", "Drop onto the input editor to choose between inserting a path, generating data-reading code, or enumerating a folder. Nothing is executed automatically. Multiple paths are inserted as an array."),
+            new("Dropping files and folders", "Drop onto the input editor to choose between inserting a path, generating data-reading code, or enumerating a folder. A .pgsworkspace file can be opened as a workspace after confirmation. Nothing is executed automatically. Multiple paths are inserted as an array."),
             new("History", "Use Up and Down on a single line, or click a prior input to copy it into the editor.")
         ]),
         new("Symbol explorer", "Browse namespaces, types, methods, and XML documentation.",
@@ -89,7 +89,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Workspaces", "Save and reconstruct a session later.",
         [
             new("Contents", "Submissions, draft input, usings, DLL references, and exact package versions are saved. Live objects are not serialized."),
-            new("Replay", "Opening starts a fresh Worker, restores dependencies, and replays submissions. Side effects such as file writes run again.")
+            new("Replay", "Open a .pgsworkspace from File or drop it onto the input editor. A fresh Worker restores dependencies and replays submissions, so side effects such as file writes run again.")
         ]),
         new("Large files and JSON", "Data helpers avoid loading entire files by default.",
         [

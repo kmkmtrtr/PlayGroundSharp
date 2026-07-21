@@ -563,6 +563,17 @@ public partial class MainWindow : Window
             FocusEditor();
             return;
         }
+        await OpenWorkspaceFileAsync(dialog.FileName);
+    }
+
+    private async Task OpenWorkspaceFileAsync(string path)
+    {
+        if (!viewModel.CanOpenWorkspace)
+        {
+            viewModel.SetLocalizedStatus("Status.SessionBusy");
+            FocusEditor();
+            return;
+        }
         if (MessageBox.Show(this, viewModel.Localize("Dialog.WorkspaceLoadWarning"),
                 viewModel.Localize("Dialog.WorkspaceLoadTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) !=
             MessageBoxResult.OK)
@@ -572,7 +583,7 @@ public partial class MainWindow : Window
         }
         try
         {
-            var document = await WorkspaceFile.LoadAsync(dialog.FileName);
+            var document = await WorkspaceFile.LoadAsync(path);
             await viewModel.LoadWorkspaceAsync(document);
             Editor.Text = viewModel.InputText;
             Editor.CaretOffset = Editor.Text.Length;
@@ -697,8 +708,13 @@ public partial class MainWindow : Window
         }
         else
         {
-            menu.Items.Add(CreateDropAction("Drop.FileInfo", $"Data.Inspect({literal})"));
             var extension = Path.GetExtension(path);
+            if (extension.Equals(".pgsworkspace", StringComparison.OrdinalIgnoreCase))
+            {
+                menu.Items.Add(CreateDropWorkspaceAction(path));
+                menu.Items.Add(new Separator());
+            }
+            menu.Items.Add(CreateDropAction("Drop.FileInfo", $"Data.Inspect({literal})"));
             if (extension.Equals(".dll", StringComparison.OrdinalIgnoreCase))
                 menu.Items.Add(CreateDropReferenceAction(path));
             if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
@@ -755,6 +771,13 @@ public partial class MainWindow : Window
     {
         var item = new MenuItem { Header = viewModel.Localize("Drop.AddReference") };
         item.Click += async (_, _) => await AddReferencesFromUiAsync([path]);
+        return item;
+    }
+
+    private MenuItem CreateDropWorkspaceAction(string path)
+    {
+        var item = new MenuItem { Header = viewModel.Localize("Drop.OpenWorkspace") };
+        item.Click += async (_, _) => await OpenWorkspaceFileAsync(path);
         return item;
     }
 

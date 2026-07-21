@@ -54,8 +54,10 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Shift+Enter`: insert a newline
 - The execution key can be switched to `Ctrl+Enter` in **Session** settings
 - `Ctrl+Space`: show completion
+- `Ctrl+K`, `Ctrl+I`: pin Quick Info for the symbol at the caret
 - `Tab`: accept the selected completion; added-library types can add their required `using` automatically
 - `Esc`: close completion; while running, request cancellation
+- `F6` / `Shift+F6`: cycle focus through the visible Explorer, console and Workspace panes
 - `F8` / `Shift+F8`: move to the next / previous input diagnostic and select its source span
 - `Ctrl+Shift+C`: copy the full transcript
 - `Up` / `Down`: move through input history; in a multiline draft this activates on the first/last line and restores the draft when returning to the newest entry
@@ -133,7 +135,7 @@ Typing `:` opens command completion. After adding a DLL or package, `:using add 
 - Package removal/upgrades and unloading an existing assembly identity are not supported in-place.
 - NuGet browsing currently targets nuget.org; additional configured package sources are not shown in the browser.
 - Variable values are preview snapshots and are truncated to 512 characters in the list.
-- Quick Info uses mouse hover; signature help and completion share the compact assistance popup.
+- Signature help and completion share the compact assistance popup.
 - BenchmarkDotNet integration is deferred; the planned design uses a disposable benchmark Worker instead of running benchmarks inside the stateful interactive Worker.
 - Framework and package XML documentation is displayed in the language supplied by that library; switching the application language translates the UI labels, not third-party documentation text. Framework entries link to localized Microsoft Learn instead of applying an unreliable automatic translation.
 - Workspace loading replays code rather than serializing live objects, so non-deterministic or side-effecting submissions may produce different state.

@@ -346,6 +346,22 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task ReturnsQuickInfoAtTheCaretAfterPreviousSubmissions()
+    {
+        var context = new SessionContext(["var sessionText = \"hello\";"], SessionContext.DefaultImports, []);
+        const string code = "sessionText.Length";
+
+        var quickInfo = await service.GetQuickInfoAsync(
+            context,
+            code,
+            code.IndexOf("Length", StringComparison.Ordinal) + 2);
+
+        Assert.NotNull(quickInfo);
+        Assert.Contains("Length", quickInfo.Text, StringComparison.Ordinal);
+        Assert.Contains("int", quickInfo.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task CompletesTypeFromDynamicReference()
     {
         var context = new SessionContext([], SessionContext.DefaultImports, [typeof(Greeter).Assembly.Location]);

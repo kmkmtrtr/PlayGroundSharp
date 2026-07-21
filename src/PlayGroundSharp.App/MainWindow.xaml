@@ -522,6 +522,27 @@
                         </Grid>
                     </Border>
                 </Popup>
+                <Popup x:Name="QuickInfoPopup" Grid.Row="1" Grid.Column="1" PlacementTarget="{Binding ElementName=Editor}"
+                       Placement="Bottom" VerticalOffset="4" StaysOpen="True" AllowsTransparency="False"
+                       Focusable="False">
+                    <Border x:Name="QuickInfoBorder" Width="620" MaxHeight="300" Background="{DynamicResource OverlayBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7"
+                            Padding="14,11">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <TextBlock x:Name="QuickInfoText" TextWrapping="Wrap" LineHeight="18"
+                                           Foreground="{DynamicResource ForegroundBrush}"
+                                           FontFamily="Cascadia Mono,Consolas" FontSize="12" />
+                            </ScrollViewer>
+                            <TextBlock Grid.Row="1" Text="{DynamicResource QuickInfo.Hint}"
+                                       Foreground="{DynamicResource MutedBrush}" FontSize="10.5" Margin="0,9,0,0" />
+                        </Grid>
+                    </Border>
+                </Popup>
                   </Grid>
                 </Grid>
             </ScrollViewer>

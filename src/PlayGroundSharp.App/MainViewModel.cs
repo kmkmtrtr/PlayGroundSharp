@@ -57,6 +57,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private CancellationTokenSource? variableSearchDelay;
     private CancellationTokenSource? typeExplorerRefresh;
     private CancellationTokenSource? packageOperationCancellation;
+    private CancellationTokenSource? transientStatusDelay;
     private IReadOnlyList<SymbolExplorerEntry> typeExplorerEntries = [];
     private int diagnosticErrorCount;
     private int diagnosticWarningCount;
@@ -65,6 +66,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private int cursorColumn = 1;
     private string statusLocalizationKey = "Status.StartingWorker";
     private object?[] statusLocalizationArguments = [];
+    private long statusRevision;
     private string sessionLocalizationKey = "Session.Count";
     private object?[] sessionLocalizationArguments = [0];
     private string? packageSearchLocalizationKey = "Package.SearchPrompt";
@@ -86,6 +88,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private bool isRunning;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
     private bool isWorkerConnected;
     [ObservableProperty] private bool isReferenceDrawerOpen = InitialSettings.IsReferenceDrawerOpen;
     [ObservableProperty] private bool isTypeExplorerOpen = InitialSettings.IsTypeExplorerOpen;
@@ -99,15 +102,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
     private bool isPackageSearchBusy;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
     private bool isWorkspaceBusy;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
     private bool isSessionChanging = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
     private bool isPreparingExecution;
     [ObservableProperty] private string newUsingText = string.Empty;
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = InitialSettings.ExecutionKeyMode;
@@ -118,6 +125,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public bool CanCancel => IsRunning || IsPackageSearchBusy;
     public bool CanChangeSession => IsWorkerConnected && !IsRunning && !IsPackageSearchBusy &&
                                     !IsWorkspaceBusy && !IsSessionChanging && !IsPreparingExecution;
+    public bool CanResetOrRestart => IsWorkerConnected && !IsPackageSearchBusy &&
+                                     !IsWorkspaceBusy && !IsSessionChanging && !IsPreparingExecution;
     public ObservableCollection<string> PackageItems { get; } = [];
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
@@ -313,9 +322,67 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public void SetLocalizedStatus(string key, params object?[] arguments)
     {
+        CancelTransientStatus();
         statusLocalizationKey = key;
         statusLocalizationArguments = arguments;
+        statusRevision++;
         Status = Localize(key, arguments);
+    }
+
+    internal void SetStatusOverlay(string key, params object?[] arguments)
+    {
+        CancelTransientStatus();
+        Status = Localize(key, arguments);
+    }
+
+    internal void ShowStatusNotification(string key, params object?[] arguments)
+    {
+        CancelTransientStatus();
+        Status = Localize(key, arguments);
+        var delay = new CancellationTokenSource();
+        transientStatusDelay = delay;
+        _ = RestoreStatusAfterDelayAsync(delay);
+    }
+
+    private async Task RestoreStatusAfterDelayAsync(CancellationTokenSource delay)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1.8), delay.Token);
+            if (ReferenceEquals(transientStatusDelay, delay))
+                Status = Localize(statusLocalizationKey, statusLocalizationArguments);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(transientStatusDelay, delay))
+            {
+                transientStatusDelay = null;
+                delay.Dispose();
+            }
+        }
+    }
+
+    private void CancelTransientStatus()
+    {
+        var delay = transientStatusDelay;
+        transientStatusDelay = null;
+        if (delay is null) return;
+        delay.Cancel();
+        delay.Dispose();
+    }
+
+    internal Action CaptureStatusRestore()
+    {
+        var key = statusLocalizationKey;
+        var arguments = statusLocalizationArguments;
+        var revision = statusRevision;
+        return () =>
+        {
+            if (statusRevision == revision) SetLocalizedStatus(key, arguments);
+        };
     }
 
     public void UpdateCursorPosition(int line, int column)
@@ -749,6 +816,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SaveSettings();
         App.ApplyLanguage(value);
         UpdateThemeOptionLabels(value);
+        CancelTransientStatus();
         Status = Localize(statusLocalizationKey, statusLocalizationArguments);
         SessionStatus = Localize(sessionLocalizationKey, sessionLocalizationArguments);
         DiagnosticStatus = diagnosticsDeferred
@@ -954,6 +1022,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             case MessageKinds.PackageSearchResults:
                 var searchResults = envelope.ReadPayload<PackageSearchResultsEvent>();
                 PackageSearchItems.Clear();
+                if (!PackageSearchText.Trim().Equals(searchResults.Query, StringComparison.OrdinalIgnoreCase))
+                {
+                    SetPackageSearchMessage("Package.QueryChanged", searchResults.Query);
+                    break;
+                }
                 foreach (var item in searchResults.Packages) PackageSearchItems.Add(item);
                 if (searchResults.TotalHits == 0)
                     SetPackageSearchMessage("Package.NoneFound");
@@ -986,7 +1059,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task ResetAsync()
     {
-        if (!IsWorkerConnected || HasPendingSessionMutation) return;
+        if (!CanResetOrRestart) return;
         IsSessionChanging = true;
         try
         {
@@ -1007,7 +1080,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task RestartWorkerAsync()
     {
-        if (HasPendingSessionMutation) return;
+        if (!CanResetOrRestart) return;
         IsSessionChanging = true;
         try
         {
@@ -1541,6 +1614,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         typeExplorerRefresh?.Dispose();
         packageOperationCancellation?.Cancel();
         packageOperationCancellation?.Dispose();
+        CancelTransientStatus();
         await worker.DisposeAsync();
     }
 }

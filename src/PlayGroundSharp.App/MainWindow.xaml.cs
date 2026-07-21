@@ -37,7 +37,10 @@ public partial class MainWindow : Window
     private GridLength referenceDrawerWidth = new(470);
     private GridLength completionListWidth = new(390);
     private HwndSource? windowSource;
+    private HelpWindow? helpWindow;
+    private AppLanguageMode? helpWindowLanguage;
     private bool transcriptAutoScroll = true;
+    private bool copyInProgress;
     private WindowState lastNonMinimizedWindowState = WindowState.Normal;
     private bool closeInProgress;
     private bool closeCompleted;
@@ -382,8 +385,19 @@ public partial class MainWindow : Window
             e.Handled = true;
             await CopyTranscriptAsync();
         }
-        else if (e.Key == Key.Escape && viewModel.CanCancel &&
-                 !AssistPopup.IsOpen && !SymbolDetailPopup.IsOpen)
+        else if (e.Key == Key.Escape && SymbolDetailPopup.IsOpen)
+        {
+            e.Handled = true;
+            SymbolDetailPopup.IsOpen = false;
+            TypeExplorerTree.Focus();
+        }
+        else if (e.Key == Key.Escape && AssistPopup.IsOpen)
+        {
+            e.Handled = true;
+            HideAssist();
+            Editor.Focus();
+        }
+        else if (e.Key == Key.Escape && viewModel.CanCancel)
         {
             e.Handled = true;
             await CancelFromUiAsync();
@@ -402,7 +416,11 @@ public partial class MainWindow : Window
             AddExtension = true,
             FileName = $"PlayGroundSharp-{DateTime.Now:yyyyMMdd-HHmm}.pgsworkspace"
         };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(this) != true)
+        {
+            FocusEditor();
+            return;
+        }
         try
         {
             viewModel.SetLocalizedStatus("Status.SavingWorkspace");
@@ -414,6 +432,10 @@ public partial class MainWindow : Window
         {
             viewModel.SetLocalizedStatus("Status.Ready");
             ShowError(error);
+        }
+        finally
+        {
+            FocusEditor();
         }
     }
 
@@ -427,21 +449,32 @@ public partial class MainWindow : Window
             Filter = viewModel.Localize("Dialog.WorkspaceFilter"),
             CheckFileExists = true
         };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(this) != true)
+        {
+            FocusEditor();
+            return;
+        }
         if (MessageBox.Show(this, viewModel.Localize("Dialog.WorkspaceLoadWarning"),
                 viewModel.Localize("Dialog.WorkspaceLoadTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) !=
-            MessageBoxResult.OK) return;
+            MessageBoxResult.OK)
+        {
+            FocusEditor();
+            return;
+        }
         try
         {
             var document = await WorkspaceFile.LoadAsync(dialog.FileName);
             await viewModel.LoadWorkspaceAsync(document);
             Editor.Text = viewModel.InputText;
             Editor.CaretOffset = Editor.Text.Length;
-            FocusEditor();
         }
         catch (Exception error)
         {
             ShowError(error);
+        }
+        finally
+        {
+            FocusEditor();
         }
     }
 
@@ -454,7 +487,11 @@ public partial class MainWindow : Window
             Filter = viewModel.Localize("Dialog.DataFileFilter"),
             CheckFileExists = true
         };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(this) != true)
+        {
+            FocusEditor();
+            return;
+        }
         var literal = DataSnippetBuilder.ToVerbatimStringLiteral(dialog.FileName);
         var snippet = operation switch
         {
@@ -468,7 +505,7 @@ public partial class MainWindow : Window
         };
         if (snippet is null) return;
         InsertDroppedSnippet(snippet);
-        viewModel.SetLocalizedStatus("Status.SnippetInserted");
+        viewModel.ShowStatusNotification("Status.SnippetInserted");
     }
 
     private void Editor_PreviewDragOver(object sender, DragEventArgs e)
@@ -526,8 +563,7 @@ public partial class MainWindow : Window
             if (paths.All(static path => Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase)))
                 menu.Items.Add(CreateDropAction("Drop.ReadJsonFiles", DataSnippetBuilder.CreateJsonBatch(paths)));
         }
-        menu.IsOpen = true;
-        viewModel.SetLocalizedStatus("Status.DropChooseAction");
+        OpenDropActionMenu(menu);
     }
 
     private void ShowDropActionMenu(string path)
@@ -576,8 +612,21 @@ public partial class MainWindow : Window
             }
         }
 
+        OpenDropActionMenu(menu);
+    }
+
+    private void OpenDropActionMenu(ContextMenu menu)
+    {
+        var restoreStatus = viewModel.CaptureStatusRestore();
+        foreach (var item in menu.Items.OfType<MenuItem>())
+            item.Click += (_, _) => menu.Tag = true;
+        menu.Closed += (_, _) =>
+        {
+            if (menu.Tag is not true) restoreStatus();
+            FocusEditor();
+        };
         menu.IsOpen = true;
-        viewModel.SetLocalizedStatus("Status.DropChooseAction");
+        viewModel.SetStatusOverlay("Status.DropChooseAction");
     }
 
     private MenuItem CreateDropAction(string localizationKey, string snippet)
@@ -586,7 +635,7 @@ public partial class MainWindow : Window
         item.Click += (_, _) =>
         {
             InsertDroppedSnippet(snippet);
-            viewModel.SetLocalizedStatus("Status.DroppedPath");
+            viewModel.ShowStatusNotification("Status.DroppedPath");
         };
         return item;
     }
@@ -634,10 +683,35 @@ public partial class MainWindow : Window
 
     private void OpenHelp_Click(object sender, RoutedEventArgs e) => OpenHelp();
 
-    private void OpenHelp() => new HelpWindow(viewModel.LanguageMode) { Owner = this }.Show();
+    private void OpenHelp()
+    {
+        if (helpWindow is { IsVisible: true } existing && helpWindowLanguage != viewModel.LanguageMode)
+            existing.Close();
+        if (helpWindow is { IsVisible: true })
+        {
+            if (helpWindow.WindowState == WindowState.Minimized)
+                helpWindow.WindowState = WindowState.Normal;
+            helpWindow.Activate();
+            return;
+        }
 
-    private void About_Click(object sender, RoutedEventArgs e) =>
+        var window = new HelpWindow(viewModel.LanguageMode) { Owner = this };
+        helpWindow = window;
+        helpWindowLanguage = viewModel.LanguageMode;
+        window.Closed += (_, _) =>
+        {
+            if (!ReferenceEquals(helpWindow, window)) return;
+            helpWindow = null;
+            helpWindowLanguage = null;
+        };
+        window.Show();
+    }
+
+    private void About_Click(object sender, RoutedEventArgs e)
+    {
         MessageBox.Show(this, viewModel.Localize("About.Message"), "PlayGroundSharp", MessageBoxButton.OK, MessageBoxImage.Information);
+        FocusEditor();
+    }
 
     private void FocusInput_Click(object sender, RoutedEventArgs e) => FocusEditor();
 
@@ -711,6 +785,26 @@ public partial class MainWindow : Window
     private async void RemoveUsing_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: string @namespace }) return;
+        await RemoveUsingWithConfirmationAsync(@namespace);
+    }
+
+    private async void UsingList_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            NewUsingBox.Focus();
+            return;
+        }
+        if (e.Key != Key.Delete || !viewModel.CanChangeSession ||
+            UsingList.SelectedItem is not string @namespace) return;
+        e.Handled = true;
+        await RemoveUsingWithConfirmationAsync(@namespace);
+    }
+
+    private async Task RemoveUsingWithConfirmationAsync(string @namespace)
+    {
         if (viewModel.HasSessionState && MessageBox.Show(this,
                 viewModel.Localize("Dialog.UsingRemoveWarning", @namespace),
                 viewModel.Localize("Dialog.UsingRemoveTitle"),
@@ -767,15 +861,7 @@ public partial class MainWindow : Window
     private async Task CopySelectedVariableAsync()
     {
         if (VariableList.SelectedItem is not VariableItem item) return;
-        try
-        {
-            await ClipboardService.SetTextAsync(await Task.Run(() => item.CopyText));
-            viewModel.SetLocalizedStatus("Status.Copied");
-        }
-        catch (Exception error)
-        {
-            ShowError(error);
-        }
+        await CopyTextAsync(() => item.CopyText);
     }
 
     private async void PackageSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -799,6 +885,7 @@ public partial class MainWindow : Window
         }
         if (e.Key != Key.Enter) return;
         e.Handled = true;
+        if (!viewModel.CanChangeSession) return;
         if (viewModel.SearchPackagesCommand.CanExecute(null))
             await viewModel.SearchPackagesCommand.ExecuteAsync(null);
     }
@@ -891,6 +978,7 @@ public partial class MainWindow : Window
         }
         if (e.Key != Key.Enter) return;
         e.Handled = true;
+        if (!viewModel.CanChangeSession) return;
         if (viewModel.AddUsingFromGuiCommand.CanExecute(null))
             await viewModel.AddUsingFromGuiCommand.ExecuteAsync(null);
     }
@@ -905,16 +993,8 @@ public partial class MainWindow : Window
 
     private async Task CopyTranscriptAsync()
     {
-        try
-        {
-            var lines = viewModel.Transcript.ToArray();
-            await ClipboardService.SetTextAsync(await Task.Run(() => FormatTranscript(lines)));
-            viewModel.SetLocalizedStatus("Status.Copied");
-        }
-        catch (Exception error)
-        {
-            ShowError(error);
-        }
+        var lines = viewModel.Transcript.ToArray();
+        await CopyTextAsync(() => FormatTranscript(lines));
     }
 
     private async void SaveTranscript_Click(object sender, RoutedEventArgs e)
@@ -927,16 +1007,26 @@ public partial class MainWindow : Window
             AddExtension = true,
             FileName = $"PlayGroundSharp-transcript-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
         };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(this) != true)
+        {
+            FocusEditor();
+            return;
+        }
         try
         {
+            viewModel.SetStatusOverlay("Status.SavingResult");
             var lines = viewModel.Transcript.ToArray();
             await File.WriteAllTextAsync(dialog.FileName, await Task.Run(() => FormatTranscript(lines)));
-            viewModel.SetLocalizedStatus("Status.Saved", Path.GetFileName(dialog.FileName));
+            viewModel.ShowStatusNotification("Status.Saved", Path.GetFileName(dialog.FileName));
         }
         catch (Exception error)
         {
+            viewModel.ShowStatusNotification("Status.SaveFailed");
             ShowError(error);
+        }
+        finally
+        {
+            FocusEditor();
         }
     }
 
@@ -1494,29 +1584,13 @@ public partial class MainWindow : Window
     private async void CopyTranscriptLine_Click(object sender, RoutedEventArgs e)
     {
         if (GetTranscriptLine(sender) is not { } line) return;
-        try
-        {
-            await ClipboardService.SetTextAsync(await Task.Run(() => line.CopyText));
-            viewModel.SetLocalizedStatus("Status.Copied");
-        }
-        catch (Exception error)
-        {
-            ShowError(error);
-        }
+        await CopyTextAsync(() => line.CopyText);
     }
 
     private async void CopyTranscriptLineJson_Click(object sender, RoutedEventArgs e)
     {
         if (GetTranscriptLine(sender)?.Snapshot is not { } snapshot) return;
-        try
-        {
-            await ClipboardService.SetTextAsync(await Task.Run(() => SnapshotJsonFormatter.Format(snapshot)));
-            viewModel.SetLocalizedStatus("Status.CopiedJson");
-        }
-        catch (Exception error)
-        {
-            ShowError(error);
-        }
+        await CopyTextAsync(() => SnapshotJsonFormatter.Format(snapshot), "Status.CopiedJson");
     }
 
     private async void TranscriptTree_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -1524,14 +1598,27 @@ public partial class MainWindow : Window
         if (e.Key != Key.C || Keyboard.Modifiers != ModifierKeys.Control ||
             sender is not TreeView { SelectedItem: ConsoleSnapshotNode node }) return;
         e.Handled = true;
+        await CopyTextAsync(() => node.CopyText);
+    }
+
+    private async Task CopyTextAsync(Func<string> textFactory, string successStatus = "Status.Copied")
+    {
+        if (copyInProgress) return;
+        copyInProgress = true;
+        viewModel.SetStatusOverlay("Status.Copying");
         try
         {
-            await ClipboardService.SetTextAsync(await Task.Run(() => node.CopyText));
-            viewModel.SetLocalizedStatus("Status.Copied");
+            await ClipboardService.SetTextAsync(await Task.Run(textFactory));
+            viewModel.ShowStatusNotification(successStatus);
         }
         catch (Exception error)
         {
+            viewModel.ShowStatusNotification("Status.CopyFailed");
             ShowError(error);
+        }
+        finally
+        {
+            copyInProgress = false;
         }
     }
 
@@ -1551,15 +1638,17 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         try
         {
+            viewModel.SetStatusOverlay("Status.SavingResult");
             var text = await Task.Run(() =>
                 line.Snapshot is not null && Path.GetExtension(dialog.FileName).Equals(".json", StringComparison.OrdinalIgnoreCase)
                     ? SnapshotJsonFormatter.Format(line.Snapshot)
                     : line.CopyText);
             await File.WriteAllTextAsync(dialog.FileName, text);
-            viewModel.SetLocalizedStatus("Status.Saved", Path.GetFileName(dialog.FileName));
+            viewModel.ShowStatusNotification("Status.Saved", Path.GetFileName(dialog.FileName));
         }
         catch (Exception error)
         {
+            viewModel.ShowStatusNotification("Status.SaveFailed");
             ShowError(error);
         }
     }

@@ -91,8 +91,8 @@
                             Click="Cancel_Click" />
                     <Button Content="↻" Style="{StaticResource IconToolbarButtonStyle}" Click="RestartWorker_Click"
                             ToolTip="{DynamicResource Tooltip.Restart}" AutomationProperties.Name="{DynamicResource Ui.Restart}"
-                            IsEnabled="{Binding IsWorkerConnected}" />
-                    <Button Content="⟲" Style="{StaticResource IconToolbarButtonStyle}" Click="ResetSession_Click" IsEnabled="{Binding IsWorkerConnected}"
+                            IsEnabled="{Binding CanResetOrRestart}" />
+                    <Button Content="⟲" Style="{StaticResource IconToolbarButtonStyle}" Click="ResetSession_Click" IsEnabled="{Binding CanResetOrRestart}"
                             ToolTip="{DynamicResource Tooltip.Reset}" AutomationProperties.Name="{DynamicResource Ui.Reset}" />
                     <Button Content="⌫" Style="{StaticResource IconToolbarButtonStyle}" Command="{Binding ClearCommand}"
                             ToolTip="{DynamicResource Tooltip.Clear}" AutomationProperties.Name="{DynamicResource Ui.Clear}"
@@ -643,13 +643,14 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
-                                <Grid IsEnabled="{Binding CanChangeSession}">
+                                <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="PackageSearchBox" Text="{Binding PackageSearchText, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="NuGetSearchText" PreviewKeyDown="PackageSearchBox_PreviewKeyDown"
                                              ToolTip="{DynamicResource NuGet.SearchTooltip}" />
                                     <Button Grid.Column="1" Content="{DynamicResource NuGet.Search}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.Name="NuGetSearchButton"
-                                            Command="{Binding SearchPackagesCommand}" Margin="7,0,0,0" />
+                                            Command="{Binding SearchPackagesCommand}" Margin="7,0,0,0"
+                                            IsEnabled="{Binding CanChangeSession}" />
                                 </Grid>
                                 <CheckBox Grid.Row="1" Content="{DynamicResource NuGet.IncludePrerelease}" IsChecked="{Binding IncludePrereleasePackages}" Margin="0,7,0,0"
                                           IsEnabled="{Binding CanChangeSession}" />
@@ -724,17 +725,19 @@
                         <TabItem Header="{DynamicResource Tab.Usings}">
                             <Grid Margin="10" TextElement.Foreground="{DynamicResource ForegroundBrush}">
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                                <Grid IsEnabled="{Binding CanChangeSession}">
+                                <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="NewUsingBox" Text="{Binding NewUsingText, UpdateSourceTrigger=PropertyChanged}"
                                              Height="32" Padding="9,4" PreviewKeyDown="NewUsingBox_PreviewKeyDown"
                                              AutomationProperties.Name="UsingInput"
                                              VerticalContentAlignment="Center" ToolTip="{DynamicResource Usings.InputTooltip}" />
                                     <Button Grid.Column="1" Content="{DynamicResource Usings.Add}" Command="{Binding AddUsingFromGuiCommand}"
-                                            Style="{StaticResource AccentButtonStyle}" Margin="7,0,0,0" MinWidth="64" />
+                                            Style="{StaticResource AccentButtonStyle}" Margin="7,0,0,0" MinWidth="64"
+                                            IsEnabled="{Binding CanChangeSession}" />
                                 </Grid>
-                                <ListBox Grid.Row="1" ItemsSource="{Binding UsingItems}" Margin="0,9,0,0" BorderThickness="0"
-                                         Background="Transparent" Foreground="{DynamicResource ForegroundBrush}">
+                                <ListBox x:Name="UsingList" Grid.Row="1" ItemsSource="{Binding UsingItems}" Margin="0,9,0,0" BorderThickness="0"
+                                         Background="Transparent" Foreground="{DynamicResource ForegroundBrush}"
+                                         PreviewKeyDown="UsingList_PreviewKeyDown" ToolTip="{DynamicResource Usings.ListTooltip}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <Grid Margin="2,2" MinWidth="220">

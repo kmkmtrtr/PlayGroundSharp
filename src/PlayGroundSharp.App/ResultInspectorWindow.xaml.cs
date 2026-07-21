@@ -19,6 +19,7 @@ public partial class ResultInspectorWindow : Window
     private SnapshotTreeNode? selectedNode;
     private CancellationTokenSource? searchCancellation;
     private string currentSearchStatus = string.Empty;
+    private bool copyInProgress;
 
     public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel)
     {
@@ -105,13 +106,13 @@ public partial class ResultInspectorWindow : Window
         if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             e.Handled = true;
-            await CopyToClipboardAsync(await Task.Run(() => SnapshotTextFormatter.FormatFull(snapshot)));
+            await CopyToClipboardAsync(() => SnapshotTextFormatter.FormatFull(snapshot));
         }
         else if (Keyboard.Modifiers == ModifierKeys.Control && Keyboard.FocusedElement is not TextBox &&
                  selectedNode is not null)
         {
             e.Handled = true;
-            await CopyToClipboardAsync(await Task.Run(() => selectedNode.CopyText));
+            await CopyToClipboardAsync(() => selectedNode.CopyText);
         }
     }
 
@@ -192,15 +193,15 @@ public partial class ResultInspectorWindow : Window
     private async void CopySelected_Click(object sender, RoutedEventArgs e)
     {
         if (selectedNode is null) return;
-        await CopyToClipboardAsync(await Task.Run(() => selectedNode.CopyText));
+        await CopyToClipboardAsync(() => selectedNode.CopyText);
     }
 
     private async void CopyAll_Click(object sender, RoutedEventArgs e) =>
-        await CopyToClipboardAsync(await Task.Run(() => SnapshotTextFormatter.FormatFull(snapshot)));
+        await CopyToClipboardAsync(() => SnapshotTextFormatter.FormatFull(snapshot));
 
     private async void CopyPath_Click(object sender, RoutedEventArgs e)
     {
-        if (selectedNode is not null) await CopyToClipboardAsync(selectedNode.Path);
+        if (selectedNode is not null) await CopyToClipboardAsync(() => selectedNode.Path);
     }
 
     private async void SaveAll_Click(object sender, RoutedEventArgs e)
@@ -217,6 +218,7 @@ public partial class ResultInspectorWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         try
         {
+            SetSearchStatus(AppLocalization.Text(languageMode, "Status.SavingResult"));
             var text = await Task.Run(() =>
                 Path.GetExtension(dialog.FileName).Equals(".json", StringComparison.OrdinalIgnoreCase)
                     ? SnapshotJsonFormatter.Format(snapshot)
@@ -226,6 +228,7 @@ public partial class ResultInspectorWindow : Window
         }
         catch (Exception error)
         {
+            SetSearchStatus(AppLocalization.Text(languageMode, "Status.SaveFailed"));
             MessageBox.Show(this, error.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -237,16 +240,24 @@ public partial class ResultInspectorWindow : Window
         PathText.Text = node.Path;
     }
 
-    private async Task CopyToClipboardAsync(string text)
+    private async Task CopyToClipboardAsync(Func<string> textFactory)
     {
+        if (copyInProgress) return;
+        copyInProgress = true;
+        SetSearchStatus(AppLocalization.Text(languageMode, "Status.Copying"));
         try
         {
-            await ClipboardService.SetTextAsync(text);
+            await ClipboardService.SetTextAsync(await Task.Run(textFactory));
             ShowNotification("Status.Copied");
         }
         catch (Exception error)
         {
+            SetSearchStatus(AppLocalization.Text(languageMode, "Status.CopyFailed"));
             MessageBox.Show(this, error.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            copyInProgress = false;
         }
     }
 

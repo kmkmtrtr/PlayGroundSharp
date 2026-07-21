@@ -122,19 +122,15 @@ public partial class MainWindow : Window
         SaveWindowLayout();
         windowSource?.RemoveHook(WindowMessageHook);
         windowSource = null;
-        completionCancellation?.Cancel();
-        completionCancellation?.Dispose();
-        completionDescriptionCancellation?.Cancel();
-        completionDescriptionCancellation?.Dispose();
-        signatureHelpCancellation?.Cancel();
-        signatureHelpCancellation?.Dispose();
+        CancelAndDispose(ref completionCancellation);
+        CancelAndDispose(ref completionDescriptionCancellation);
+        CancelAndDispose(ref signatureHelpCancellation);
         signatureHelpTimer.Stop();
         completionDescriptionTimer.Stop();
         quickInfoChordTimer.Stop();
         quickInfoChordStatusRestore = null;
-        hoverQuickInfoCancellation?.Cancel();
-        hoverQuickInfoCancellation?.Dispose();
-        pinnedQuickInfoCancellation?.Cancel();
+        CancelAndDispose(ref hoverQuickInfoCancellation);
+        CancelAndDispose(ref pinnedQuickInfoCancellation);
         try
         {
             await viewModel.DisposeAsync();
@@ -1407,8 +1403,7 @@ public partial class MainWindow : Window
         ClosePinnedQuickInfo();
         CancelCompletionRequest();
         signatureHelpTimer.Stop();
-        signatureHelpCancellation?.Cancel();
-        signatureHelpCancellation?.Dispose();
+        CancelAndDispose(ref signatureHelpCancellation);
         var cancellation = new CancellationTokenSource();
         signatureHelpCancellation = cancellation;
         var requestText = Editor.Text;
@@ -1455,16 +1450,12 @@ public partial class MainWindow : Window
     private void CancelSignatureHelpRefresh()
     {
         signatureHelpTimer.Stop();
-        signatureHelpCancellation?.Cancel();
-        signatureHelpCancellation?.Dispose();
-        signatureHelpCancellation = null;
+        CancelAndDispose(ref signatureHelpCancellation);
     }
 
     private void CancelCompletionRequest()
     {
-        completionCancellation?.Cancel();
-        completionCancellation?.Dispose();
-        completionCancellation = null;
+        CancelAndDispose(ref completionCancellation);
     }
 
     private async void CompletionList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -1516,9 +1507,7 @@ public partial class MainWindow : Window
         allCompletionItems = [];
         lastCompletionFilterPrefix = null;
         CancelCompletionRequest();
-        completionDescriptionCancellation?.Cancel();
-        completionDescriptionCancellation?.Dispose();
-        completionDescriptionCancellation = null;
+        CancelAndDispose(ref completionDescriptionCancellation);
         CancelSignatureHelpRefresh();
         AssistSummary.Text = string.Empty;
         AssistHint.Text = string.Empty;
@@ -1582,9 +1571,7 @@ public partial class MainWindow : Window
     private void UpdateAssistSummary()
     {
         completionDescriptionTimer.Stop();
-        completionDescriptionCancellation?.Cancel();
-        completionDescriptionCancellation?.Dispose();
-        completionDescriptionCancellation = null;
+        CancelAndDispose(ref completionDescriptionCancellation);
 
         if (assistMode == AssistMode.Signature && CompletionList.SelectedItem is SignatureInformation signature)
         {
@@ -1625,6 +1612,12 @@ public partial class MainWindow : Window
         catch (Exception error)
         {
             if (!cancellation.IsCancellationRequested) ShowAssistSummary(error.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(completionDescriptionCancellation, cancellation))
+                completionDescriptionCancellation = null;
+            cancellation.Dispose();
         }
     }
 
@@ -1762,8 +1755,7 @@ public partial class MainWindow : Window
         var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
         if (position is null) return;
         var offset = Editor.Document.GetOffset(position.Value.Location);
-        hoverQuickInfoCancellation?.Cancel();
-        hoverQuickInfoCancellation?.Dispose();
+        CancelAndDispose(ref hoverQuickInfoCancellation);
         var cancellation = new CancellationTokenSource();
         hoverQuickInfoCancellation = cancellation;
         var requestText = Editor.Text;
@@ -1780,14 +1772,36 @@ public partial class MainWindow : Window
         {
             if (!cancellation.IsCancellationRequested) Editor.ToolTip = null;
         }
+        finally
+        {
+            if (ReferenceEquals(hoverQuickInfoCancellation, cancellation))
+                hoverQuickInfoCancellation = null;
+            cancellation.Dispose();
+        }
     }
 
     private void Editor_MouseLeave(object sender, MouseEventArgs e)
     {
-        hoverQuickInfoCancellation?.Cancel();
-        hoverQuickInfoCancellation?.Dispose();
-        hoverQuickInfoCancellation = null;
+        CancelAndDispose(ref hoverQuickInfoCancellation);
         Editor.ToolTip = null;
+    }
+
+    private static void CancelAndDispose(ref CancellationTokenSource? source)
+    {
+        // Clear the field before cancellation. WPF can synchronously raise selection or
+        // focus events while a popup is being torn down; those re-entrant handlers must
+        // never observe a CancellationTokenSource that has already been disposed.
+        var current = source;
+        source = null;
+        if (current is null) return;
+        try
+        {
+            current.Cancel();
+        }
+        finally
+        {
+            current.Dispose();
+        }
     }
 
     private void TranscriptLine_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)

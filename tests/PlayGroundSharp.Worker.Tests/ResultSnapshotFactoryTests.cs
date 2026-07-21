@@ -77,6 +77,20 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public void CapturesTupleAndPublicFieldValues()
+    {
+        var tuple = factory.Create((Name: "Ada", Age: 30));
+        var fields = factory.Create(new PublicFieldContainer { Label = "answer", Value = 42 });
+
+        var tupleMembers = Assert.IsAssignableFrom<IReadOnlyList<ResultProperty>>(tuple.Properties);
+        var fieldMembers = Assert.IsAssignableFrom<IReadOnlyList<ResultProperty>>(fields.Properties);
+        Assert.Equal(["Item1", "Item2"], tupleMembers.Select(static property => property.Name));
+        Assert.Equal(["Ada", "30"], tupleMembers.Select(static property => property.Value.Display));
+        Assert.Equal(["Label", "Value"], fieldMembers.Select(static property => property.Name));
+        Assert.Equal(["answer", "42"], fieldMembers.Select(static property => property.Value.Display));
+    }
+
+    [Fact]
     public void DetectsCyclesAndMaximumItems()
     {
         var node = new Node();
@@ -134,5 +148,11 @@ public sealed class ResultSnapshotFactoryTests
     private sealed class Node
     {
         public Node? Next { get; set; }
+    }
+
+    private sealed class PublicFieldContainer
+    {
+        public string Label = string.Empty;
+        public int Value;
     }
 }

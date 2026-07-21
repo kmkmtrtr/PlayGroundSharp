@@ -140,6 +140,7 @@ public sealed class ResultSnapshotFactory
             var readableProperties = type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
                 .Where(static property => property.GetIndexParameters().Length == 0)
                 .ToArray();
+            var readableFields = type.GetFields(BindingFlags.Instance | BindingFlags.Public);
             foreach (var property in readableProperties)
             {
                 if (!budget.CanTakeNode) break;
@@ -154,14 +155,30 @@ public sealed class ResultSnapshotFactory
                             CreateExceptionSnapshot(error, property.PropertyType.FullName, budget)));
                 }
             }
+            foreach (var field in readableFields)
+            {
+                if (!budget.CanTakeNode) break;
+                try
+                {
+                    properties.Add(new(field.Name, Create(field.GetValue(value), depth + 1, path, budget)));
+                }
+                catch (Exception error)
+                {
+                    if (budget.TryTakeNode())
+                        properties.Add(new(field.Name,
+                            CreateExceptionSnapshot(error, field.FieldType.FullName, budget)));
+                }
+            }
+
+            var memberCount = readableProperties.Length + readableFields.Length;
 
             return new(
                 SnapshotKind.Object,
-                $"{readableProperties.Length} properties",
+                $"{memberCount} members",
                 typeName,
                 properties,
-                IsTruncated: properties.Count < readableProperties.Length,
-                TotalCount: readableProperties.Length);
+                IsTruncated: properties.Count < memberCount,
+                TotalCount: memberCount);
         }
         finally
         {

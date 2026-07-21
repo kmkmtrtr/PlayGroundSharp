@@ -262,6 +262,8 @@ public sealed class CSharpLanguageServiceTests
         Assert.Contains(signature.Signatures, static item => item.DisplayText.Contains("Join", StringComparison.Ordinal));
         Assert.Contains(signature.Signatures, static item => !string.IsNullOrWhiteSpace(item.Summary));
         Assert.All(signature.Signatures, static item => Assert.True(item.ActiveParameter is -1 or 0));
+        Assert.All(signature.Signatures,
+            static item => Assert.Equal(item.DisplayText, item.AccessibleDisplayText));
         Assert.Contains(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 

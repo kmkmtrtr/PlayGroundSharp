@@ -43,7 +43,10 @@ public sealed record SignatureInformation(
     string DisplayText,
     string Summary,
     IReadOnlyList<SignatureParameterInformation> Parameters,
-    int ActiveParameter);
+    int ActiveParameter)
+{
+    public string AccessibleDisplayText => DisplayText;
+}
 public sealed record SignatureHelpResult(IReadOnlyList<SignatureInformation> Signatures, int SelectedSignature);
 
 /// <summary>Describes one documented parameter on an explorer method.</summary>

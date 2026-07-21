@@ -24,14 +24,33 @@ public sealed class ResultSnapshotFactoryTests
     {
         var character = factory.Create('あ');
         var characters = factory.Create("abc".ToCharArray());
+        var highSurrogate = factory.Create('\uD83D');
 
         Assert.Equal(SnapshotKind.String, character.Kind);
         Assert.Equal("System.Char", character.TypeName);
         Assert.Equal("あ", character.Display);
+        Assert.Equal("\\uD83D", highSurrogate.Display);
         Assert.Equal(SnapshotKind.Sequence, characters.Kind);
         var items = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(characters.Items);
         Assert.Equal(["a", "b", "c"], items.Select(static item => item.Display));
         Assert.All(items, static item => Assert.Equal(SnapshotKind.String, item.Kind));
+    }
+
+    [Fact]
+    public void PreservesMultidimensionalArrayShape()
+    {
+        var snapshot = factory.Create(new[,] { { 1, 2, 3 }, { 4, 5, 6 } });
+
+        Assert.Equal(SnapshotKind.Sequence, snapshot.Kind);
+        Assert.Equal(2, snapshot.TotalCount);
+        var rows = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(snapshot.Items);
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, static row => Assert.Equal(3, row.TotalCount));
+        Assert.Equal(["1", "2", "3"], rows[0].Items!.Select(static item => item.Display));
+        Assert.Equal(["4", "5", "6"], rows[1].Items!.Select(static item => item.Display));
+
+        using var document = System.Text.Json.JsonDocument.Parse(SnapshotJsonFormatter.Format(snapshot));
+        Assert.Equal(6, document.RootElement[1][2].GetInt32());
     }
 
     [Fact]

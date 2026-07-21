@@ -64,7 +64,11 @@ public sealed class ResultSnapshotFactory
         }
         if (value is char character)
         {
-            var display = budget.TakeText(character.ToString(), 1, out var truncated);
+            // A lone UTF-16 surrogate cannot round-trip through the JSON IPC payload:
+            // System.Text.Json replaces it with U+FFFD. Preserve the exact code unit as
+            // ASCII so char[] values containing supplementary Unicode remain inspectable.
+            var characterText = char.IsSurrogate(character) ? $"\\u{(int)character:X4}" : character.ToString();
+            var display = budget.TakeText(characterText, characterText.Length, out var truncated);
             return new(SnapshotKind.String, display, typeName, IsTruncated: truncated);
         }
         if (value is bool boolean)
@@ -117,6 +121,12 @@ public sealed class ResultSnapshotFactory
 
         try
         {
+            if (value is Array { Rank: > 1 } array)
+            {
+                var indices = new int[array.Rank];
+                return CreateArrayDimension(
+                    array, typeName, dimension: 0, depth, path, budget, indices, nodeAlreadyTaken: true);
+            }
             if (value is IEnumerable enumerable)
             {
                 return CreateSequence(enumerable, typeName, depth, path, budget);
@@ -156,6 +166,54 @@ public sealed class ResultSnapshotFactory
                 path.Remove(value);
             }
         }
+    }
+
+    private ResultSnapshot CreateArrayDimension(
+        Array array,
+        string typeName,
+        int dimension,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget,
+        int[] indices,
+        bool nodeAlreadyTaken = false)
+    {
+        if (!nodeAlreadyTaken && !budget.TryTakeNode())
+            return new(SnapshotKind.MaxDepth, "… snapshot limit reached", typeName, IsTruncated: true);
+        if (depth >= MaximumDepth)
+            return new(SnapshotKind.MaxDepth, "…", typeName, IsTruncated: true);
+
+        var length = array.GetLength(dimension);
+        var lowerBound = array.GetLowerBound(dimension);
+        var items = new List<ResultSnapshot>(Math.Min(length, MaximumItems));
+        while (items.Count < length && items.Count < MaximumItems && budget.CanTakeNode)
+        {
+            indices[dimension] = lowerBound + items.Count;
+            if (dimension + 1 < array.Rank)
+            {
+                items.Add(CreateArrayDimension(
+                    array, typeName, dimension + 1, depth + 1, path, budget, indices));
+                continue;
+            }
+
+            try
+            {
+                items.Add(Create(array.GetValue(indices), depth + 1, path, budget));
+            }
+            catch (Exception error)
+            {
+                if (budget.TryTakeNode()) items.Add(CreateExceptionSnapshot(error, null, budget));
+                break;
+            }
+        }
+
+        return new(
+            SnapshotKind.Sequence,
+            $"{length:N0} items",
+            typeName,
+            Items: items,
+            IsTruncated: items.Count < length,
+            TotalCount: length);
     }
 
     private ResultSnapshot CreateSequence(

@@ -33,4 +33,27 @@ public sealed class ConsoleSnapshotNodeTests
         Assert.Equal("hoge: (2) [1, 2]", property.AccessibleLabel);
         Assert.Equal("[0]: 1", firstItem.AccessibleLabel);
     }
+
+    [Fact]
+    public void CharacterArraysKeepControlAndSurrogateCodeUnitsReadable()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "4 items",
+            "System.Char[]",
+            Items:
+            [
+                new(SnapshotKind.String, "a", "System.Char"),
+                new(SnapshotKind.String, "\n", "System.Char"),
+                new(SnapshotKind.String, "\uD83D", "System.Char"),
+                new(SnapshotKind.String, "\uDE00", "System.Char")
+            ],
+            TotalCount: 4);
+
+        var root = ConsoleSnapshotNode.CreateRoot(snapshot);
+
+        Assert.Equal("(4) ['a', '\\n', '\\uD83D', '\\uDE00']", root.Preview);
+        Assert.DoesNotContain('�', root.Preview);
+        Assert.Contains("'\\uD83D'", root.CopyText, StringComparison.Ordinal);
+    }
 }

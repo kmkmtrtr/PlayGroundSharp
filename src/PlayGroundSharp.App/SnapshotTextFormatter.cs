@@ -31,10 +31,39 @@ internal static class SnapshotTextFormatter
         if (snapshot.Properties is not null)
             return $"{{{snapshot.TotalCount?.ToString("N0") ?? snapshot.Properties.Count.ToString("N0")} properties}}" +
                    (snapshot.IsTruncated ? " …" : string.Empty);
-        return (snapshot.Display ?? snapshot.Kind.ToString()) + (snapshot.IsTruncated ? " …" : string.Empty);
+        var display = snapshot.Display ?? snapshot.Kind.ToString();
+        if (snapshot.TypeName == typeof(char).FullName) display = QuoteCharacter(display);
+        return display + (snapshot.IsTruncated ? " …" : string.Empty);
     }
 
     internal static string QuoteJsonString(string value) => JsonSerializer.Serialize(value, DisplayJsonOptions);
+
+    internal static string QuoteCharacter(string value)
+    {
+        if (value.Length == 6 && value.StartsWith("\\u", StringComparison.Ordinal) &&
+            value.AsSpan(2).ContainsAnyExcept("0123456789abcdefABCDEF"))
+            return QuoteJsonString(value);
+        if (value.Length == 6 && value.StartsWith("\\u", StringComparison.Ordinal))
+            return $"'{value}'";
+        if (value.Length != 1) return QuoteJsonString(value);
+        var escaped = value[0] switch
+        {
+            '\0' => "\\0",
+            '\a' => "\\a",
+            '\b' => "\\b",
+            '\f' => "\\f",
+            '\n' => "\\n",
+            '\r' => "\\r",
+            '\t' => "\\t",
+            '\v' => "\\v",
+            '\\' => "\\\\",
+            '\'' => "\\'",
+            var character when char.IsControl(character) || char.IsSurrogate(character) =>
+                $"\\u{(int)character:X4}",
+            var character => character.ToString()
+        };
+        return $"'{escaped}'";
+    }
 
     private static SnapshotFormatResult Format(ResultSnapshot snapshot, int characterLimit, int itemLimit)
     {
@@ -131,7 +160,11 @@ internal static class SnapshotTextFormatter
         private void WriteScalar(ResultSnapshot snapshot)
         {
             var display = snapshot.Display ?? snapshot.Kind.ToString();
-            if (snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid)
+            if (snapshot.TypeName == typeof(char).FullName)
+            {
+                Append(QuoteCharacter(display));
+            }
+            else if (snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid)
             {
                 var remaining = Math.Max(0, characterLimit - builder.Length - 2);
                 var value = display.Length <= remaining ? display : display[..remaining];

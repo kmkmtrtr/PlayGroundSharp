@@ -173,9 +173,11 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
         var display = snapshot.Display ?? snapshot.Kind.ToString();
         var labelTruncated = display.Length > 160;
         if (labelTruncated) display = display[..160];
-        var value = snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid
-            ? SnapshotTextFormatter.QuoteJsonString(display)
-            : display;
+        var value = snapshot.TypeName == typeof(char).FullName
+            ? SnapshotTextFormatter.QuoteCharacter(display)
+            : snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid
+                ? SnapshotTextFormatter.QuoteJsonString(display)
+                : display;
         return labelTruncated || snapshot.IsTruncated ? value + "…" : value;
     }
 

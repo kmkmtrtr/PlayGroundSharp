@@ -277,7 +277,8 @@
                                 <TreeView.ItemContainerStyle>
                                     <Style TargetType="TreeViewItem">
                                         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=OneTime}" />
-                                        <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                                        <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleLabel}" />
+                                        <Setter Property="AutomationProperties.HelpText" Value="{Binding AccessibleHelpText}" />
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                         <Setter Property="Padding" Value="1" />
                                     </Style>

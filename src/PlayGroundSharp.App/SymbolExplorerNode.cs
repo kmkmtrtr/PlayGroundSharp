@@ -37,6 +37,12 @@ public sealed record SymbolExplorerNode(
         _ => "Type"
     };
     public string InheritanceDisplay => string.Join(", ", InheritedTypeItems);
+    public string AccessibleLabel => HasInheritance
+        ? $"{Name} — {KindLabel} — {InheritanceDisplay}"
+        : $"{Name} — {KindLabel}";
+    public string AccessibleHelpText => string.Join(
+        Environment.NewLine,
+        new[] { Signature, Summary }.Where(static value => !string.IsNullOrWhiteSpace(value)));
     public bool HasSummary => !string.IsNullOrWhiteSpace(Summary);
     public bool HasInheritance => InheritedTypeItems.Count > 0;
     public bool HasParameters => ParameterItems.Count > 0;

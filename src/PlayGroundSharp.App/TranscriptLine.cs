@@ -11,7 +11,9 @@ public sealed record TranscriptLine(
     string? InputCode = null,
     ResultSnapshot? Snapshot = null,
     string? CopyValue = null,
-    IReadOnlyList<ConsoleSnapshotNode>? SnapshotRoots = null)
+    IReadOnlyList<ConsoleSnapshotNode>? SnapshotRoots = null,
+    string? LocalizationKey = null,
+    IReadOnlyList<object?>? LocalizationArguments = null)
 {
     private const int MaximumConsolePreviewLength = 8 * 1024;
     public bool IsInspectable => Snapshot is not null;
@@ -44,6 +46,26 @@ public sealed record TranscriptLine(
     public static TranscriptLine Diagnostic(string text, bool error = true) => new(error ? "×" : "⚠", text,
         Resource(error ? "ErrorBrush" : "WarningBrush"), Resource(error ? "ErrorBrush" : "WarningBrush"));
     public static TranscriptLine System(string text) => new("·", text, Resource("MutedBrush"), Resource("MutedBrush"));
+    public static TranscriptLine LocalizedSystem(
+        AppLanguageMode languageMode,
+        string localizationKey,
+        params object?[] arguments) =>
+        new("·", AppLocalization.Text(languageMode, localizationKey, arguments),
+            Resource("MutedBrush"), Resource("MutedBrush"),
+            LocalizationKey: localizationKey, LocalizationArguments: arguments);
+
+    public static TranscriptLine LocalizedDiagnostic(
+        AppLanguageMode languageMode,
+        string localizationKey,
+        bool error = true,
+        params object?[] arguments) =>
+        new(error ? "×" : "⚠", AppLocalization.Text(languageMode, localizationKey, arguments),
+            Resource(error ? "ErrorBrush" : "WarningBrush"), Resource(error ? "ErrorBrush" : "WarningBrush"),
+            LocalizationKey: localizationKey, LocalizationArguments: arguments);
+
+    public TranscriptLine WithCurrentLanguage(AppLanguageMode languageMode) => LocalizationKey is null
+        ? this
+        : this with { Text = AppLocalization.Text(languageMode, LocalizationKey, [.. LocalizationArguments ?? []]) };
 
     public TranscriptLine WithCurrentTheme() => Prefix switch
     {

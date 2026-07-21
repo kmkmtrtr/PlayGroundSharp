@@ -33,4 +33,19 @@ public sealed class TranscriptLineTests
 
         Assert.Contains("more items not captured", line.CopyText, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void LocalizedSystemRowsCanBeRelocalizedWithoutChangingRawRows()
+    {
+        var localized = TranscriptLine.LocalizedSystem(
+            AppLanguageMode.Japanese,
+            "Message.WorkspaceLoaded",
+            3);
+        var raw = TranscriptLine.System("user supplied text");
+
+        var english = localized.WithCurrentLanguage(AppLanguageMode.English);
+
+        Assert.Contains("3 submissions replayed", english.Text, StringComparison.Ordinal);
+        Assert.Equal("user supplied text", raw.WithCurrentLanguage(AppLanguageMode.English).Text);
+    }
 }

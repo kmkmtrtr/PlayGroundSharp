@@ -216,7 +216,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 WorkerDisconnectionKind.PipeClosed => Localize("Message.WorkerPipeClosed"),
                 _ => disconnection.Detail ?? Localize("Message.WorkerPipeClosed")
             };
-            Transcript.Add(TranscriptLine.System(Localize("Message.WorkerDisconnected", reason)));
+            Transcript.Add(LocalizedSystemLine("Message.WorkerDisconnected", reason));
         });
     }
 
@@ -296,7 +296,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 if (references.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
                 if (!File.Exists(path))
                 {
-                    Transcript.Add(TranscriptLine.Diagnostic(Localize("Message.ReferenceMissing", path), false));
+                    Transcript.Add(LocalizedDiagnosticLine("Message.ReferenceMissing", false, path));
                     continue;
                 }
                 await worker.AddReferenceAsync(path, cancellationToken);
@@ -326,7 +326,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             IsRunning = false;
             SetSessionStatus("Session.Count", submissions.Count);
             SetLocalizedStatus("Status.WorkspaceLoaded");
-            Transcript.Add(TranscriptLine.System(Localize("Message.WorkspaceLoaded", submissions.Count)));
+            Transcript.Add(LocalizedSystemLine("Message.WorkspaceLoaded", submissions.Count));
             _ = RefreshTypeExplorerAsync();
         }
         catch
@@ -429,7 +429,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             await worker.StartAsync();
             IsWorkerConnected = true;
             SetLocalizedStatus("Status.Ready");
-            Transcript.Add(TranscriptLine.System(Localize("Message.WorkerConnected")));
+            Transcript.Add(LocalizedSystemLine("Message.WorkerConnected"));
             // Symbol/documentation discovery is comparatively expensive and is not
             // required to start typing or executing. It owns cancellation/error handling.
             _ = RefreshTypeExplorerAsync();
@@ -506,7 +506,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             if (InputText.Length == 0) InputText = code;
             else ScheduleDiagnostics(InputText);
             SetLocalizedStatus("Status.Ready");
-            Transcript.Add(TranscriptLine.System(Localize("Message.ExecutionPreparationCancelled")));
+            Transcript.Add(LocalizedSystemLine("Message.ExecutionPreparationCancelled"));
             return;
         }
 
@@ -560,8 +560,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 if (!await AddUsingAsync(requiredImport)) continue;
                 SetLocalizedStatus("Status.AddedUsing", requiredImport);
-                Transcript.Add(TranscriptLine.System(
-                    Localize("Message.UsingExecutionAutoAdded", requiredImport)));
+                Transcript.Add(LocalizedSystemLine("Message.UsingExecutionAutoAdded", requiredImport));
             }
             catch (Exception error)
             {
@@ -600,7 +599,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         VariableItems.Clear();
         ScheduleDiagnostics(InputText);
         SetSessionStatus("Session.StateLost");
-        Transcript.Add(TranscriptLine.System(Localize("Message.ForcedRestart")));
+        Transcript.Add(LocalizedSystemLine("Message.ForcedRestart"));
     }
 
     public string? MoveHistory(int delta, string currentInput)
@@ -735,14 +734,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 VariableItems.Clear();
                 IsRunning = false;
                 SetSessionStatus("Session.Restarted");
-                Transcript.Add(TranscriptLine.System(Localize("Message.UsingRemovedWithRestart", value)));
+                Transcript.Add(LocalizedSystemLine("Message.UsingRemovedWithRestart", value));
             }
             else
             {
                 await worker.RemoveUsingAsync(value);
                 imports.Remove(value);
                 UsingItems.Remove(value);
-                Transcript.Add(TranscriptLine.System(Localize("Message.UsingRemoved", value)));
+                Transcript.Add(LocalizedSystemLine("Message.UsingRemoved", value));
             }
 
             SetLocalizedStatus("Status.RemovedUsing", value);
@@ -763,9 +762,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             var added = await AddUsingAsync(value);
-            Transcript.Add(TranscriptLine.System(added
-                ? Localize("Message.UsingAdded", value)
-                : Localize("Message.UsingActive", value)));
+            Transcript.Add(LocalizedSystemLine(
+                added ? "Message.UsingAdded" : "Message.UsingActive", value));
             if (added) SetLocalizedStatus("Status.AddedUsing", value);
             NewUsingText = string.Empty;
         }
@@ -879,6 +877,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SaveSettings();
         App.ApplyLanguage(value);
         UpdateThemeOptionLabels(value);
+        transcript.ReplaceAll(Transcript.Select(line => line.WithCurrentLanguage(value)).ToArray());
         CancelTransientStatus();
         Status = Localize(statusLocalizationKey, statusLocalizationArguments);
         SessionStatus = Localize(sessionLocalizationKey, sessionLocalizationArguments);
@@ -1116,7 +1115,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 IsRunning = false;
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
-                Transcript.Add(TranscriptLine.System(Localize("Message.ExecutionCancelled")));
+                Transcript.Add(LocalizedSystemLine("Message.ExecutionCancelled"));
                 ScheduleDiagnostics(InputText);
                 break;
             case MessageKinds.Error:
@@ -1145,7 +1144,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     }
                 ScheduleDiagnostics(InputText);
                 if (!IsWorkspaceBusy) _ = RefreshTypeExplorerAsync();
-                Transcript.Add(TranscriptLine.System(Localize("Message.PackageAdded", package.PackageId, package.Version)));
+                Transcript.Add(LocalizedSystemLine("Message.PackageAdded", package.PackageId, package.Version));
                 break;
             case MessageKinds.PackageSearchResults:
                 ApplyPackageSearchResults(envelope.ReadPayload<PackageSearchResultsEvent>());
@@ -1208,7 +1207,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             VariableItems.Clear();
             ScheduleDiagnostics(InputText);
             SetSessionStatus("Session.Count", 0);
-            Transcript.Add(TranscriptLine.System(Localize("Message.SessionReset")));
+            Transcript.Add(LocalizedSystemLine("Message.SessionReset"));
             _ = RefreshTypeExplorerAsync();
         }
         finally
@@ -1233,7 +1232,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SignalExecutionFinished();
             SetLocalizedStatus("Status.Ready");
             SetSessionStatus("Session.Restarted");
-            Transcript.Add(TranscriptLine.System(Localize("Message.WorkerRestarted")));
+            Transcript.Add(LocalizedSystemLine("Message.WorkerRestarted"));
             _ = RefreshTypeExplorerAsync();
         }
         finally
@@ -1282,21 +1281,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             var value = NormalizeUsingInput(command[":using add ".Length..]);
             var added = await AddUsingAsync(value);
-            Transcript.Add(TranscriptLine.System(added
-                ? Localize("Message.UsingAdded", value)
-                : Localize("Message.UsingActive", value)));
+            Transcript.Add(LocalizedSystemLine(
+                added ? "Message.UsingAdded" : "Message.UsingActive", value));
         }
         else if (command.StartsWith(":using remove ", StringComparison.Ordinal))
         {
             var value = NormalizeUsingInput(command[":using remove ".Length..]);
             if (!await RemoveUsingAsync(value))
-                Transcript.Add(TranscriptLine.System(Localize("Message.UsingMissing", value)));
+                Transcript.Add(LocalizedSystemLine("Message.UsingMissing", value));
         }
         else if (command == ":reference list")
         {
-            Transcript.Add(TranscriptLine.System(references.Count == 0
-                ? Localize("Message.NoReferences")
-                : string.Join(Environment.NewLine, references)));
+            Transcript.Add(references.Count == 0
+                ? LocalizedSystemLine("Message.NoReferences")
+                : TranscriptLine.System(string.Join(Environment.NewLine, references)));
         }
         else if (command.StartsWith(":reference add ", StringComparison.Ordinal))
         {
@@ -1306,8 +1304,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         else if (command == ":package list")
         {
-            Transcript.Add(TranscriptLine.System(packages.Count == 0 ? Localize("Message.NoPackages") :
-                string.Join(Environment.NewLine, packages.Select(static item => $"{item.Id} {item.Version}"))));
+            Transcript.Add(packages.Count == 0
+                ? LocalizedSystemLine("Message.NoPackages")
+                : TranscriptLine.System(string.Join(Environment.NewLine,
+                    packages.Select(static item => $"{item.Id} {item.Version}"))));
         }
         else if (command.StartsWith(":package add ", StringComparison.Ordinal))
         {
@@ -1318,7 +1318,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         else
         {
-            Transcript.Add(TranscriptLine.Diagnostic(Localize("Message.UnknownCommand", command)));
+            Transcript.Add(LocalizedDiagnosticLine("Message.UnknownCommand", true, command));
         }
         InputText = string.Empty;
     }
@@ -1355,7 +1355,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             SetPackageSearchMessage("Package.Cancelled");
             SetLocalizedStatus("Status.Ready");
-            Transcript.Add(TranscriptLine.System(Localize("Message.PackageOperationCancelled")));
+            Transcript.Add(LocalizedSystemLine("Message.PackageOperationCancelled"));
         }
         catch (Exception error)
         {
@@ -1418,7 +1418,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             SetPackageSearchMessage("Package.Cancelled");
             SetLocalizedStatus("Status.Ready");
-            Transcript.Add(TranscriptLine.System(Localize("Message.PackageOperationCancelled")));
+            Transcript.Add(LocalizedSystemLine("Message.PackageOperationCancelled"));
         }
         catch (Exception error)
         {
@@ -1444,7 +1444,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         path = Path.GetFullPath(path);
         if (references.Contains(path, StringComparer.OrdinalIgnoreCase))
         {
-            Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceActive", path)));
+            Transcript.Add(LocalizedSystemLine("Message.ReferenceActive", path));
             return false;
         }
         IsSessionChanging = true;
@@ -1460,7 +1460,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }
             ScheduleDiagnostics(InputText);
             _ = RefreshTypeExplorerAsync();
-            Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceAdded", path)));
+            Transcript.Add(LocalizedSystemLine("Message.ReferenceAdded", path));
             return true;
         }
         finally
@@ -1808,6 +1808,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         text,
         error,
         Localize("Output.ConsolePreviewLimited", text.Length));
+
+    private TranscriptLine LocalizedSystemLine(string key, params object?[] arguments) =>
+        TranscriptLine.LocalizedSystem(LanguageMode, key, arguments);
+
+    private TranscriptLine LocalizedDiagnosticLine(string key, bool error, params object?[] arguments) =>
+        TranscriptLine.LocalizedDiagnostic(LanguageMode, key, error, arguments);
 
     private void SignalExecutionFinished()
     {

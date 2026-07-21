@@ -100,6 +100,15 @@ public partial class MainWindow : Window
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(MainViewModel.InputText))
+        {
+            if (!closeInProgress && !string.Equals(Editor.Text, viewModel.InputText, StringComparison.Ordinal))
+            {
+                Editor.Text = viewModel.InputText;
+                Editor.CaretOffset = Editor.Text.Length;
+            }
+            return;
+        }
         if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
         UpdateEditorAccessibilityName();
         if (helpWindow is { IsVisible: true } help)

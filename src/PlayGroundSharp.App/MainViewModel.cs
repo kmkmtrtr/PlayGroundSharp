@@ -202,6 +202,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         worker.EventReceived += envelope => InvokeOnUi(() => HandleWorkerEventSafely(envelope));
         worker.Disconnected += disconnection => InvokeOnUi(() =>
         {
+            RestoreExecutingInput();
             IsWorkerConnected = false;
             SetLocalizedStatus("Status.WorkerDisconnected");
             IsRunning = false;
@@ -529,6 +530,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception error)
         {
+            RestoreExecutingInput();
             Transcript.Add(TranscriptLine.Diagnostic(error.Message));
             SetLocalizedStatus("Status.WorkerDisconnected");
             IsWorkerConnected = false;
@@ -598,8 +600,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         IsRunning = false;
         SignalExecutionFinished();
         SetLocalizedStatus("Status.Ready");
+        RestoreExecutingInput();
         submissions.Clear();
-        executingCode = null;
         VariableItems.Clear();
         ScheduleDiagnostics(InputText);
         SetSessionStatus("Session.StateLost");
@@ -1103,7 +1105,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     if (!IsWorkspaceBusy && CSharpLanguageService.ContainsSymbolExplorerDeclarations(executingCode))
                         _ = RefreshTypeExplorerAsync();
                 }
-                executingCode = null;
+                if (completed.StateAccepted) executingCode = null;
+                else RestoreExecutingInput();
                 IsRunning = false;
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
@@ -1116,6 +1119,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     packageOperationCancellation?.Cancel();
                     break;
                 }
+                RestoreExecutingInput();
                 IsRunning = false;
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
@@ -1124,6 +1128,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 break;
             case MessageKinds.Error:
                 Transcript.Add(TranscriptLine.Diagnostic(envelope.ReadPayload<WorkerErrorEvent>().Message));
+                if (IsRunning) RestoreExecutingInput();
                 IsRunning = false;
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
@@ -1154,6 +1159,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 ApplyPackageSearchResults(envelope.ReadPayload<PackageSearchResultsEvent>());
                 break;
         }
+    }
+
+    private void RestoreExecutingInput()
+    {
+        if (executingCode is not { } code) return;
+        if (InputText.Length == 0) InputText = code;
+        executingCode = null;
     }
 
     internal void ApplyPackageSearchResults(PackageSearchResultsEvent searchResults)

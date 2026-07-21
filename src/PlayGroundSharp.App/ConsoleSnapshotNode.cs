@@ -32,6 +32,7 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
     public string Name { get; }
     public string Separator => Name.Length == 0 ? string.Empty : ": ";
     public string Preview { get; }
+    public string AccessibleLabel => Name.Length == 0 ? Preview : $"{Name}{Separator}{Preview}";
     public string CopyText => snapshot is not null
         ? SnapshotTextFormatter.FormatFull(snapshot)
         : copyTextFactory?.Invoke() ?? Preview;

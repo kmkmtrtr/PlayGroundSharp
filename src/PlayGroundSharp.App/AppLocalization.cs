@@ -5,6 +5,7 @@ internal static class AppLocalization
     private static readonly IReadOnlyDictionary<string, string> Japanese = new Dictionary<string, string>
     {
         ["Ui.AppSubtitle"] = "C# 対話コンソール",
+        ["Ui.MainMenu"] = "メインメニュー",
         ["Ui.Types"] = "型",
         ["Ui.Session"] = "セッション",
         ["Ui.Stop"] = "停止",
@@ -290,7 +291,7 @@ internal static class AppLocalization
 
     private static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>
     {
-        ["Ui.AppSubtitle"] = "C# interactive console", ["Ui.Types"] = "Types", ["Ui.Session"] = "Session",
+        ["Ui.AppSubtitle"] = "C# interactive console", ["Ui.MainMenu"] = "Main menu", ["Ui.Types"] = "Types", ["Ui.Session"] = "Session",
         ["Ui.Stop"] = "Stop", ["Ui.Restart"] = "Restart", ["Ui.Reset"] = "Reset", ["Ui.Clear"] = "Clear", ["Ui.Inspect"] = "Inspect", ["Ui.Copy"] = "Copy", ["Ui.CopyJson"] = "Copy as JSON", ["Ui.Save"] = "Save", ["Ui.ScrollToLatest"] = "Scroll to latest output",
         ["Input.Editor"] = "C# input editor",
         ["Tooltip.Types"] = "Toggle the Symbol Explorer",

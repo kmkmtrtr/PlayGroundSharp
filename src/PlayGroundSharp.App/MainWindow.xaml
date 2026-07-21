@@ -106,7 +106,8 @@
                     <TextBlock Text="PlayGroundSharp" FontSize="16" FontWeight="SemiBold" />
                     <TextBlock Text="{DynamicResource Ui.AppSubtitle}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" />
                 </StackPanel>
-                <Menu DockPanel.Dock="Left" Style="{StaticResource HeaderMenuStyle}" Margin="18,0,0,0">
+                <Menu DockPanel.Dock="Left" Style="{StaticResource HeaderMenuStyle}" Margin="18,0,0,0"
+                      AutomationProperties.Name="{DynamicResource Ui.MainMenu}">
                     <MenuItem Header="{DynamicResource Menu.File}" Style="{StaticResource HeaderMenuItemStyle}">
                         <MenuItem Header="{DynamicResource Menu.SaveWorkspace}" Click="SaveWorkspace_Click" InputGestureText="Ctrl+Shift+S"
                                   IsEnabled="{Binding CanSaveWorkspace}" />
@@ -369,7 +370,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                   </Grid.RowDefinitions>
-                  <ItemsControl Grid.Row="0" ItemsSource="{Binding Transcript}">
+                  <ItemsControl Grid.Row="0" ItemsSource="{Binding Transcript}" Focusable="False">
                     <ItemsControl.ItemContainerStyle>
                         <Style TargetType="ContentPresenter">
                             <Setter Property="AutomationProperties.Name" Value="{Binding Text}" />

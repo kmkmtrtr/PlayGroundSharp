@@ -120,7 +120,11 @@ internal static class SnapshotTextFormatter
             AppendIndent(depth);
             var remaining = snapshot.TotalCount is { } total
                 ? Math.Max(0, total - writtenInCollection).ToString("N0") + " more"
-                : Math.Max(0, capturedCount - writtenInCollection).ToString("N0") + " or more";
+                : !snapshot.IsTruncated
+                    ? Math.Max(0, capturedCount - writtenInCollection).ToString("N0") + " more"
+                    : writtenInCollection < capturedCount
+                        ? Math.Max(0, capturedCount - writtenInCollection).ToString("N0") + " or more"
+                        : "more items";
             Append($"… ({remaining} not captured)");
         }
 

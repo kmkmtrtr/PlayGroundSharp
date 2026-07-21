@@ -34,9 +34,26 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Equal("alpha", preview);
         Assert.Equal(["alpha", "beta"], lines);
         Assert.Equal([1, 2], array.Select(static item => item.GetProperty("id").GetInt32()));
+        Assert.True(Assert.IsAssignableFrom<IBoundedSequenceResult>(array).HasMoreItems);
         Assert.Equal("Ada", jsonObject.GetProperty("name").GetString());
         Assert.Equal([10, 20], jsonObject.GetProperty("scores").EnumerateArray().Select(static item => item.GetInt32()));
         Assert.Equal([4, 5], jsonLines.Select(static item => item.GetProperty("id").GetInt32()));
+    }
+
+    [Fact]
+    public async Task JsonArrayReadDistinguishesExactAndLimitedBatches()
+    {
+        var path = Path.Combine(directory, "batch.json");
+        await File.WriteAllTextAsync(path, "[1,2,3]");
+        var data = new LargeDataAccess();
+
+        var limited = await data.ReadJsonArrayAsync(path, 2);
+        var exact = await data.ReadJsonArrayAsync(path, 3);
+
+        Assert.Equal([1, 2], limited.Select(static item => item.GetInt32()));
+        Assert.True(Assert.IsAssignableFrom<IBoundedSequenceResult>(limited).HasMoreItems);
+        Assert.Equal([1, 2, 3], exact.Select(static item => item.GetInt32()));
+        Assert.False(Assert.IsAssignableFrom<IBoundedSequenceResult>(exact).HasMoreItems);
     }
 
     [Fact]

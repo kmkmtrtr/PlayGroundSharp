@@ -321,6 +321,30 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task JsonArrayPreviewSnapshotReportsUncapturedItems()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(path, "[1,2,3]");
+        try
+        {
+            var escapedPath = path.Replace("\"", "\"\"");
+            var result = await new ScriptSession().ExecuteAsync(
+                1,
+                $"await Data.ReadJsonArrayAsync(@\"{escapedPath}\", 2)");
+
+            Assert.True(result.StateAccepted);
+            Assert.True(result.Snapshot?.IsTruncated);
+            Assert.Null(result.Snapshot?.TotalCount);
+            Assert.Equal(2, result.Snapshot?.Items?.Count);
+            Assert.Equal("2 captured items", result.Snapshot?.Display);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task ExecutesGeneratedMultiFileSnippets()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-Batch-{Guid.NewGuid():N}");

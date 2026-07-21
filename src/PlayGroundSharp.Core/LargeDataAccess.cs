@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -6,6 +7,24 @@ namespace PlayGroundSharp.Core;
 
 /// <summary>Describes a file without reading its contents into memory.</summary>
 public sealed record FileProbe(string FullPath, long Length, DateTime LastWriteTimeUtc, string Extension);
+
+/// <summary>Marks a materialized sequence that intentionally retained only its leading items.</summary>
+public interface IBoundedSequenceResult
+{
+    bool HasMoreItems { get; }
+}
+
+/// <summary>A read-only JSON batch that records whether the source array contained more items.</summary>
+public sealed class BoundedJsonElementList(
+    IReadOnlyList<JsonElement> items,
+    bool hasMoreItems) : IReadOnlyList<JsonElement>, IBoundedSequenceResult
+{
+    public bool HasMoreItems { get; } = hasMoreItems;
+    public int Count => items.Count;
+    public JsonElement this[int index] => items[index];
+    public IEnumerator<JsonElement> GetEnumerator() => items.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
 
 /// <summary>Provides bounded and streaming helpers for inspecting large local files from submissions.</summary>
 public sealed class LargeDataAccess
@@ -75,13 +94,18 @@ public sealed class LargeDataAccess
         var boundedTake = ValidateRange(take, 1, MaximumJsonItemCount, nameof(take));
         await using var stream = file.OpenRead();
         var items = new List<JsonElement>(Math.Min(boundedTake, 256));
+        var hasMoreItems = false;
         await foreach (var item in JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(stream, cancellationToken: cancellationToken)
                            .WithCancellation(cancellationToken).ConfigureAwait(false))
         {
+            if (items.Count >= boundedTake)
+            {
+                hasMoreItems = true;
+                break;
+            }
             items.Add(item.Clone());
-            if (items.Count >= boundedTake) break;
         }
-        return items;
+        return new BoundedJsonElementList(items, hasMoreItems);
     }
 
     /// <summary>Streams newline-delimited JSON and parses one independent value at a time.</summary>

@@ -167,6 +167,7 @@ public sealed class ResultSnapshotFactory
     {
         var items = new List<ResultSnapshot>();
         var totalCount = enumerable is ICollection collection ? collection.Count : (int?)null;
+        var sourceHasMoreItems = enumerable is IBoundedSequenceResult { HasMoreItems: true };
         IEnumerator enumerator;
         try
         {
@@ -199,8 +200,8 @@ public sealed class ResultSnapshotFactory
                 }
             }
             var truncated = totalCount is { } count
-                ? enumerationFailed || items.Count < count
-                : enumerationFailed || !reachedEnd;
+                ? sourceHasMoreItems || enumerationFailed || items.Count < count
+                : sourceHasMoreItems || enumerationFailed || !reachedEnd;
             return new(
                 SnapshotKind.Sequence,
                 totalCount is { } knownCount ? $"{knownCount:N0} items" : $"{items.Count:N0} captured items",

@@ -9,13 +9,13 @@ namespace PlayGroundSharp.Core;
 public sealed record FileProbe(string FullPath, long Length, DateTime LastWriteTimeUtc, string Extension);
 
 /// <summary>Marks a materialized sequence that intentionally retained only its leading items.</summary>
-public interface IBoundedSequenceResult
+internal interface IBoundedSequenceResult
 {
     bool HasMoreItems { get; }
 }
 
 /// <summary>A read-only JSON batch that records whether the source array contained more items.</summary>
-public sealed class BoundedJsonElementList(
+internal sealed class BoundedJsonElementList(
     IReadOnlyList<JsonElement> items,
     bool hasMoreItems) : IReadOnlyList<JsonElement>, IBoundedSequenceResult
 {

@@ -48,6 +48,17 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task DoesNotExposeLargeDataImplementationTypes()
+    {
+        const string code = "new Bounded";
+
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+
+        Assert.DoesNotContain(items, static item => item.DisplayText == "BoundedJsonElementList");
+        Assert.DoesNotContain(items, static item => item.DisplayText == "IBoundedSequenceResult");
+    }
+
+    [Fact]
     public async Task CompletesMembersAfterSemicolonlessSubmission()
     {
         var context = new SessionContext(["var value = \"fuga\""], SessionContext.DefaultImports, []);

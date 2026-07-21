@@ -48,4 +48,19 @@ public sealed class TranscriptLineTests
         Assert.Contains("3 submissions replayed", english.Text, StringComparison.Ordinal);
         Assert.Equal("user supplied text", raw.WithCurrentLanguage(AppLanguageMode.English).Text);
     }
+
+    [Fact]
+    public void WorkerDisconnectionReasonIsRelocalizedWithTheWholeMessage()
+    {
+        var japanese = TranscriptLine.LocalizedSystem(
+            AppLanguageMode.Japanese,
+            "Message.WorkerDisconnectedExitDetail",
+            17,
+            "pipe failure");
+
+        var english = japanese.WithCurrentLanguage(AppLanguageMode.English);
+
+        Assert.Contains("exit code 17: pipe failure", english.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("終了コード", english.Text, StringComparison.Ordinal);
+    }
 }

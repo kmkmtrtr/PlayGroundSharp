@@ -208,15 +208,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SignalExecutionFinished();
             VariableItems.Clear();
             ScheduleDiagnostics(InputText);
-            var reason = disconnection.Kind switch
+            var line = disconnection.Kind switch
             {
                 WorkerDisconnectionKind.ProcessExited when !string.IsNullOrWhiteSpace(disconnection.Detail) =>
-                    Localize("Message.WorkerExitDetail", disconnection.ExitCode, disconnection.Detail),
-                WorkerDisconnectionKind.ProcessExited => Localize("Message.WorkerExitCode", disconnection.ExitCode),
-                WorkerDisconnectionKind.PipeClosed => Localize("Message.WorkerPipeClosed"),
-                _ => disconnection.Detail ?? Localize("Message.WorkerPipeClosed")
+                    LocalizedSystemLine("Message.WorkerDisconnectedExitDetail", disconnection.ExitCode, disconnection.Detail),
+                WorkerDisconnectionKind.ProcessExited =>
+                    LocalizedSystemLine("Message.WorkerDisconnectedExitCode", disconnection.ExitCode),
+                WorkerDisconnectionKind.PipeClosed =>
+                    LocalizedSystemLine("Message.WorkerDisconnectedPipeClosed"),
+                _ when !string.IsNullOrWhiteSpace(disconnection.Detail) =>
+                    LocalizedSystemLine("Message.WorkerDisconnectedDetail", disconnection.Detail),
+                _ => LocalizedSystemLine("Message.WorkerDisconnectedPipeClosed")
             };
-            Transcript.Add(LocalizedSystemLine("Message.WorkerDisconnected", reason));
+            Transcript.Add(line);
         });
     }
 
@@ -1183,8 +1187,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         catch (Exception error)
         {
             System.Diagnostics.Debug.WriteLine($"Worker event '{envelope.Kind}' could not be applied: {error}");
-            Transcript.Add(TranscriptLine.Diagnostic(
-                Localize("Message.WorkerEventApplyFailed", envelope.Kind, error.Message)));
+            Transcript.Add(LocalizedDiagnosticLine(
+                "Message.WorkerEventApplyFailed", true, envelope.Kind, error.Message));
             if (envelope.Kind is MessageKinds.Completed or MessageKinds.Cancelled or MessageKinds.Error)
             {
                 IsRunning = false;

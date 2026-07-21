@@ -103,13 +103,13 @@ public partial class ResultInspectorWindow : Window
         if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             e.Handled = true;
-            CopyToClipboard(await Task.Run(() => SnapshotTextFormatter.FormatFull(snapshot)));
+            await CopyToClipboardAsync(await Task.Run(() => SnapshotTextFormatter.FormatFull(snapshot)));
         }
         else if (Keyboard.Modifiers == ModifierKeys.Control && Keyboard.FocusedElement is not TextBox &&
                  selectedNode is not null)
         {
             e.Handled = true;
-            CopyToClipboard(await Task.Run(() => selectedNode.CopyText));
+            await CopyToClipboardAsync(await Task.Run(() => selectedNode.CopyText));
         }
     }
 
@@ -175,15 +175,15 @@ public partial class ResultInspectorWindow : Window
     private async void CopySelected_Click(object sender, RoutedEventArgs e)
     {
         if (selectedNode is null) return;
-        CopyToClipboard(await Task.Run(() => selectedNode.CopyText));
+        await CopyToClipboardAsync(await Task.Run(() => selectedNode.CopyText));
     }
 
     private async void CopyAll_Click(object sender, RoutedEventArgs e) =>
-        CopyToClipboard(await Task.Run(() => SnapshotTextFormatter.FormatFull(snapshot)));
+        await CopyToClipboardAsync(await Task.Run(() => SnapshotTextFormatter.FormatFull(snapshot)));
 
-    private void CopyPath_Click(object sender, RoutedEventArgs e)
+    private async void CopyPath_Click(object sender, RoutedEventArgs e)
     {
-        if (selectedNode is not null) CopyToClipboard(selectedNode.Path);
+        if (selectedNode is not null) await CopyToClipboardAsync(selectedNode.Path);
     }
 
     private async void SaveAll_Click(object sender, RoutedEventArgs e)
@@ -192,9 +192,10 @@ public partial class ResultInspectorWindow : Window
         {
             Title = AppLocalization.Text(languageMode, "Dialog.ResultSaveTitle"),
             Filter = AppLocalization.Text(languageMode, "Dialog.ResultFileFilter"),
-            DefaultExt = ".txt",
+            FilterIndex = 2,
+            DefaultExt = ".json",
             AddExtension = true,
-            FileName = $"PlayGroundSharp-result-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
+            FileName = $"PlayGroundSharp-result-{DateTime.Now:yyyyMMdd-HHmmss}.json"
         };
         if (dialog.ShowDialog(this) != true) return;
         try
@@ -219,11 +220,11 @@ public partial class ResultInspectorWindow : Window
         PathText.Text = node.Path;
     }
 
-    private void CopyToClipboard(string text)
+    private async Task CopyToClipboardAsync(string text)
     {
         try
         {
-            Clipboard.SetText(text);
+            await ClipboardService.SetTextAsync(text);
             ShowNotification("Status.Copied");
         }
         catch (Exception error)

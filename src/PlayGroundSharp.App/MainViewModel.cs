@@ -72,7 +72,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private string historyDraft = string.Empty;
     private string? executingCode;
     private TaskCompletionSource? executionCompletion;
-    private bool isPreparingExecution;
 
     [ObservableProperty] private string inputText = string.Empty;
     [ObservableProperty] private string status = "Starting Worker";
@@ -82,8 +81,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string cursorStatus = "Ln 1, Col 1";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
+    [NotifyPropertyChangedFor(nameof(CanChangeSession))]
     private bool isRunning;
-    [ObservableProperty] private bool isWorkerConnected;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    private bool isWorkerConnected;
     [ObservableProperty] private bool isReferenceDrawerOpen = InitialSettings.IsReferenceDrawerOpen;
     [ObservableProperty] private bool isTypeExplorerOpen = InitialSettings.IsTypeExplorerOpen;
     [ObservableProperty] private string typeExplorerSearchText = string.Empty;
@@ -95,9 +97,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private bool includePrereleasePackages;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
+    [NotifyPropertyChangedFor(nameof(CanChangeSession))]
     private bool isPackageSearchBusy;
-    [ObservableProperty] private bool isWorkspaceBusy;
-    [ObservableProperty] private bool isSessionChanging = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    private bool isWorkspaceBusy;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    private bool isSessionChanging = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    private bool isPreparingExecution;
     [ObservableProperty] private string newUsingText = string.Empty;
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = InitialSettings.ExecutionKeyMode;
     [ObservableProperty] private AppThemeMode themeMode = InitialSettings.ThemeMode;
@@ -105,6 +115,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<TranscriptLine> Transcript => transcript;
     public bool CanCancel => IsRunning || IsPackageSearchBusy;
+    public bool CanChangeSession => IsWorkerConnected && !IsRunning && !IsPackageSearchBusy &&
+                                    !IsWorkspaceBusy && !IsSessionChanging && !IsPreparingExecution;
     public ObservableCollection<string> PackageItems { get; } = [];
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
@@ -158,7 +170,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SearchPackagesCommand = new AsyncRelayCommand(SearchPackagesAsync);
         InstallPackageCommand = new AsyncRelayCommand<NuGetPackageInfo>(InstallPackageAsync);
         AddUsingFromGuiCommand = new AsyncRelayCommand(AddUsingFromGuiAsync);
-        worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEvent(envelope));
+        worker.EventReceived += envelope => Application.Current.Dispatcher.Invoke(() => HandleWorkerEventSafely(envelope));
         worker.Disconnected += disconnection => Application.Current.Dispatcher.Invoke(() =>
         {
             IsWorkerConnected = false;
@@ -326,7 +338,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task ExecuteAsync()
     {
         var code = InputText;
-        if (IsRunning || isPreparingExecution || string.IsNullOrWhiteSpace(code)) return;
+        if (IsRunning || IsPreparingExecution || string.IsNullOrWhiteSpace(code)) return;
         if (HasPendingSessionMutation)
         {
             SetLocalizedStatus("Status.SessionBusy");
@@ -357,14 +369,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         InputText = string.Empty;
-        isPreparingExecution = true;
+        IsPreparingExecution = true;
+        SetLocalizedStatus("Status.PreparingExecution");
         try
         {
             await AddRequiredExtensionImportsAsync(code);
         }
         finally
         {
-            isPreparingExecution = false;
+            IsPreparingExecution = false;
         }
 
         var index = submissions.Count + 1;
@@ -650,7 +663,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             DiagnosticDetails = string.Empty;
             return;
         }
-        if (IsRunning || isPreparingExecution)
+        if (IsRunning || IsPreparingExecution)
         {
             diagnosticErrorCount = 0;
             diagnosticWarningCount = 0;
@@ -666,6 +679,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SaveSettings();
 
     partial void OnTypeExplorerSearchTextChanged(string value) => ScheduleTypeExplorerRebuild();
+
+    internal void ApplyTypeExplorerFilterNow()
+    {
+        typeExplorerSearchDelay?.Cancel();
+        typeExplorerSearchDelay?.Dispose();
+        typeExplorerSearchDelay = null;
+        RebuildTypeExplorer();
+    }
 
     partial void OnVariableFilterTextChanged(string value) => VariableItemsView.Refresh();
 
@@ -892,6 +913,27 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 else
                     SetPackageSearchMessage("Package.Found", searchResults.TotalHits, searchResults.Packages.Count);
                 break;
+        }
+    }
+
+    private void HandleWorkerEventSafely(PipeEnvelope envelope)
+    {
+        try
+        {
+            HandleWorkerEvent(envelope);
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine($"Worker event '{envelope.Kind}' could not be applied: {error}");
+            Transcript.Add(TranscriptLine.Diagnostic(
+                Localize("Message.WorkerEventApplyFailed", envelope.Kind, error.Message)));
+            if (envelope.Kind is MessageKinds.Completed or MessageKinds.Cancelled or MessageKinds.Error)
+            {
+                IsRunning = false;
+                SignalExecutionFinished();
+                SetLocalizedStatus("Status.Ready");
+                ScheduleDiagnostics(InputText);
+            }
         }
     }
 

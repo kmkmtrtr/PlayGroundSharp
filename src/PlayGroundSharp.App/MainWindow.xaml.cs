@@ -440,8 +440,8 @@ public partial class MainWindow : Window
             "Inspect" => $"Data.Inspect({literal})",
             "Preview" => $"Data.PreviewText({literal}, 65536)",
             "Lines" => $"Data.ReadLines({literal}).Take(100)",
-            "Json" => $"await Data.ReadJsonAsync({literal})",
-            "JsonArray" => $"await Data.ReadJsonArrayAsync({literal}, take: 100)",
+            "Json" => $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)",
+            "JsonArray" => $"await Data.ReadJsonArrayAsync({literal}, take: 100, cancellationToken: ExecutionCancellation)",
             "JsonLines" => DataSnippetBuilder.CreateJsonLines(dialog.FileName),
             _ => null
         };
@@ -535,8 +535,8 @@ public partial class MainWindow : Window
             var extension = Path.GetExtension(path);
             if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
             {
-                menu.Items.Add(CreateDropAction("Drop.ReadJson", $"await Data.ReadJsonAsync({literal})"));
-                menu.Items.Add(CreateDropAction("Drop.ReadJsonArray", $"await Data.ReadJsonArrayAsync({literal}, take: 100)"));
+                menu.Items.Add(CreateDropAction("Drop.ReadJson", $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)"));
+                menu.Items.Add(CreateDropAction("Drop.ReadJsonArray", $"await Data.ReadJsonArrayAsync({literal}, take: 100, cancellationToken: ExecutionCancellation)"));
             }
             else if (extension.Equals(".jsonl", StringComparison.OrdinalIgnoreCase) ||
                      extension.Equals(".ndjson", StringComparison.OrdinalIgnoreCase))
@@ -721,7 +721,7 @@ public partial class MainWindow : Window
         if (VariableList.SelectedItem is not VariableItem item) return;
         try
         {
-            Clipboard.SetText(await Task.Run(() => item.CopyText));
+            await ClipboardService.SetTextAsync(await Task.Run(() => item.CopyText));
             viewModel.SetLocalizedStatus("Status.Copied");
         }
         catch (Exception error)
@@ -754,10 +754,12 @@ public partial class MainWindow : Window
             if (textBox.Text.Length > 0) textBox.Clear();
             else FocusEditor();
         }
-        else if (e.Key is Key.Down or Key.Enter && TypeExplorerTree.Items.Count > 0)
+        else if (e.Key is Key.Down or Key.Enter)
         {
             e.Handled = true;
-            FocusFirstExplorerResult(descendToMatch: textBox.Text.Length > 0);
+            viewModel.ApplyTypeExplorerFilterNow();
+            if (TypeExplorerTree.Items.Count > 0)
+                FocusFirstExplorerResult(descendToMatch: textBox.Text.Length > 0);
         }
     }
 
@@ -824,7 +826,7 @@ public partial class MainWindow : Window
         try
         {
             var lines = viewModel.Transcript.ToArray();
-            Clipboard.SetText(await Task.Run(() => FormatTranscript(lines)));
+            await ClipboardService.SetTextAsync(await Task.Run(() => FormatTranscript(lines)));
             viewModel.SetLocalizedStatus("Status.Copied");
         }
         catch (Exception error)
@@ -1396,8 +1398,22 @@ public partial class MainWindow : Window
         if (GetTranscriptLine(sender) is not { } line) return;
         try
         {
-            Clipboard.SetText(await Task.Run(() => line.CopyText));
+            await ClipboardService.SetTextAsync(await Task.Run(() => line.CopyText));
             viewModel.SetLocalizedStatus("Status.Copied");
+        }
+        catch (Exception error)
+        {
+            ShowError(error);
+        }
+    }
+
+    private async void CopyTranscriptLineJson_Click(object sender, RoutedEventArgs e)
+    {
+        if (GetTranscriptLine(sender)?.Snapshot is not { } snapshot) return;
+        try
+        {
+            await ClipboardService.SetTextAsync(await Task.Run(() => SnapshotJsonFormatter.Format(snapshot)));
+            viewModel.SetLocalizedStatus("Status.CopiedJson");
         }
         catch (Exception error)
         {
@@ -1408,13 +1424,15 @@ public partial class MainWindow : Window
     private async void SaveTranscriptLine_Click(object sender, RoutedEventArgs e)
     {
         if (GetTranscriptLine(sender) is not { } line) return;
+        var saveAsJson = line.Snapshot is not null;
         var dialog = new SaveFileDialog
         {
             Title = viewModel.Localize("Dialog.ResultSaveTitle"),
             Filter = viewModel.Localize(line.Snapshot is null ? "Dialog.TextFileFilter" : "Dialog.ResultFileFilter"),
-            DefaultExt = ".txt",
+            FilterIndex = saveAsJson ? 2 : 1,
+            DefaultExt = saveAsJson ? ".json" : ".txt",
             AddExtension = true,
-            FileName = $"PlayGroundSharp-result-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
+            FileName = $"PlayGroundSharp-result-{DateTime.Now:yyyyMMdd-HHmmss}{(saveAsJson ? ".json" : ".txt")}"
         };
         if (dialog.ShowDialog(this) != true) return;
         try

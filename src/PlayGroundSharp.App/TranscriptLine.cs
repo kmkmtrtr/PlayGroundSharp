@@ -19,6 +19,7 @@ public sealed record TranscriptLine(
     public bool IsInput => InputCode is not null;
     public bool IsConsole => CopyValue is not null;
     public bool IsCopyable => InputCode is not null || Snapshot is not null || CopyValue is not null;
+    public bool IsJsonCopyable => Snapshot is not null;
     public bool IsSavable => Snapshot is not null || CopyValue is not null;
     public string CopyText => CopyValue ?? (Snapshot is null ? Text : SnapshotTextFormatter.FormatFull(Snapshot));
 

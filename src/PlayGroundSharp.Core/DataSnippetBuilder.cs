@@ -22,7 +22,7 @@ public static class DataSnippetBuilder
     {
         var pathLiteral = ToVerbatimStringLiteral(path);
         return $"var rows = new List<JsonElement>();{Environment.NewLine}" +
-               $"await foreach (var row in Data.ReadJsonLinesAsync({pathLiteral})){Environment.NewLine}" +
+               $"await foreach (var row in Data.ReadJsonLinesAsync({pathLiteral}, ExecutionCancellation)){Environment.NewLine}" +
                $"{{{Environment.NewLine}    rows.Add(row);{Environment.NewLine}" +
                $"    if (rows.Count == 100) break;{Environment.NewLine}}}{Environment.NewLine}rows";
     }
@@ -32,6 +32,10 @@ public static class DataSnippetBuilder
         $".Select(path => Data.Inspect(path)){Environment.NewLine}.ToArray()";
 
     public static string CreateJsonBatch(IReadOnlyList<string> paths) =>
-        $"await Task.WhenAll(({CreatePathArray(paths)}){Environment.NewLine}" +
-        ".Select(path => Data.ReadJsonAsync(path)))";
+        $"var jsonValues = new List<JsonElement>();{Environment.NewLine}" +
+        $"foreach (var path in {CreatePathArray(paths)}){Environment.NewLine}" +
+        $"{{{Environment.NewLine}" +
+        $"    jsonValues.Add(await Data.ReadJsonAsync(path, ExecutionCancellation));{Environment.NewLine}" +
+        $"}}{Environment.NewLine}" +
+        "jsonValues";
 }

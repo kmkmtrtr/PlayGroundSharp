@@ -64,11 +64,12 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Equal("@\"C:\\data\\a\"\"b.jsonl\"", literal);
         Assert.Contains("@\"C:\\one.txt\"", array, StringComparison.Ordinal);
         Assert.Contains("@\"D:\\two.json\"", array, StringComparison.Ordinal);
-        Assert.Contains($"ReadJsonLinesAsync({literal})", jsonLines, StringComparison.Ordinal);
+        Assert.Contains($"ReadJsonLinesAsync({literal}, ExecutionCancellation)", jsonLines, StringComparison.Ordinal);
         Assert.Contains("Select(path => Data.Inspect(path))", inspections, StringComparison.Ordinal);
         Assert.Contains("@\"C:\\one.txt\"", inspections, StringComparison.Ordinal);
-        Assert.Contains("await Task.WhenAll", jsonBatch, StringComparison.Ordinal);
-        Assert.Contains("Select(path => Data.ReadJsonAsync(path))", jsonBatch, StringComparison.Ordinal);
+        Assert.Contains("foreach (var path", jsonBatch, StringComparison.Ordinal);
+        Assert.Contains("jsonValues.Add(await Data.ReadJsonAsync(path, ExecutionCancellation))", jsonBatch, StringComparison.Ordinal);
+        Assert.DoesNotContain("Task.WhenAll", jsonBatch, StringComparison.Ordinal);
     }
 
     public void Dispose()

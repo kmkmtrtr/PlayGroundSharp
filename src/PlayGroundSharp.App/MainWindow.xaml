@@ -379,6 +379,8 @@
                                     <ContextMenu>
                                         <MenuItem Header="{DynamicResource Ui.Copy}" IsEnabled="{Binding IsCopyable}"
                                                   Click="CopyTranscriptLine_Click" />
+                                        <MenuItem Header="{DynamicResource Ui.CopyJson}" IsEnabled="{Binding IsJsonCopyable}"
+                                                  Click="CopyTranscriptLineJson_Click" />
                                         <MenuItem Header="{DynamicResource Ui.Save}" IsEnabled="{Binding IsSavable}"
                                                   Click="SaveTranscriptLine_Click" />
                                         <Separator />
@@ -633,7 +635,8 @@
                             </Grid>
                         </TabItem>
                         <TabItem Header="{DynamicResource Tab.NuGet}">
-                            <Grid Margin="12" TextElement.Foreground="{DynamicResource ForegroundBrush}">
+                            <Grid Margin="12" TextElement.Foreground="{DynamicResource ForegroundBrush}"
+                                  IsEnabled="{Binding CanChangeSession}">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
@@ -717,7 +720,8 @@
                             </Grid>
                         </TabItem>
                         <TabItem Header="{DynamicResource Tab.Usings}">
-                            <Grid Margin="10" TextElement.Foreground="{DynamicResource ForegroundBrush}">
+                            <Grid Margin="10" TextElement.Foreground="{DynamicResource ForegroundBrush}"
+                                  IsEnabled="{Binding CanChangeSession}">
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

@@ -71,6 +71,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private object?[] sessionLocalizationArguments = [0];
     private string? packageSearchLocalizationKey = "Package.SearchPrompt";
     private object?[] packageSearchLocalizationArguments = [];
+    private string? packageResultQuery;
+    private bool packageResultIncludesPrerelease;
+    private string? activePackageSearchQuery;
+    private bool activePackageSearchIncludesPrerelease;
     private int historyPosition;
     private string historyDraft = string.Empty;
     private string? executingCode;
@@ -85,6 +89,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    [NotifyPropertyChangedFor(nameof(CanSaveWorkspace))]
     private bool isRunning;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
@@ -103,18 +108,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanCancel))]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
     [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
+    [NotifyPropertyChangedFor(nameof(CanOpenWorkspace))]
+    [NotifyPropertyChangedFor(nameof(CanSaveWorkspace))]
     private bool isPackageSearchBusy;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
     [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
+    [NotifyPropertyChangedFor(nameof(CanOpenWorkspace))]
+    [NotifyPropertyChangedFor(nameof(CanSaveWorkspace))]
     private bool isWorkspaceBusy;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
     [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
+    [NotifyPropertyChangedFor(nameof(CanOpenWorkspace))]
+    [NotifyPropertyChangedFor(nameof(CanSaveWorkspace))]
     private bool isSessionChanging = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
     [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
+    [NotifyPropertyChangedFor(nameof(CanOpenWorkspace))]
+    [NotifyPropertyChangedFor(nameof(CanSaveWorkspace))]
     private bool isPreparingExecution;
     [ObservableProperty] private string newUsingText = string.Empty;
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = InitialSettings.ExecutionKeyMode;
@@ -127,6 +140,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                                     !IsWorkspaceBusy && !IsSessionChanging && !IsPreparingExecution;
     public bool CanResetOrRestart => IsWorkerConnected && !IsPackageSearchBusy &&
                                      !IsWorkspaceBusy && !IsSessionChanging && !IsPreparingExecution;
+    public bool CanOpenWorkspace => !IsPackageSearchBusy && !IsWorkspaceBusy &&
+                                    !IsSessionChanging && !IsPreparingExecution;
+    public bool CanSaveWorkspace => CanOpenWorkspace && !IsRunning;
     public ObservableCollection<string> PackageItems { get; } = [];
     public ObservableCollection<string> ReferenceItems { get; } = [];
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
@@ -304,7 +320,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SetSessionStatus("Session.Count", submissions.Count);
             SetLocalizedStatus("Status.WorkspaceLoaded");
             Transcript.Add(TranscriptLine.System(Localize("Message.WorkspaceLoaded", submissions.Count)));
-            await RefreshTypeExplorerAsync();
+            _ = RefreshTypeExplorerAsync();
         }
         catch
         {
@@ -694,7 +710,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
             SetLocalizedStatus("Status.RemovedUsing", value);
             ScheduleDiagnostics(InputText);
-            await RefreshTypeExplorerAsync();
+            _ = RefreshTypeExplorerAsync();
             return true;
         }
         finally
@@ -767,6 +783,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SaveSettings();
 
     partial void OnTypeExplorerSearchTextChanged(string value) => ScheduleTypeExplorerRebuild();
+
+    partial void OnPackageSearchTextChanged(string value) => InvalidateStalePackageResults();
+
+    partial void OnIncludePrereleasePackagesChanged(bool value) => InvalidateStalePackageResults();
 
     internal async Task<bool> ApplyTypeExplorerFilterNowAsync()
     {
@@ -1023,20 +1043,31 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Transcript.Add(TranscriptLine.System(Localize("Message.PackageAdded", package.PackageId, package.Version)));
                 break;
             case MessageKinds.PackageSearchResults:
-                var searchResults = envelope.ReadPayload<PackageSearchResultsEvent>();
-                PackageSearchItems.Clear();
-                if (!PackageSearchText.Trim().Equals(searchResults.Query, StringComparison.OrdinalIgnoreCase))
-                {
-                    SetPackageSearchMessage("Package.QueryChanged", searchResults.Query);
-                    break;
-                }
-                foreach (var item in searchResults.Packages) PackageSearchItems.Add(item);
-                if (searchResults.TotalHits == 0)
-                    SetPackageSearchMessage("Package.NoneFound");
-                else
-                    SetPackageSearchMessage("Package.Found", searchResults.TotalHits, searchResults.Packages.Count);
+                ApplyPackageSearchResults(envelope.ReadPayload<PackageSearchResultsEvent>());
                 break;
         }
+    }
+
+    internal void ApplyPackageSearchResults(PackageSearchResultsEvent searchResults)
+    {
+        PackageSearchItems.Clear();
+        packageResultQuery = null;
+        var requestedPrerelease = activePackageSearchQuery is null
+            ? IncludePrereleasePackages
+            : activePackageSearchIncludesPrerelease;
+        if (!PackageSearchText.Trim().Equals(searchResults.Query.Trim(), StringComparison.OrdinalIgnoreCase) ||
+            IncludePrereleasePackages != requestedPrerelease)
+        {
+            SetPackageSearchMessage("Package.QueryChanged", searchResults.Query);
+            return;
+        }
+        foreach (var item in searchResults.Packages) PackageSearchItems.Add(item);
+        packageResultQuery = searchResults.Query.Trim();
+        packageResultIncludesPrerelease = requestedPrerelease;
+        if (searchResults.TotalHits == 0)
+            SetPackageSearchMessage("Package.NoneFound");
+        else
+            SetPackageSearchMessage("Package.Found", searchResults.TotalHits, searchResults.Packages.Count);
     }
 
     private void HandleWorkerEventSafely(PipeEnvelope envelope)
@@ -1073,7 +1104,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ScheduleDiagnostics(InputText);
             SetSessionStatus("Session.Count", 0);
             Transcript.Add(TranscriptLine.System(Localize("Message.SessionReset")));
-            await RefreshTypeExplorerAsync();
+            _ = RefreshTypeExplorerAsync();
         }
         finally
         {
@@ -1098,7 +1129,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SetLocalizedStatus("Status.Ready");
             SetSessionStatus("Session.Restarted");
             Transcript.Add(TranscriptLine.System(Localize("Message.WorkerRestarted")));
-            await RefreshTypeExplorerAsync();
+            _ = RefreshTypeExplorerAsync();
         }
         finally
         {
@@ -1203,6 +1234,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         IsPackageSearchBusy = true;
         var operationCancellation = new CancellationTokenSource();
         packageOperationCancellation = operationCancellation;
+        activePackageSearchQuery = PackageSearchText;
+        activePackageSearchIncludesPrerelease = IncludePrereleasePackages;
+        PackageSearchItems.Clear();
+        packageResultQuery = null;
         SetPackageSearchMessage("Package.Searching");
         SetLocalizedStatus("Status.SearchingPackages");
         try
@@ -1226,6 +1261,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             if (ReferenceEquals(packageOperationCancellation, operationCancellation))
                 packageOperationCancellation = null;
+            activePackageSearchQuery = null;
             operationCancellation.Dispose();
             IsPackageSearchBusy = false;
         }
@@ -1312,7 +1348,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 AddAssemblyLibrary(path, "Local DLL");
             }
             ScheduleDiagnostics(InputText);
-            await RefreshTypeExplorerAsync();
+            _ = RefreshTypeExplorerAsync();
             Transcript.Add(TranscriptLine.System(Localize("Message.ReferenceAdded", path)));
         }
         finally
@@ -1333,6 +1369,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         packageSearchLocalizationKey = null;
         packageSearchLocalizationArguments = [];
         PackageSearchMessage = message;
+    }
+
+    private void InvalidateStalePackageResults()
+    {
+        if (packageResultQuery is null ||
+            PackageSearchText.Trim().Equals(packageResultQuery, StringComparison.OrdinalIgnoreCase) &&
+            IncludePrereleasePackages == packageResultIncludesPrerelease) return;
+        PackageSearchItems.Clear();
+        packageResultQuery = null;
+        SetPackageSearchMessage("Package.CriteriaChanged");
     }
 
     private void AddPackageLibrary(PackageAddedEvent package)

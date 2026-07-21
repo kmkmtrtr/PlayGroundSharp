@@ -108,8 +108,10 @@
                 </StackPanel>
                 <Menu DockPanel.Dock="Left" Style="{StaticResource HeaderMenuStyle}" Margin="18,0,0,0">
                     <MenuItem Header="{DynamicResource Menu.File}" Style="{StaticResource HeaderMenuItemStyle}">
-                        <MenuItem Header="{DynamicResource Menu.SaveWorkspace}" Click="SaveWorkspace_Click" InputGestureText="Ctrl+Shift+S" />
-                        <MenuItem Header="{DynamicResource Menu.OpenWorkspace}" Click="OpenWorkspace_Click" InputGestureText="Ctrl+O" />
+                        <MenuItem Header="{DynamicResource Menu.SaveWorkspace}" Click="SaveWorkspace_Click" InputGestureText="Ctrl+Shift+S"
+                                  IsEnabled="{Binding CanSaveWorkspace}" />
+                        <MenuItem Header="{DynamicResource Menu.OpenWorkspace}" Click="OpenWorkspace_Click" InputGestureText="Ctrl+O"
+                                  IsEnabled="{Binding CanOpenWorkspace}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource Menu.Exit}" Click="Exit_Click" />
                     </MenuItem>
@@ -378,14 +380,16 @@
                                   AutomationProperties.Name="{Binding Text}">
                                 <Grid.ContextMenu>
                                     <ContextMenu>
-                                        <MenuItem Header="{DynamicResource Ui.Copy}" IsEnabled="{Binding IsCopyable}"
-                                                  Click="CopyTranscriptLine_Click" />
-                                        <MenuItem Header="{DynamicResource Ui.CopyJson}" IsEnabled="{Binding IsJsonCopyable}"
+                                        <MenuItem Header="{DynamicResource Ui.Copy}" Click="CopyTranscriptLine_Click" />
+                                        <MenuItem Header="{DynamicResource Ui.CopyJson}"
+                                                  Visibility="{Binding IsJsonCopyable, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                   Click="CopyTranscriptLineJson_Click" />
-                                        <MenuItem Header="{DynamicResource Ui.Save}" IsEnabled="{Binding IsSavable}"
+                                        <MenuItem Header="{DynamicResource Ui.Save}"
+                                                  Visibility="{Binding IsSavable, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                   Click="SaveTranscriptLine_Click" />
-                                        <Separator />
-                                        <MenuItem Header="{DynamicResource Ui.Inspect}" IsEnabled="{Binding IsInspectable}"
+                                        <Separator Visibility="{Binding IsInspectable, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <MenuItem Header="{DynamicResource Ui.Inspect}"
+                                                  Visibility="{Binding IsInspectable, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                   Click="InspectResult_Click" />
                                     </ContextMenu>
                                 </Grid.ContextMenu>

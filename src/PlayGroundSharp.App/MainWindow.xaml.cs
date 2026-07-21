@@ -209,6 +209,14 @@ public partial class MainWindow : Window
 
     private void TypeExplorerTree_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            SymbolDetailPopup.IsOpen = false;
+            TypeExplorerSearchBox.Focus();
+            TypeExplorerSearchBox.SelectAll();
+            return;
+        }
         if (e.Key is not (Key.Enter or Key.Space) ||
             TypeExplorerTree.SelectedItem is not SymbolExplorerNode { Signature.Length: > 0 }) return;
         e.Handled = true;
@@ -409,6 +417,12 @@ public partial class MainWindow : Window
 
     private async Task SaveWorkspaceAsync()
     {
+        if (!viewModel.CanSaveWorkspace)
+        {
+            viewModel.SetLocalizedStatus("Status.SessionBusy");
+            FocusEditor();
+            return;
+        }
         var dialog = new SaveFileDialog
         {
             Title = viewModel.Localize("Menu.SaveWorkspace"),
@@ -444,6 +458,12 @@ public partial class MainWindow : Window
 
     private async Task OpenWorkspaceAsync()
     {
+        if (!viewModel.CanOpenWorkspace)
+        {
+            viewModel.SetLocalizedStatus("Status.SessionBusy");
+            FocusEditor();
+            return;
+        }
         var dialog = new OpenFileDialog
         {
             Title = viewModel.Localize("Dialog.WorkspaceLoadTitle"),
@@ -832,6 +852,13 @@ public partial class MainWindow : Window
 
     private async void VariableItem_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            VariableSearchBox.Focus();
+            VariableSearchBox.SelectAll();
+            return;
+        }
         if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
         {
             e.Handled = true;
@@ -1513,7 +1540,7 @@ public partial class MainWindow : Window
     private bool IsLineBreakGesture(ModifierKeys modifiers) => viewModel.ExecutionKeyMode switch
     {
         ExecutionKeyMode.Enter => modifiers == ModifierKeys.Shift,
-        ExecutionKeyMode.ControlEnter => modifiers == ModifierKeys.None,
+        ExecutionKeyMode.ControlEnter => modifiers is ModifierKeys.None or ModifierKeys.Shift,
         _ => false
     };
 
@@ -1572,7 +1599,7 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        foreach (var item in menu.Items.OfType<MenuItem>()) item.DataContext = line;
+        menu.DataContext = line;
     }
 
     private void InspectResult_Click(object sender, RoutedEventArgs e)

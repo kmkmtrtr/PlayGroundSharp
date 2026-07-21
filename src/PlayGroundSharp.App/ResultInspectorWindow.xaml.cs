@@ -170,6 +170,7 @@ public partial class ResultInspectorWindow : Window
         else
         {
             selectedNode = null;
+            UpdateSelectionActions(false);
             DetailText.Clear();
             PathText.Text = string.Empty;
         }
@@ -250,8 +251,17 @@ public partial class ResultInspectorWindow : Window
     private void SetSelectedNode(SnapshotTreeNode node)
     {
         selectedNode = node;
+        UpdateSelectionActions(true);
         DetailText.Text = node.Detail;
         PathText.Text = node.Path;
+    }
+
+    private void UpdateSelectionActions(bool enabled)
+    {
+        ExpandSelectedButton.IsEnabled = enabled;
+        CollapseSelectedButton.IsEnabled = enabled;
+        CopySelectedButton.IsEnabled = enabled;
+        CopyPathButton.IsEnabled = enabled;
     }
 
     private async Task CopyToClipboardAsync(Func<string> textFactory)

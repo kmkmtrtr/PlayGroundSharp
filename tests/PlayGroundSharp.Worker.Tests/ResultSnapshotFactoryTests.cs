@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text.Json.Nodes;
 using System.Dynamic;
 using System.Numerics;
@@ -157,6 +158,37 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public void EnumeratesCollectionsWhoseCountCannotBeRead()
+    {
+        var snapshot = factory.Create(new ThrowingCountCollection(1, 2, 3));
+
+        Assert.Equal(SnapshotKind.Sequence, snapshot.Kind);
+        Assert.Null(snapshot.TotalCount);
+        Assert.Equal("3 captured items", snapshot.Display);
+        Assert.Equal(["1", "2", "3"], snapshot.Items!.Select(static item => item.Display));
+        Assert.False(snapshot.IsTruncated);
+    }
+
+    [Fact]
+    public void EnumeratesStringDictionariesWhoseCountCannotBeRead()
+    {
+        var dictionary = new ThrowingCountDictionary
+        {
+            ["answer"] = 42,
+            ["name"] = "Ada"
+        };
+
+        var snapshot = factory.Create(dictionary);
+
+        Assert.Equal(SnapshotKind.Object, snapshot.Kind);
+        Assert.Null(snapshot.TotalCount);
+        Assert.Equal("2 captured entries", snapshot.Display);
+        Assert.Equal(["answer", "name"], snapshot.Properties!.Select(static property => property.Name));
+        Assert.Equal(["42", "Ada"], snapshot.Properties!.Select(static property => property.Value.Display));
+        Assert.False(snapshot.IsTruncated);
+    }
+
+    [Fact]
     public void PreservesJsonAndNestedArrayStructure()
     {
         var snapshot = factory.Create(JsonNode.Parse("{\"name\":\"Ada\",\"matrix\":[[1,2],[3,4]]}"));
@@ -207,5 +239,40 @@ public sealed class ResultSnapshotFactoryTests
     {
         public string Label = string.Empty;
         public int Value;
+    }
+
+    private sealed class ThrowingCountCollection(params object[] values) : ICollection
+    {
+        public int Count => throw new InvalidOperationException("Count is unavailable.");
+        public bool IsSynchronized => false;
+        public object SyncRoot { get; } = new();
+        public void CopyTo(Array array, int index) => values.CopyTo(array, index);
+        public IEnumerator GetEnumerator() => values.GetEnumerator();
+    }
+
+    private sealed class ThrowingCountDictionary : IDictionary
+    {
+        private readonly System.Collections.Specialized.OrderedDictionary entries = [];
+
+        public object? this[object key]
+        {
+            get => entries[key];
+            set => entries[key] = value;
+        }
+
+        public ICollection Keys => entries.Keys;
+        public ICollection Values => entries.Values;
+        public bool IsReadOnly => false;
+        public bool IsFixedSize => false;
+        public int Count => throw new InvalidOperationException("Count is unavailable.");
+        public object SyncRoot => ((ICollection)entries).SyncRoot;
+        public bool IsSynchronized => false;
+        public void Add(object key, object? value) => entries.Add(key, value);
+        public void Clear() => entries.Clear();
+        public bool Contains(object key) => entries.Contains(key);
+        public void CopyTo(Array array, int index) => entries.CopyTo(array, index);
+        public IDictionaryEnumerator GetEnumerator() => entries.GetEnumerator();
+        public void Remove(object key) => entries.Remove(key);
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

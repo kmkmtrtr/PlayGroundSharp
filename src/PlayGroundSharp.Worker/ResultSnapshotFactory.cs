@@ -255,13 +255,19 @@ public sealed class ResultSnapshotFactory
         HashSet<object> path,
         SnapshotBudget budget)
     {
-        var properties = new List<ResultProperty>(Math.Min(dictionary.Count, MaximumItems));
+        var count = TryGetCollectionCount(dictionary);
+        var properties = new List<ResultProperty>(Math.Min(count ?? 0, MaximumItems));
         var enumerationFailed = false;
+        var reachedEnd = true;
         try
         {
             foreach (DictionaryEntry entry in dictionary)
             {
-                if (properties.Count >= MaximumItems || !budget.CanTakeNode) break;
+                if (properties.Count >= MaximumItems || !budget.CanTakeNode)
+                {
+                    reachedEnd = false;
+                    break;
+                }
                 properties.Add(new((string)entry.Key, Create(entry.Value, depth + 1, path, budget)));
             }
         }
@@ -274,27 +280,30 @@ public sealed class ResultSnapshotFactory
 
         return new(
             SnapshotKind.Object,
-            $"{dictionary.Count:N0} entries",
+            count is { } knownCount ? $"{knownCount:N0} entries" : $"{properties.Count:N0} captured entries",
             typeName,
             Properties: properties,
-            IsTruncated: enumerationFailed || properties.Count < dictionary.Count,
-            TotalCount: dictionary.Count);
+            IsTruncated: enumerationFailed || (count is { } total ? properties.Count < total : !reachedEnd),
+            TotalCount: count);
     }
 
     private static bool HasOnlyStringKeys(IDictionary dictionary)
     {
         try
         {
-            if (dictionary.Count == 0)
-            {
-                return dictionary.GetType().GetInterfaces().Any(static contract =>
+            if (dictionary.GetType().GetInterfaces().Any(static contract =>
                     contract.IsGenericType &&
                     contract.GetGenericTypeDefinition() == typeof(IDictionary<,>) &&
-                    contract.GetGenericArguments()[0] == typeof(string));
-            }
+                    contract.GetGenericArguments()[0] == typeof(string)))
+                return true;
+
+            var inspected = 0;
             foreach (var key in dictionary.Keys)
+            {
                 if (key is not string) return false;
-            return true;
+                if (++inspected > MaximumItems) return false;
+            }
+            return inspected > 0;
         }
         catch
         {
@@ -452,7 +461,7 @@ public sealed class ResultSnapshotFactory
         SnapshotBudget budget)
     {
         var items = new List<ResultSnapshot>();
-        var totalCount = enumerable is ICollection collection ? collection.Count : (int?)null;
+        var totalCount = TryGetCollectionCount(enumerable);
         var sourceHasMoreItems = enumerable is IBoundedSequenceResult { HasMoreItems: true };
         IEnumerator enumerator;
         try
@@ -506,6 +515,20 @@ public sealed class ResultSnapshotFactory
             {
                 // A broken enumerator must not invalidate the accepted submission.
             }
+        }
+    }
+
+    private static int? TryGetCollectionCount(IEnumerable enumerable)
+    {
+        if (enumerable is not ICollection collection) return null;
+        try
+        {
+            var count = collection.Count;
+            return count >= 0 ? count : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 

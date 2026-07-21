@@ -57,6 +57,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private CancellationTokenSource? variableSearchDelay;
     private CancellationTokenSource? typeExplorerRefresh;
     private CancellationTokenSource? packageOperationCancellation;
+    private CancellationTokenSource? executionPreparationCancellation;
     private CancellationTokenSource? transientStatusDelay;
     private IReadOnlyList<SymbolExplorerEntry> typeExplorerEntries = [];
     private IReadOnlyList<DiagnosticInfo> currentDiagnostics = [];
@@ -126,6 +127,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanSaveWorkspace))]
     private bool isSessionChanging = true;
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanCancel))]
     [NotifyPropertyChangedFor(nameof(CanChangeSession))]
     [NotifyPropertyChangedFor(nameof(CanResetOrRestart))]
     [NotifyPropertyChangedFor(nameof(CanOpenWorkspace))]
@@ -137,7 +139,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private AppLanguageMode languageMode = InitialSettings.LanguageMode;
 
     public ObservableCollection<TranscriptLine> Transcript => transcript;
-    public bool CanCancel => IsRunning || IsPackageSearchBusy;
+    public bool CanCancel => IsRunning || IsPackageSearchBusy || IsPreparingExecution;
     public bool CanChangeSession => IsWorkerConnected && !IsRunning && !IsPackageSearchBusy &&
                                     !IsWorkspaceBusy && !IsSessionChanging && !IsPreparingExecution;
     public bool CanResetOrRestart => IsWorkerConnected && !IsPackageSearchBusy &&
@@ -478,15 +480,34 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         InputText = string.Empty;
+        var preparation = new CancellationTokenSource();
+        executionPreparationCancellation = preparation;
         IsPreparingExecution = true;
+        var preparationCancelled = false;
         SetLocalizedStatus("Status.PreparingExecution");
         try
         {
-            await AddRequiredExtensionImportsAsync(code);
+            await AddRequiredExtensionImportsAsync(code, preparation.Token);
+            preparation.Token.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (preparation.IsCancellationRequested)
+        {
+            preparationCancelled = true;
         }
         finally
         {
+            if (ReferenceEquals(executionPreparationCancellation, preparation))
+                executionPreparationCancellation = null;
+            preparation.Dispose();
             IsPreparingExecution = false;
+        }
+        if (preparationCancelled)
+        {
+            if (InputText.Length == 0) InputText = code;
+            else ScheduleDiagnostics(InputText);
+            SetLocalizedStatus("Status.Ready");
+            Transcript.Add(TranscriptLine.System(Localize("Message.ExecutionPreparationCancelled")));
+            return;
         }
 
         var index = submissions.Count + 1;
@@ -512,14 +533,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private async Task AddRequiredExtensionImportsAsync(string code)
+    private async Task AddRequiredExtensionImportsAsync(string code, CancellationToken cancellationToken)
     {
         IReadOnlyList<string> requiredImports;
         try
         {
             var context = Context;
             requiredImports = await Task.Run(
-                () => languageService.GetRequiredExtensionImportsAsync(context, code));
+                () => languageService.GetRequiredExtensionImportsAsync(context, code, cancellationToken),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception error)
         {
@@ -529,6 +555,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         foreach (var requiredImport in requiredImports)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 if (!await AddUsingAsync(requiredImport)) continue;
@@ -548,6 +575,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (!CanCancel) return;
         SetLocalizedStatus("Status.Cancelling");
+        if (IsPreparingExecution)
+        {
+            executionPreparationCancellation?.Cancel();
+            return;
+        }
         if (IsPackageSearchBusy)
         {
             await worker.CancelAsync();
@@ -1794,6 +1826,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         typeExplorerRefresh?.Dispose();
         packageOperationCancellation?.Cancel();
         packageOperationCancellation?.Dispose();
+        executionPreparationCancellation?.Cancel();
+        executionPreparationCancellation?.Dispose();
         CancelTransientStatus();
         await worker.DisposeAsync();
     }

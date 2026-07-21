@@ -62,7 +62,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("停止と安全性", "Worker分離は安定性のためであり、サンドボックスではありません。",
         [
-            new("停止", "Escまたは停止ボタンで、実行中のコードとNuGetの検索・追加を中断できます。待機や長いループにExecutionCancellationを渡すと、セッション状態を保ったまま協調停止できます。応答しないコードはWorkerを強制終了するため、Worker内の変数状態が失われます。", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
+            new("停止", "Escまたは停止ボタンで、実行前の入力解析、実行中のコード、NuGetの検索・追加を中断できます。実行前なら未実行の入力を復元します。待機や長いループにExecutionCancellationを渡すと、セッション状態を保ったまま協調停止できます。応答しないコードはWorkerを強制終了するため、Worker内の変数状態が失われます。", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
             new("権限", "任意のC#コードとパッケージは現在のWindowsユーザー権限で動作します。信頼できないコード、DLL、パッケージを実行しないでください。")
         ])
     ];
@@ -103,7 +103,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Cancellation and security", "Worker isolation improves recovery; it is not a sandbox.",
         [
-            new("Stop", "Press Esc or Stop to cancel running code, NuGet searches, and package installation. Pass ExecutionCancellation to waits and long loops to stop cooperatively without losing session state. A non-responsive Worker is terminated, so Worker variables are lost.", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
+            new("Stop", "Press Esc or Stop to cancel pre-execution analysis, running code, NuGet searches, and package installation. Cancelling analysis restores the unsubmitted input. Pass ExecutionCancellation to waits and long loops to stop cooperatively without losing session state. A non-responsive Worker is terminated, so Worker variables are lost.", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
             new("Permissions", "Submitted code and packages run with your current Windows user permissions. Never run untrusted code, DLLs, or packages.")
         ])
     ];

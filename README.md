@@ -62,7 +62,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Ctrl+Shift+C`: copy the full transcript
 - `Up` / `Down`: move through input history; in a multiline draft this activates on the first/last line and restores the draft when returning to the newest entry
 - Click a previous `In` line: copy it into the current prompt
-- **Stop**: request cancellation, then terminate/restart an unresponsive Worker after 1.5 seconds
+- **Stop**: cancel pre-execution analysis, package work, or running code; unsubmitted input is restored, and an unresponsive Worker is terminated/restarted after 1.5 seconds
 - **Restart** / **Reset**: clear live submission state; when variables, types or methods exist, the toolbar asks for confirmation before discarding them
 - **Types**: open a searchable, kind-colored namespace/type/method tree built from active usings, session declarations and dynamically added libraries; each row shows its kind, and type details include direct base classes/interfaces alongside the signature and XML documentation
 - Hover a symbol for a compact signature/summary popup; click it to pin full details. Framework symbols can open their localized Microsoft Learn API page.

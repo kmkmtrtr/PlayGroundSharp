@@ -8,6 +8,8 @@ public sealed class PackageSearchStateTests
     public async Task WorkspaceActionsReflectSessionActivity()
     {
         await using var viewModel = new MainViewModel { IsSessionChanging = false };
+        var changedProperties = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
 
         Assert.True(viewModel.CanOpenWorkspace);
         Assert.True(viewModel.CanSaveWorkspace);
@@ -19,6 +21,13 @@ public sealed class PackageSearchStateTests
         viewModel.IsPackageSearchBusy = true;
         Assert.False(viewModel.CanOpenWorkspace);
         Assert.False(viewModel.CanSaveWorkspace);
+
+        viewModel.IsPackageSearchBusy = false;
+        viewModel.IsPreparingExecution = true;
+        Assert.True(viewModel.CanCancel);
+        Assert.False(viewModel.CanOpenWorkspace);
+        Assert.False(viewModel.CanSaveWorkspace);
+        Assert.Contains(nameof(MainViewModel.CanCancel), changedProperties);
     }
 
     [Fact]

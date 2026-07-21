@@ -1255,6 +1255,11 @@ public partial class MainWindow : Window
             Editor.Text = viewModel.InputText;
             Editor.CaretOffset = Editor.Text.Length;
             await execution;
+            if (!closeInProgress && !string.Equals(Editor.Text, viewModel.InputText, StringComparison.Ordinal))
+            {
+                Editor.Text = viewModel.InputText;
+                Editor.CaretOffset = Editor.Text.Length;
+            }
         }
         else if (e.Key == Key.Enter && !IsLineBreakGesture(Keyboard.Modifiers))
         {

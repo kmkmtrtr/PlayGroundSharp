@@ -197,6 +197,28 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task StreamsConsoleProgressBeforeSubmissionCompletes()
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var firstOutput = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var execution = new ScriptSession().ExecuteAsync(
+            1,
+            "Thread.Sleep(200); Console.WriteLine(\"first\"); Thread.Sleep(500);",
+            text =>
+            {
+                if (text.Contains("first", StringComparison.Ordinal))
+                    firstOutput.TrySetResult(stopwatch.Elapsed);
+            });
+
+        var firstOutputAt = await firstOutput.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await execution;
+        var completionAt = stopwatch.Elapsed;
+
+        Assert.True(completionAt - firstOutputAt >= TimeSpan.FromMilliseconds(350),
+            $"Console progress arrived only {completionAt - firstOutputAt:g} before completion.");
+    }
+
+    [Fact]
     public async Task BoundsAndBatchesVeryLargeConsoleOutputInOrder()
     {
         const int maximumCharacters = 10 * 1024 * 1024;

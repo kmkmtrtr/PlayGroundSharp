@@ -70,7 +70,7 @@ public partial class ResultInspectorWindow : Window
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e) =>
-        Dispatcher.BeginInvoke(FocusFirstResult, DispatcherPriority.Input);
+        Dispatcher.BeginInvoke(() => FocusFirstResult(), DispatcherPriority.Input);
 
     private void SnapshotTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {

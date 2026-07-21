@@ -18,7 +18,9 @@ public sealed record TranscriptLine(
     public bool IsStructured => SnapshotRoots is not null;
     public bool IsInput => InputCode is not null;
     public bool IsConsole => CopyValue is not null;
-    public bool IsCopyable => InputCode is not null || Snapshot is not null || CopyValue is not null;
+    // Diagnostics and system messages are often the values users most need to share.
+    // Keep every visible transcript row copyable, not only inputs and results.
+    public bool IsCopyable => Text.Length > 0 || InputCode is not null || Snapshot is not null || CopyValue is not null;
     public bool IsJsonCopyable => Snapshot is not null;
     public bool IsSavable => Snapshot is not null || CopyValue is not null;
     public string CopyText => CopyValue ?? (Snapshot is null ? Text : SnapshotTextFormatter.FormatFull(Snapshot));

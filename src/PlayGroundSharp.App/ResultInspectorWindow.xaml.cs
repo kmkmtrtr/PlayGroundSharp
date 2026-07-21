@@ -58,6 +58,9 @@ public partial class ResultInspectorWindow : Window
 
     public ObservableCollection<SnapshotTreeNode> Roots { get; }
 
+    private void Window_Loaded(object sender, RoutedEventArgs e) =>
+        Dispatcher.BeginInvoke(FocusFirstResult, DispatcherPriority.Input);
+
     private void SnapshotTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         if (e.NewValue is not SnapshotTreeNode node) return;
@@ -78,6 +81,12 @@ public partial class ResultInspectorWindow : Window
             e.Handled = true;
             SearchBox.Focus();
             SearchBox.SelectAll();
+            return;
+        }
+        if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            await SaveAllAsync();
             return;
         }
         if (e.Key is Key.Enter or Key.Down && Keyboard.Modifiers == ModifierKeys.None &&
@@ -131,13 +140,14 @@ public partial class ResultInspectorWindow : Window
 
         SnapshotTreeNode? root;
         int matches;
+        int displayedMatches;
         try
         {
-            (root, matches) = await Task.Run(() =>
+            (root, matches, displayedMatches) = await Task.Run(() =>
             {
                 var filteredRoot = SnapshotTreeNode.CreateFilteredRoot(
-                    snapshot, languageMode, query, out var matchCount, cancellationToken);
-                return (filteredRoot, matchCount);
+                    snapshot, languageMode, query, out var matchCount, out var displayedMatchCount, cancellationToken);
+                return (filteredRoot, matchCount, displayedMatchCount);
             }, cancellationToken);
         }
         catch (OperationCanceledException)
@@ -167,7 +177,9 @@ public partial class ResultInspectorWindow : Window
             ? string.Empty
             : root is null
                 ? AppLocalization.Text(languageMode, "Inspector.NoMatches")
-                : AppLocalization.Text(languageMode, "Inspector.MatchCount", matches));
+                : matches > displayedMatches
+                    ? AppLocalization.Text(languageMode, "Inspector.MatchCountLimited", matches, displayedMatches)
+                    : AppLocalization.Text(languageMode, "Inspector.MatchCount", matches));
     }
 
     private void FocusFirstResult()
@@ -204,7 +216,9 @@ public partial class ResultInspectorWindow : Window
         if (selectedNode is not null) await CopyToClipboardAsync(() => selectedNode.Path);
     }
 
-    private async void SaveAll_Click(object sender, RoutedEventArgs e)
+    private async void SaveAll_Click(object sender, RoutedEventArgs e) => await SaveAllAsync();
+
+    private async Task SaveAllAsync()
     {
         var dialog = new SaveFileDialog
         {

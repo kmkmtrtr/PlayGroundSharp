@@ -6,6 +6,7 @@ namespace PlayGroundSharp.App;
 public sealed partial class SnapshotTreeNode : ObservableObject
 {
     private const int MaximumLabelLength = 200;
+    private const int MaximumFilteredMatches = 250;
     private const int DirectChildLimit = 120;
     private const int GroupSize = 100;
     private readonly AppLanguageMode languageMode;
@@ -51,13 +52,15 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         AppLanguageMode languageMode,
         string query,
         out int matchCount,
+        out int displayedMatchCount,
         CancellationToken cancellationToken = default)
     {
         matchCount = 0;
+        displayedMatchCount = 0;
         if (string.IsNullOrWhiteSpace(query)) return CreateRoot(snapshot, languageMode);
         return CreateFilteredNode(
             snapshot.TypeName ?? snapshot.Kind.ToString(), "$", snapshot, languageMode,
-            query.Trim(), ref matchCount, cancellationToken);
+            query.Trim(), ref matchCount, ref displayedMatchCount, cancellationToken);
     }
 
     private static SnapshotTreeNode? CreateFilteredNode(
@@ -67,21 +70,32 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         AppLanguageMode languageMode,
         string query,
         ref int matchCount,
+        ref int displayedMatchCount,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var isMatch = Contains(name, query) || Contains(path, query) ||
                       Contains(snapshot.TypeName, query) || Contains(snapshot.Display, query);
-        if (isMatch) matchCount++;
+        var includeSelf = false;
+        if (isMatch)
+        {
+            matchCount++;
+            if (displayedMatchCount < MaximumFilteredMatches)
+            {
+                displayedMatchCount++;
+                includeSelf = true;
+            }
+        }
 
-        var matchingChildren = new List<SnapshotTreeNode>();
+        List<SnapshotTreeNode>? matchingChildren = null;
         if (snapshot.Properties is not null)
         {
             foreach (var property in snapshot.Properties)
             {
                 var childPath = AppendPropertyPath(path, property.Name);
-                if (CreateFilteredNode(property.Name, childPath, property.Value, languageMode, query, ref matchCount, cancellationToken) is { } child)
-                    matchingChildren.Add(child);
+                if (CreateFilteredNode(property.Name, childPath, property.Value, languageMode, query,
+                        ref matchCount, ref displayedMatchCount, cancellationToken) is { } child)
+                    (matchingChildren ??= []).Add(child);
             }
         }
         if (snapshot.Items is not null)
@@ -89,19 +103,20 @@ public sealed partial class SnapshotTreeNode : ObservableObject
             for (var index = 0; index < snapshot.Items.Count; index++)
             {
                 var childName = $"[{index}]";
-                if (CreateFilteredNode(childName, path + childName, snapshot.Items[index], languageMode, query, ref matchCount, cancellationToken) is { } child)
-                    matchingChildren.Add(child);
+                if (CreateFilteredNode(childName, path + childName, snapshot.Items[index], languageMode, query,
+                        ref matchCount, ref displayedMatchCount, cancellationToken) is { } child)
+                    (matchingChildren ??= []).Add(child);
             }
         }
 
-        if (!isMatch && matchingChildren.Count == 0) return null;
+        if (!includeSelf && matchingChildren is null) return null;
         return new(
             name,
             path,
             snapshot,
             languageMode,
             isExpanded: true,
-            filteredChildren: GroupFilteredChildren(matchingChildren, path, snapshot, languageMode));
+            filteredChildren: GroupFilteredChildren(matchingChildren ?? [], path, snapshot, languageMode));
     }
 
     private string BuildDetail()

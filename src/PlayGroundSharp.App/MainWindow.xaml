@@ -120,7 +120,8 @@
                         <MenuItem Header="{DynamicResource Menu.CopyTranscript}" Click="CopyTranscript_Click" InputGestureText="Ctrl+Shift+C" />
                         <MenuItem Header="{DynamicResource Menu.SaveTranscript}" Click="SaveTranscript_Click" />
                         <Separator />
-                        <MenuItem Header="{DynamicResource Menu.ClearTranscript}" Command="{Binding ClearCommand}" />
+                        <MenuItem Header="{DynamicResource Menu.ClearTranscript}" Command="{Binding ClearCommand}"
+                                  Click="FocusEditorAfterCommand_Click" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource Menu.Data}" Style="{StaticResource HeaderMenuItemStyle}">
                         <MenuItem Header="{DynamicResource Menu.InspectFile}" Tag="Inspect" Click="InsertDataSnippet_Click" />

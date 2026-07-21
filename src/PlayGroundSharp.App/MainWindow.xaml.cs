@@ -93,8 +93,9 @@ public partial class MainWindow : Window
         EnsureResponsivePanes();
         windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         windowSource?.AddHook(WindowMessageHook);
-        await viewModel.InitializeAsync();
         Editor.Focus();
+        await viewModel.InitializeAsync();
+        if (!closeInProgress) Editor.Focus();
     }
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
@@ -907,7 +908,7 @@ public partial class MainWindow : Window
             await viewModel.InstallPackageCommand.ExecuteAsync(package);
     }
 
-    private void TypeExplorerSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    private async void TypeExplorerSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (sender is not TextBox textBox || Keyboard.Modifiers != ModifierKeys.None) return;
         if (e.Key == Key.Escape)
@@ -919,8 +920,7 @@ public partial class MainWindow : Window
         else if (e.Key is Key.Down or Key.Enter)
         {
             e.Handled = true;
-            viewModel.ApplyTypeExplorerFilterNow();
-            if (TypeExplorerTree.Items.Count > 0)
+            if (await viewModel.ApplyTypeExplorerFilterNowAsync() && TypeExplorerTree.Items.Count > 0)
                 FocusFirstExplorerResult(descendToMatch: textBox.Text.Length > 0);
         }
     }

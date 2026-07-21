@@ -8,6 +8,7 @@
     <Project Path="src/PlayGroundSharp.Worker/PlayGroundSharp.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/PlayGroundSharp.App.Tests/PlayGroundSharp.App.Tests.csproj" />
     <Project Path="tests/PlayGroundSharp.Core.Tests/PlayGroundSharp.Core.Tests.csproj" />
     <Project Path="tests/PlayGroundSharp.IntegrationTests/PlayGroundSharp.IntegrationTests.csproj" />
     <Project Path="tests/PlayGroundSharp.LanguageService.Tests/PlayGroundSharp.LanguageService.Tests.csproj" />

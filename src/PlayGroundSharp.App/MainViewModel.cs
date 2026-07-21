@@ -407,7 +407,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             IsWorkerConnected = true;
             SetLocalizedStatus("Status.Ready");
             Transcript.Add(TranscriptLine.System(Localize("Message.WorkerConnected")));
-            await RefreshTypeExplorerAsync();
+            // Symbol/documentation discovery is comparatively expensive and is not
+            // required to start typing or executing. It owns cancellation/error handling.
+            _ = RefreshTypeExplorerAsync();
         }
         catch (Exception error)
         {
@@ -766,12 +768,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     partial void OnTypeExplorerSearchTextChanged(string value) => ScheduleTypeExplorerRebuild();
 
-    internal void ApplyTypeExplorerFilterNow()
+    internal async Task<bool> ApplyTypeExplorerFilterNowAsync()
     {
         typeExplorerSearchDelay?.Cancel();
         typeExplorerSearchDelay?.Dispose();
-        typeExplorerSearchDelay = null;
-        RebuildTypeExplorer();
+        var rebuild = new CancellationTokenSource();
+        typeExplorerSearchDelay = rebuild;
+        return await RebuildTypeExplorerAsync(rebuild.Token);
     }
 
     partial void OnVariableFilterTextChanged(string value) => ScheduleVariableFilterRefresh();
@@ -826,7 +829,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         CursorStatus = Localize("Cursor.Position", cursorLine, cursorColumn);
         if (packageSearchLocalizationKey is not null)
             PackageSearchMessage = Localize(packageSearchLocalizationKey, packageSearchLocalizationArguments);
-        RebuildTypeExplorer();
+        _ = RebuildTypeExplorerAsync();
     }
 
     private void UpdateThemeOptionLabels(AppLanguageMode languageMode)
@@ -1374,7 +1377,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 () => languageService.GetSymbolExplorerAsync(context, refresh.Token), refresh.Token);
             if (refresh.IsCancellationRequested) return;
             typeExplorerEntries = entries;
-            RebuildTypeExplorer();
+            await RebuildTypeExplorerAsync(refresh.Token);
         }
         catch (OperationCanceledException)
         {
@@ -1399,45 +1402,80 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             await Task.Delay(140, cancellationToken);
-            RebuildTypeExplorer();
+            await RebuildTypeExplorerAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
         }
     }
 
-    private void RebuildTypeExplorer()
+    private async Task<bool> RebuildTypeExplorerAsync(CancellationToken cancellationToken = default)
     {
         var query = TypeExplorerSearchText.Trim();
+        var entries = typeExplorerEntries;
+        ExplorerBuildResult result;
+        try
+        {
+            result = await Task.Run(
+                () => BuildTypeExplorer(entries, query, cancellationToken), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch (Exception)
+        {
+            if (!cancellationToken.IsCancellationRequested &&
+                string.Equals(query, TypeExplorerSearchText.Trim(), StringComparison.Ordinal))
+                TypeExplorerStatus = Localize("Explorer.Unavailable");
+            return false;
+        }
+
+        if (cancellationToken.IsCancellationRequested ||
+            !ReferenceEquals(entries, typeExplorerEntries) ||
+            !string.Equals(query, TypeExplorerSearchText.Trim(), StringComparison.Ordinal)) return false;
+
+        TypeExplorerItems.Clear();
+        foreach (var item in result.Items) TypeExplorerItems.Add(item);
+
+        TypeExplorerStatus = string.IsNullOrEmpty(query)
+            ? Localize("Explorer.Count", result.TypeCount, result.MemberCount, result.EnumMemberCount)
+            : result.TotalMatchCount > result.DisplayedMatchCount
+                ? Localize("Explorer.MatchesLimited", result.TotalMatchCount, result.DisplayedMatchCount)
+                : Localize("Explorer.Matches", result.TotalMatchCount);
+        return true;
+    }
+
+    private static ExplorerBuildResult BuildTypeExplorer(
+        IReadOnlyList<SymbolExplorerEntry> entries,
+        string query,
+        CancellationToken cancellationToken)
+    {
         IReadOnlyList<SymbolExplorerEntry> filtered;
-        int totalMatchCount;
-        int displayedMatchCount;
+        var totalMatchCount = 0;
+        var displayedMatchCount = 0;
         if (string.IsNullOrEmpty(query))
         {
-            filtered = typeExplorerEntries;
-            totalMatchCount = typeExplorerEntries.Count;
+            filtered = entries;
+            totalMatchCount = entries.Count;
             displayedMatchCount = totalMatchCount;
         }
         else
         {
-            var allMatches = typeExplorerEntries.Where(entry =>
-                entry.FullName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                entry.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                entry.Kind.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                entry.AssemblyName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                entry.Summary.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                entry.Parameters.Any(parameter =>
-                    parameter.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                    parameter.Summary.Contains(query, StringComparison.OrdinalIgnoreCase)))
-                .ToArray();
-            totalMatchCount = allMatches.Length;
-            var matched = allMatches.Take(MaximumExplorerSearchResults).ToArray();
-            displayedMatchCount = matched.Length;
+            var matched = new List<SymbolExplorerEntry>(MaximumExplorerSearchResults);
+            foreach (var entry in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!MatchesExplorerQuery(entry, query)) continue;
+                totalMatchCount++;
+                if (matched.Count < MaximumExplorerSearchResults) matched.Add(entry);
+            }
+            displayedMatchCount = matched.Count;
             var parentKeys = matched
                 .Where(static entry => entry.ContainingType is not null)
                 .Select(static entry => (entry.Namespace, TypeName: entry.ContainingType!, entry.AssemblyName))
                 .ToHashSet();
-            filtered = matched.Concat(typeExplorerEntries.Where(entry =>
+            filtered = matched.Concat(entries.Where(entry =>
                     entry.ContainingType is null && parentKeys.Contains((entry.Namespace, entry.Name, entry.AssemblyName))))
                 .Distinct()
                 .ToArray();
@@ -1446,6 +1484,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var root = new ExplorerNodeBuilder(string.Empty, string.Empty);
         foreach (var entry in filtered)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var namespaceName = entry.Namespace == "(session)" ? "Session" : entry.Namespace;
             var current = root;
             var fullName = string.Empty;
@@ -1457,21 +1496,29 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             current.Symbols.Add(entry);
         }
 
-        TypeExplorerItems.Clear();
-        foreach (var item in root.Namespaces.Values
+        var items = root.Namespaces.Values
                      .OrderBy(static item => item.FullName == "Session" ? 0 : 1)
-                     .ThenBy(static item => item.Name, StringComparer.OrdinalIgnoreCase))
-            TypeExplorerItems.Add(item.Build(!string.IsNullOrEmpty(query)));
-
-        TypeExplorerStatus = string.IsNullOrEmpty(query)
-            ? Localize("Explorer.Count",
-                typeExplorerEntries.Count(static entry => entry.ContainingType is null && entry.Kind != "method"),
-                typeExplorerEntries.Count(static entry => entry.Kind is "method" or "constructor"),
-                typeExplorerEntries.Count(static entry => entry.Kind == "enum member"))
-            : totalMatchCount > displayedMatchCount
-                ? Localize("Explorer.MatchesLimited", totalMatchCount, displayedMatchCount)
-                : Localize("Explorer.Matches", totalMatchCount);
+                     .ThenBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(item => item.Build(!string.IsNullOrEmpty(query), cancellationToken))
+            .ToArray();
+        return new(
+            items,
+            totalMatchCount,
+            displayedMatchCount,
+            entries.Count(static entry => entry.ContainingType is null && entry.Kind != "method"),
+            entries.Count(static entry => entry.Kind is "method" or "constructor"),
+            entries.Count(static entry => entry.Kind == "enum member"));
     }
+
+    private static bool MatchesExplorerQuery(SymbolExplorerEntry entry, string query) =>
+        entry.FullName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        entry.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        entry.Kind.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        entry.AssemblyName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        entry.Summary.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        entry.Parameters.Any(parameter =>
+            parameter.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            parameter.Summary.Contains(query, StringComparison.OrdinalIgnoreCase));
 
     private static string GetTypeGlyph(string kind) => kind switch
     {
@@ -1503,11 +1550,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return created;
         }
 
-        public SymbolExplorerNode Build(bool expand)
+        public SymbolExplorerNode Build(bool expand, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var namespaceNodes = Namespaces.Values
                 .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(item => item.Build(expand));
+                .Select(item => item.Build(expand, cancellationToken));
             var membersByType = Symbols
                 .Where(static item => item.ContainingType is not null)
                 .ToLookup(static item => (item.ContainingType!, item.AssemblyName));
@@ -1558,6 +1606,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return Regex.Replace(fullName, "<[^>]+>", string.Empty).ToLowerInvariant();
         }
     }
+
+    private sealed record ExplorerBuildResult(
+        IReadOnlyList<SymbolExplorerNode> Items,
+        int TotalMatchCount,
+        int DisplayedMatchCount,
+        int TypeCount,
+        int MemberCount,
+        int EnumMemberCount);
 
     private sealed class BulkObservableCollection<T> : ObservableCollection<T>
     {

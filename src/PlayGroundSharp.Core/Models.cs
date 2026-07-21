@@ -52,7 +52,7 @@ public sealed record SessionContext(
     // internally by Roslyn) from leaking out of the app host and into session completion.
     public static IReadOnlySet<string> DefaultReferenceAssemblyNames { get; } = new HashSet<string>(
     [
-        "System.Private.CoreLib", "System", "System.Collections", "System.Collections.Concurrent", "System.Console",
+        "Microsoft.CSharp", "System.Private.CoreLib", "System", "System.Collections", "System.Collections.Concurrent", "System.Console",
         "System.Diagnostics", "System.Diagnostics.Debug", "System.Diagnostics.Process", "System.Diagnostics.StackTrace",
         "System.Globalization", "System.IO", "System.IO.FileSystem", "System.IO.FileSystem.Primitives",
         "System.Linq", "System.Reflection", "System.Reflection.Extensions", "System.Reflection.Primitives",

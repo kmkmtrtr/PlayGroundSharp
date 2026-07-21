@@ -48,6 +48,16 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task AcceptsDynamicMemberBindingInDiagnostics()
+    {
+        const string code = "dynamic value = new { Number = 21 }; (int)value.Number * 2";
+
+        var diagnostics = await service.GetDiagnosticsAsync(SessionContext.Empty, code);
+
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public async Task DoesNotExposeLargeDataImplementationTypes()
     {
         const string code = "new Bounded";

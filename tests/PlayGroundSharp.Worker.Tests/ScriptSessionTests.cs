@@ -35,6 +35,18 @@ public sealed class ScriptSessionTests
         Assert.Equal("3", result.Snapshot?.Display);
     }
 
+    [Fact]
+    public async Task SupportsDynamicMemberBinding()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            "dynamic value = new { Number = 21 }; (int)value.Number * 2");
+
+        Assert.True(result.StateAccepted,
+            string.Join(" | ", result.Diagnostics.Select(static diagnostic => $"{diagnostic.Id}: {diagnostic.Message}")));
+        Assert.Equal("42", result.Snapshot?.Display);
+    }
+
     private static string NormalizeUnresolvedReferenceDisplay(string? display)
     {
         if (display is null) return string.Empty;

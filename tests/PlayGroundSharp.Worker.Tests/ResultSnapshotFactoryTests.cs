@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Dynamic;
 using PlayGroundSharp.Core;
 using PlayGroundSharp.Worker;
 
@@ -88,6 +89,22 @@ public sealed class ResultSnapshotFactoryTests
         Assert.Equal(["Ada", "30"], tupleMembers.Select(static property => property.Value.Display));
         Assert.Equal(["Label", "Value"], fieldMembers.Select(static property => property.Name));
         Assert.Equal(["answer", "42"], fieldMembers.Select(static property => property.Value.Display));
+    }
+
+    [Fact]
+    public void ExpandoObjectsUseNamedProperties()
+    {
+        dynamic value = new ExpandoObject();
+        value.Name = "Ada";
+        value.Score = 99;
+
+        var snapshot = factory.Create((object)value);
+
+        Assert.Equal(SnapshotKind.Object, snapshot.Kind);
+        var properties = Assert.IsAssignableFrom<IReadOnlyList<ResultProperty>>(snapshot.Properties);
+        Assert.Equal(["Name", "Score"], properties.Select(static property => property.Name));
+        Assert.Equal(["Ada", "99"], properties.Select(static property => property.Value.Display));
+        Assert.Equal(2, snapshot.TotalCount);
     }
 
     [Fact]

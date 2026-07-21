@@ -125,6 +125,11 @@ public sealed class ResultSnapshotFactory
             {
                 return CreateStringDictionary(dictionary, typeName, depth, path, budget);
             }
+            if (value is IEnumerable genericDictionary && TryGetStringDictionaryEntryType(type, out var entryType))
+            {
+                return CreateGenericStringDictionary(
+                    value, genericDictionary, entryType, typeName, depth, path, budget);
+            }
             if (value is Array { Rank: > 1 } array)
             {
                 var indices = new int[array.Rank];
@@ -241,6 +246,100 @@ public sealed class ResultSnapshotFactory
         {
             return false;
         }
+    }
+
+    private ResultSnapshot CreateGenericStringDictionary(
+        object value,
+        IEnumerable dictionary,
+        Type entryType,
+        string typeName,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        var count = TryGetGenericDictionaryCount(value, entryType);
+        var properties = new List<ResultProperty>(Math.Min(count ?? 0, MaximumItems));
+        var keyProperty = entryType.GetProperty("Key")!;
+        var valueProperty = entryType.GetProperty("Value")!;
+        var reachedEnd = false;
+        var enumerationFailed = false;
+        IEnumerator? enumerator = null;
+        try
+        {
+            enumerator = dictionary.GetEnumerator();
+            while (properties.Count < MaximumItems && budget.CanTakeNode)
+            {
+                if (!enumerator.MoveNext())
+                {
+                    reachedEnd = true;
+                    break;
+                }
+                var entry = enumerator.Current;
+                var key = (string?)keyProperty.GetValue(entry) ?? string.Empty;
+                properties.Add(new(key, Create(valueProperty.GetValue(entry), depth + 1, path, budget)));
+            }
+        }
+        catch (Exception error)
+        {
+            enumerationFailed = true;
+            if (budget.TryTakeNode())
+                properties.Add(new("…", CreateExceptionSnapshot(error, null, budget)));
+        }
+        finally
+        {
+            try
+            {
+                (enumerator as IDisposable)?.Dispose();
+            }
+            catch
+            {
+                // A broken dictionary enumerator must not invalidate the submission.
+            }
+        }
+
+        return new(
+            SnapshotKind.Object,
+            count is { } knownCount ? $"{knownCount:N0} entries" : $"{properties.Count:N0} captured entries",
+            typeName,
+            Properties: properties,
+            IsTruncated: enumerationFailed ||
+                         (count is { } total ? properties.Count < total : !reachedEnd),
+            TotalCount: count);
+    }
+
+    private static bool TryGetStringDictionaryEntryType(Type type, out Type entryType)
+    {
+        foreach (var contract in type.GetInterfaces())
+        {
+            if (!contract.IsGenericType) continue;
+            var definition = contract.GetGenericTypeDefinition();
+            if (definition is not null &&
+                definition != typeof(IDictionary<,>) && definition != typeof(IReadOnlyDictionary<,>)) continue;
+            var arguments = contract.GetGenericArguments();
+            if (arguments[0] != typeof(string)) continue;
+            entryType = typeof(KeyValuePair<,>).MakeGenericType(arguments);
+            return true;
+        }
+        entryType = null!;
+        return false;
+    }
+
+    private static int? TryGetGenericDictionaryCount(object value, Type entryType)
+    {
+        foreach (var definition in new[] { typeof(ICollection<>), typeof(IReadOnlyCollection<>) })
+        {
+            var contract = definition.MakeGenericType(entryType);
+            if (!contract.IsInstanceOfType(value)) continue;
+            try
+            {
+                return (int?)contract.GetProperty("Count")?.GetValue(value);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        return null;
     }
 
     private ResultSnapshot CreateArrayDimension(

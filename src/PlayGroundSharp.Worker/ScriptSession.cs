@@ -35,7 +35,12 @@ public sealed class ScriptSession
     {
         options = ScriptOptions.Default
             .WithImports(imports)
-            .AddReferences(typeof(object).Assembly, typeof(Enumerable).Assembly, typeof(SessionGlobals).Assembly, typeof(JsonElement).Assembly);
+            .AddReferences(
+                typeof(object).Assembly,
+                typeof(Enumerable).Assembly,
+                typeof(SessionGlobals).Assembly,
+                typeof(JsonElement).Assembly,
+                typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly);
     }
 
     public SessionContext Context => new([.. submissions], [.. imports], [.. references]);

@@ -105,7 +105,8 @@ public partial class ResultInspectorWindow : Window
         {
             e.Handled = true;
             searchTimer.Stop();
-            await ApplySearchAsync();
+            if (!string.Equals(appliedQuery, SearchBox.Text, StringComparison.Ordinal))
+                await ApplySearchAsync();
             if (!MoveSearchMatch(1)) FocusFirstResult();
             return;
         }

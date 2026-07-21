@@ -14,14 +14,18 @@ public sealed record ScriptExecutionResult(
     object? ReturnValue,
     ResultSnapshot? Snapshot,
     IReadOnlyList<DiagnosticInfo> Diagnostics,
-    ExceptionInfo? Exception);
+    ExceptionInfo? Exception,
+    int TotalDiagnosticCount = 0);
 
 /// <summary>Owns the mutable Roslyn ScriptState for one Worker session.</summary>
 public sealed class ScriptSession
 {
+    private const int MaximumTransferredDiagnostics = 100;
     private const int MaximumVariableDisplayLength = 512;
     private const int MaximumVariableSnapshotNodes = 512;
     private const int MaximumVariableSnapshotTextCharacters = 256 * 1024;
+    private const int MaximumVariableSnapshotTotalNodes = 50_000;
+    private const int MaximumVariableSnapshotTotalTextCharacters = 10 * 1024 * 1024;
     private readonly SessionGlobals globals = new();
     private readonly ResultSnapshotFactory snapshots = new();
     private readonly List<string> submissions = [];
@@ -46,13 +50,40 @@ public sealed class ScriptSession
 
     public SessionContext Context => new([.. submissions], [.. imports], [.. references]);
 
-    public IReadOnlyList<VariableInfo> GetVariables() => state?.Variables
-        .Select(variable => new VariableInfo(
-            variable.Name,
-            variable.Type.FullName ?? variable.Type.Name,
-            CreateVariableSnapshot(variable),
-            variable.IsReadOnly))
-        .ToArray() ?? [];
+    public IReadOnlyList<VariableInfo> GetVariables(CancellationToken cancellationToken = default)
+    {
+        if (state is null) return [];
+        var variables = new List<VariableInfo>();
+        var remainingNodes = MaximumVariableSnapshotTotalNodes;
+        var remainingTextCharacters = MaximumVariableSnapshotTotalTextCharacters;
+        foreach (var variable in state.Variables)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var typeName = variable.Type.FullName ?? variable.Type.Name;
+            ResultSnapshot snapshot;
+            if (remainingNodes <= 0 || remainingTextCharacters <= 0)
+            {
+                snapshot = new(
+                    SnapshotKind.MaxDepth,
+                    "… variable snapshot limit reached",
+                    typeName,
+                    IsTruncated: true);
+            }
+            else
+            {
+                snapshot = CreateVariableSnapshot(
+                    variable,
+                    Math.Min(MaximumVariableSnapshotNodes, remainingNodes),
+                    Math.Min(MaximumVariableSnapshotTextCharacters, remainingTextCharacters),
+                    cancellationToken);
+                var usage = MeasureSnapshot(snapshot);
+                remainingNodes -= usage.Nodes;
+                remainingTextCharacters -= usage.TextCharacters;
+            }
+            variables.Add(new(variable.Name, typeName, snapshot, variable.IsReadOnly));
+        }
+        return variables;
+    }
 
     public async Task<ScriptExecutionResult> ExecuteAsync(
         int submissionIndex,
@@ -82,31 +113,36 @@ public sealed class ScriptSession
             }
             catch (CompilationErrorException error)
             {
-                return new(false, false, null, null, error.Diagnostics.Select(ToDiagnostic).ToArray(), null);
+                return new(
+                    false,
+                    false,
+                    null,
+                    null,
+                    error.Diagnostics.Take(MaximumTransferredDiagnostics).Select(ToDiagnostic).ToArray(),
+                    null,
+                    error.Diagnostics.Length);
             }
 
             if (candidate.Exception is OperationCanceledException cancelled && cancellationToken.IsCancellationRequested)
                 throw cancelled;
-            state = candidate;
-            submissions.Add(code);
             if (candidate.Exception is not null)
             {
+                state = candidate;
+                submissions.Add(code);
                 return new(true, false, null, null, [], ResultSnapshotFactory.CreateException(candidate.Exception));
             }
 
             var hasReturnValue = HasTrailingValueExpression(candidate.Script.GetCompilation());
-            if (hasReturnValue)
-            {
-                globals.Last = candidate.ReturnValue;
-                globals.Out.Set(submissionIndex, candidate.ReturnValue);
-            }
-
             ResultSnapshot? snapshot = null;
             if (hasReturnValue)
             {
                 try
                 {
-                    snapshot = snapshots.Create(candidate.ReturnValue);
+                    snapshot = snapshots.Create(candidate.ReturnValue, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
                 }
                 catch (Exception error)
                 {
@@ -115,6 +151,14 @@ public sealed class ScriptSession
                         $"Snapshot failed: {error.GetType().Name}: {error.Message}",
                         candidate.ReturnValue?.GetType().FullName);
                 }
+            }
+
+            state = candidate;
+            submissions.Add(code);
+            if (hasReturnValue)
+            {
+                globals.Last = candidate.ReturnValue;
+                globals.Out.Set(submissionIndex, candidate.ReturnValue);
             }
 
             return new(true, hasReturnValue, candidate.ReturnValue, snapshot, [], null);
@@ -179,14 +223,19 @@ public sealed class ScriptSession
         globals.Out.Clear();
     }
 
-    private ResultSnapshot CreateVariableSnapshot(ScriptVariable variable)
+    private ResultSnapshot CreateVariableSnapshot(
+        ScriptVariable variable,
+        int maximumNodes,
+        int maximumTextCharacters,
+        CancellationToken cancellationToken)
     {
         try
         {
             var snapshot = snapshots.Create(
                 variable.Value,
-                MaximumVariableSnapshotNodes,
-                MaximumVariableSnapshotTextCharacters);
+                maximumNodes,
+                maximumTextCharacters,
+                cancellationToken);
             var display = snapshot.Display;
             var truncated = display?.Length > MaximumVariableDisplayLength;
             return snapshot with
@@ -195,10 +244,39 @@ public sealed class ScriptSession
                 IsTruncated = snapshot.IsTruncated || truncated
             };
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception error)
         {
             return new(SnapshotKind.Exception, $"{error.GetType().Name}: {error.Message}", variable.Type.FullName);
         }
+    }
+
+    private static (int Nodes, int TextCharacters) MeasureSnapshot(ResultSnapshot snapshot)
+    {
+        var nodes = 1;
+        var textCharacters = (snapshot.Display?.Length ?? 0) + (snapshot.TypeName?.Length ?? 0);
+        if (snapshot.Properties is not null)
+        {
+            foreach (var property in snapshot.Properties)
+            {
+                var child = MeasureSnapshot(property.Value);
+                nodes += child.Nodes;
+                textCharacters += property.Name.Length + child.TextCharacters;
+            }
+        }
+        if (snapshot.Items is not null)
+        {
+            foreach (var item in snapshot.Items)
+            {
+                var child = MeasureSnapshot(item);
+                nodes += child.Nodes;
+                textCharacters += child.TextCharacters;
+            }
+        }
+        return (nodes, textCharacters);
     }
 
     private static void ValidateNamespace(string @namespace)

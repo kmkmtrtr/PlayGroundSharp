@@ -313,7 +313,28 @@ public partial class MainWindow : Window
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (IsLoaded) EnsureResponsivePanes();
-        if (IsLoaded && AssistPopup.IsOpen) PrepareAssistPopupLayout();
+        if (IsLoaded && AssistPopup.IsOpen)
+        {
+            PrepareAssistPopupLayout();
+            RefreshPopupPosition(AssistPopup);
+        }
+    }
+
+    private void Window_LocationChanged(object? sender, EventArgs e)
+    {
+        RefreshPopupPosition(AssistPopup);
+        RefreshPopupPosition(QuickInfoPopup);
+        RefreshPopupPosition(SymbolDetailPopup);
+    }
+
+    private static void RefreshPopupPosition(Popup popup)
+    {
+        if (!popup.IsOpen) return;
+        // Popup is a separate native window and does not always follow its placement
+        // target. Invalidating the offset repositions it without losing selection.
+        var offset = popup.HorizontalOffset;
+        popup.HorizontalOffset = offset + 0.01;
+        popup.HorizontalOffset = offset;
     }
 
     private void Window_StateChanged(object? sender, EventArgs e)

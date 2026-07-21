@@ -145,6 +145,95 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public async Task IncompleteTasksAreCapturedWithoutWaitingForTheirResult()
+    {
+        var source = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var snapshot = await Task.Run(() => factory.Create(source.Task))
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(SnapshotKind.Object, snapshot.Kind);
+        Assert.Equal("WaitingForActivation", snapshot.Display);
+        Assert.Equal("WaitingForActivation",
+            Assert.Single(snapshot.Properties!, static property => property.Name == "Status").Value.Display);
+        Assert.DoesNotContain(snapshot.Properties!, static property => property.Name == "Result");
+    }
+
+    [Fact]
+    public void CompletedTasksExposeTheirResult()
+    {
+        var snapshot = factory.Create(Task.FromResult(42));
+
+        Assert.Equal("RanToCompletion", snapshot.Display);
+        Assert.Equal("42",
+            Assert.Single(snapshot.Properties!, static property => property.Name == "Result").Value.Display);
+    }
+
+    [Fact]
+    public async Task IncompleteValueTasksAreCapturedWithoutConsumingTheirResult()
+    {
+        var source = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var valueTask = new ValueTask<int>(source.Task);
+
+        var snapshot = await Task.Run(() => factory.Create(valueTask))
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(SnapshotKind.Object, snapshot.Kind);
+        Assert.Equal("Pending", snapshot.Display);
+        Assert.DoesNotContain(snapshot.Properties!, static property => property.Name == "Result");
+        source.SetResult(42);
+        Assert.Equal(42, await valueTask);
+    }
+
+    [Fact]
+    public void UnevaluatedLazyValuesDoNotRunTheirFactory()
+    {
+        var factoryCalls = 0;
+        var value = new Lazy<int>(() =>
+        {
+            factoryCalls++;
+            return 42;
+        });
+
+        var snapshot = factory.Create(value);
+
+        Assert.Equal("NotCreated", snapshot.Display);
+        Assert.Equal(0, factoryCalls);
+        Assert.Equal("false",
+            Assert.Single(snapshot.Properties!, static property => property.Name == "IsValueCreated").Value.Display);
+        Assert.DoesNotContain(snapshot.Properties!, static property => property.Name == "Value");
+    }
+
+    [Fact]
+    public void EvaluatedLazyValuesExposeTheirCachedValue()
+    {
+        var value = new Lazy<int>(() => 42);
+        Assert.Equal(42, value.Value);
+
+        var snapshot = factory.Create(value);
+
+        Assert.Equal("ValueCreated", snapshot.Display);
+        Assert.Equal("42",
+            Assert.Single(snapshot.Properties!, static property => property.Name == "Value").Value.Display);
+    }
+
+    [Fact]
+    public void SnapshotCreationObservesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+
+        Assert.Throws<OperationCanceledException>(() =>
+            factory.Create(CancelDuringEnumeration(cancellation), cancellation.Token));
+    }
+
+    private static IEnumerable<int> CancelDuringEnumeration(CancellationTokenSource cancellation)
+    {
+        yield return 1;
+        cancellation.Cancel();
+        yield return 2;
+    }
+
+    [Fact]
     public void DetectsCyclesAndMaximumItems()
     {
         var node = new Node();
@@ -163,10 +252,36 @@ public sealed class ResultSnapshotFactoryTests
         var snapshot = factory.Create(new ThrowingCountCollection(1, 2, 3));
 
         Assert.Equal(SnapshotKind.Sequence, snapshot.Kind);
-        Assert.Null(snapshot.TotalCount);
-        Assert.Equal("3 captured items", snapshot.Display);
+        Assert.Equal(3, snapshot.TotalCount);
+        Assert.Equal("3 items", snapshot.Display);
         Assert.Equal(["1", "2", "3"], snapshot.Items!.Select(static item => item.Display));
         Assert.False(snapshot.IsTruncated);
+    }
+
+    [Fact]
+    public void UsesActualCountWhenCollectionCountIsIncorrect()
+    {
+        var snapshot = factory.Create(new MisreportedCountCollection(1, 2, 3));
+
+        Assert.Equal(3, snapshot.TotalCount);
+        Assert.Equal("3 items", snapshot.Display);
+        Assert.Equal(["1", "2", "3"], snapshot.Items!.Select(static item => item.Display));
+        Assert.False(snapshot.IsTruncated);
+    }
+
+    [Fact]
+    public void PreservesPartialSequenceAndDisposesEnumeratorWhenEnumerationFails()
+    {
+        var sequence = new ThrowingEnumerable();
+
+        var snapshot = factory.Create(sequence);
+
+        Assert.True(sequence.EnumeratorDisposed);
+        Assert.True(snapshot.IsTruncated);
+        Assert.Null(snapshot.TotalCount);
+        Assert.Equal("1", snapshot.Items![0].Display);
+        Assert.Equal(SnapshotKind.Exception, snapshot.Items[1].Kind);
+        Assert.Contains("enumeration failed", snapshot.Items[1].Display, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -181,8 +296,8 @@ public sealed class ResultSnapshotFactoryTests
         var snapshot = factory.Create(dictionary);
 
         Assert.Equal(SnapshotKind.Object, snapshot.Kind);
-        Assert.Null(snapshot.TotalCount);
-        Assert.Equal("2 captured entries", snapshot.Display);
+        Assert.Equal(2, snapshot.TotalCount);
+        Assert.Equal("2 entries", snapshot.Display);
         Assert.Equal(["answer", "name"], snapshot.Properties!.Select(static property => property.Name));
         Assert.Equal(["42", "Ada"], snapshot.Properties!.Select(static property => property.Value.Display));
         Assert.False(snapshot.IsTruncated);
@@ -248,6 +363,39 @@ public sealed class ResultSnapshotFactoryTests
         public object SyncRoot { get; } = new();
         public void CopyTo(Array array, int index) => values.CopyTo(array, index);
         public IEnumerator GetEnumerator() => values.GetEnumerator();
+    }
+
+    private sealed class MisreportedCountCollection(params object[] values) : ICollection
+    {
+        public int Count => 0;
+        public bool IsSynchronized => false;
+        public object SyncRoot { get; } = new();
+        public void CopyTo(Array array, int index) => values.CopyTo(array, index);
+        public IEnumerator GetEnumerator() => values.GetEnumerator();
+    }
+
+    private sealed class ThrowingEnumerable : IEnumerable
+    {
+        public bool EnumeratorDisposed { get; private set; }
+
+        public IEnumerator GetEnumerator() => new Enumerator(this);
+
+        private sealed class Enumerator(ThrowingEnumerable owner) : IEnumerator, IDisposable
+        {
+            private int position;
+            public object Current => 1;
+
+            public bool MoveNext()
+            {
+                position++;
+                if (position == 1) return true;
+                throw new InvalidOperationException("enumeration failed");
+            }
+
+            public void Reset() => throw new NotSupportedException();
+
+            public void Dispose() => owner.EnumeratorDisposed = true;
+        }
     }
 
     private sealed class ThrowingCountDictionary : IDictionary

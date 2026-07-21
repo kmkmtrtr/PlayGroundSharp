@@ -36,6 +36,41 @@ public sealed class WorkerProcessTests
     }
 
     [Fact]
+    public async Task WorkerProcessReturnsIncompleteTasksWithoutBlockingLaterSubmissions()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-pending-task-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName);
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var transport = new PipeTransport(pipe);
+
+            var pending = await ExecuteAsync(
+                transport,
+                1,
+                "new TaskCompletionSource<int>().Task",
+                timeout.Token);
+            var next = await ExecuteAsync(transport, 2, "40 + 2", timeout.Token);
+
+            Assert.Equal(
+                "WaitingForActivation",
+                pending.Single(static envelope => envelope.Kind == MessageKinds.Result)
+                    .ReadPayload<ResultEvent>().Snapshot.Display);
+            Assert.Equal(
+                "42",
+                next.Single(static envelope => envelope.Kind == MessageKinds.Result)
+                    .ReadPayload<ResultEvent>().Snapshot.Display);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public async Task WorkerExitsCleanlyWhenClientDisconnectsDuringAConsoleWrite()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -132,6 +167,35 @@ public sealed class WorkerProcessTests
     }
 
     [Fact]
+    public async Task WorkerProcessBoundsDiagnosticPayloadAndReportsTotalCount()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-diagnostics-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName);
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var transport = new PipeTransport(pipe);
+            var code = string.Join(
+                Environment.NewLine,
+                Enumerable.Range(1, 150).Select(static index => $"missing{index};"));
+
+            var execution = await ExecuteAsync(transport, 1, code, timeout.Token);
+            var diagnosticEvent = Assert.Single(execution, static envelope => envelope.Kind == MessageKinds.Diagnostics)
+                .ReadPayload<DiagnosticsEvent>();
+
+            Assert.Equal(100, diagnosticEvent.Diagnostics.Count);
+            Assert.True(diagnosticEvent.TotalCount >= 150);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public async Task InfiniteSubmissionCanBeTerminatedAndWorkerReplaced()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -200,6 +264,52 @@ public sealed class WorkerProcessTests
             {
                 cancelled = await transport.ReadAsync(timeout.Token);
             } while (cancelled?.CorrelationId != executionId || cancelled.Kind != MessageKinds.Cancelled);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
+    public async Task WorkerCancelsResultCaptureWithoutAcceptingThatSubmission()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-capture-cancel-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName);
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var transport = new PipeTransport(pipe);
+            await ExecuteAsync(transport, 1, "var retained = 21;", timeout.Token);
+
+            var executionId = Guid.NewGuid();
+            await transport.WriteAsync(PipeEnvelope.Create(
+                MessageKinds.Execute,
+                executionId,
+                new ExecuteRequest(2,
+                    "Enumerable.Range(1, 10_000).Select(i => { System.Threading.Thread.SpinWait(5_000_000); return i; })")),
+                timeout.Token);
+            Assert.Equal(MessageKinds.Started, (await transport.ReadAsync(timeout.Token))?.Kind);
+            await Task.Delay(800, timeout.Token);
+            await transport.WriteAsync(PipeEnvelope.Create(
+                MessageKinds.Cancel,
+                Guid.NewGuid(),
+                new CancelRequest(executionId)), timeout.Token);
+
+            PipeEnvelope? cancelled;
+            do
+            {
+                cancelled = await transport.ReadAsync(timeout.Token);
+            } while (cancelled?.CorrelationId != executionId || cancelled.Kind != MessageKinds.Cancelled);
+
+            var next = await ExecuteAsync(transport, 2, "retained * 2", timeout.Token);
+            Assert.Equal(
+                "42",
+                next.Single(static envelope => envelope.Kind == MessageKinds.Result)
+                    .ReadPayload<ResultEvent>().Snapshot.Display);
         }
         finally
         {

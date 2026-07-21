@@ -64,7 +64,7 @@ public sealed record AddPackageRequest(string PackageId, string? Version = null,
 public sealed record SearchPackagesRequest(string Query, bool IncludePrerelease = false, int Take = 20);
 public sealed record ExecutionStartedEvent(int SubmissionIndex);
 public sealed record ConsoleEvent(string Text);
-public sealed record DiagnosticsEvent(IReadOnlyList<DiagnosticInfo> Diagnostics);
+public sealed record DiagnosticsEvent(IReadOnlyList<DiagnosticInfo> Diagnostics, int? TotalCount = null);
 public sealed record ResultEvent(int SubmissionIndex, ResultSnapshot Snapshot);
 public sealed record RuntimeErrorEvent(ExceptionInfo Exception);
 public sealed record VariablesEvent(IReadOnlyList<VariableInfo> Variables);

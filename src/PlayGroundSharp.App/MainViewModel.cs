@@ -1079,7 +1079,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Transcript.Add(CreateConsoleLine(envelope.ReadPayload<ConsoleEvent>().Text, true));
                 break;
             case MessageKinds.Diagnostics:
-                ApplyExecutionDiagnostics(envelope.ReadPayload<DiagnosticsEvent>().Diagnostics);
+                var diagnosticEvent = envelope.ReadPayload<DiagnosticsEvent>();
+                ApplyExecutionDiagnostics(diagnosticEvent.Diagnostics, diagnosticEvent.TotalCount);
                 break;
             case MessageKinds.Result:
                 var result = envelope.ReadPayload<ResultEvent>();
@@ -1161,19 +1162,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    internal void ApplyExecutionDiagnostics(IReadOnlyList<DiagnosticInfo> diagnostics)
+    internal void ApplyExecutionDiagnostics(IReadOnlyList<DiagnosticInfo> diagnostics, int? totalCount = null)
     {
+        var effectiveTotalCount = Math.Max(diagnostics.Count, totalCount ?? diagnostics.Count);
         foreach (var diagnostic in diagnostics.Take(MaximumTranscriptDiagnostics))
             Transcript.Add(TranscriptLine.Diagnostic(
                 $"{diagnostic.Id} ({diagnostic.StartLine},{diagnostic.StartColumn}): {diagnostic.Message}",
                 diagnostic.Level == DiagnosticLevel.Error));
-        if (diagnostics.Count > MaximumTranscriptDiagnostics)
+        if (effectiveTotalCount > MaximumTranscriptDiagnostics)
             Transcript.Add(LocalizedDiagnosticLine(
                 "Message.DiagnosticsLimited",
                 false,
-                diagnostics.Count,
+                effectiveTotalCount,
                 MaximumTranscriptDiagnostics,
-                diagnostics.Count - MaximumTranscriptDiagnostics));
+                effectiveTotalCount - MaximumTranscriptDiagnostics));
     }
 
     private void RestoreExecutingInput()

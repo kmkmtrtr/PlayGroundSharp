@@ -66,6 +66,47 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void DiagnosticsEventAcceptsPayloadWithoutTotalCount()
+    {
+        var restored = JsonSerializer.Deserialize<DiagnosticsEvent>(
+            """{"diagnostics":[]}""",
+            ProtocolJson.Options);
+
+        Assert.NotNull(restored);
+        Assert.Empty(restored.Diagnostics);
+        Assert.Null(restored.TotalCount);
+    }
+
+    [Fact]
+    public void DiagnosticsEventPreservesTotalCount()
+    {
+        var payload = new DiagnosticsEvent(
+            [new("CS0103", DiagnosticLevel.Error, "Unknown name", 1, 1, 1, 4)],
+            250);
+
+        var envelope = PipeEnvelope.Create(MessageKinds.Diagnostics, Guid.NewGuid(), payload);
+        var restored = envelope.ReadPayload<DiagnosticsEvent>();
+
+        Assert.Single(restored.Diagnostics);
+        Assert.Equal(250, restored.TotalCount);
+    }
+
+    [Fact]
+    public void LegacyDiagnosticsReaderIgnoresTotalCount()
+    {
+        var envelope = PipeEnvelope.Create(
+            MessageKinds.Diagnostics,
+            Guid.NewGuid(),
+            new DiagnosticsEvent(
+                [new("CS0103", DiagnosticLevel.Error, "Unknown name", 1, 1, 1, 4)],
+                250));
+
+        var restored = envelope.ReadPayload<LegacyDiagnosticsEvent>();
+
+        Assert.Single(restored.Diagnostics);
+    }
+
+    [Fact]
     public void ResultSnapshotCountMetadataRoundTrips()
     {
         var snapshot = new ResultSnapshot(
@@ -178,4 +219,6 @@ public sealed class ProtocolTests
             await releaseWrite.Task.WaitAsync(cancellationToken);
         }
     }
+
+    private sealed record LegacyDiagnosticsEvent(IReadOnlyList<DiagnosticInfo> Diagnostics);
 }

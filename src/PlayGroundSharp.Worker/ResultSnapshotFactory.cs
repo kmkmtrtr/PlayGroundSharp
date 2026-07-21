@@ -23,9 +23,19 @@ public sealed class ResultSnapshotFactory
         value,
         0,
         new HashSet<object>(ReferenceComparer.Instance),
-        new SnapshotBudget(MaximumNodes, MaximumTextCharacters));
+        new SnapshotBudget(MaximumNodes, MaximumTextCharacters, default));
 
-    public ResultSnapshot Create(object? value, int maximumNodes, int maximumTextCharacters)
+    public ResultSnapshot Create(object? value, CancellationToken cancellationToken) => Create(
+        value,
+        0,
+        new HashSet<object>(ReferenceComparer.Instance),
+        new SnapshotBudget(MaximumNodes, MaximumTextCharacters, cancellationToken));
+
+    public ResultSnapshot Create(
+        object? value,
+        int maximumNodes,
+        int maximumTextCharacters,
+        CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumNodes);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumTextCharacters);
@@ -33,7 +43,7 @@ public sealed class ResultSnapshotFactory
             value,
             0,
             new HashSet<object>(ReferenceComparer.Instance),
-            new SnapshotBudget(maximumNodes, maximumTextCharacters));
+            new SnapshotBudget(maximumNodes, maximumTextCharacters, cancellationToken));
     }
 
     public static ExceptionInfo CreateException(Exception exception) => CreateException(exception, 0);
@@ -145,6 +155,30 @@ public sealed class ResultSnapshotFactory
                 return CreateExceptionSnapshot(error, typeName, budget);
             }
         }
+        if (FindGenericBaseType(type, typeof(Lazy<>)) is { } lazyType)
+        {
+            return CreateLazy(value, lazyType, typeName, depth, path, budget);
+        }
+        if (value is Task task)
+        {
+            return CreateTask(task, type, typeName, depth, path, budget);
+        }
+        if (value is ValueTask valueTask)
+        {
+            return CreateValueTask(
+                typeName,
+                valueTask.IsCompleted,
+                valueTask.IsCompletedSuccessfully,
+                valueTask.IsCanceled,
+                valueTask.IsFaulted,
+                depth,
+                path,
+                budget);
+        }
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTask<>))
+        {
+            return CreateGenericValueTask(value, type, typeName, depth, path, budget);
+        }
         if (value is JsonElement element)
         {
             return CreateJsonElement(element, typeName, depth, budget, nodeAlreadyTaken: true);
@@ -205,7 +239,18 @@ public sealed class ResultSnapshotFactory
                 if (!budget.CanTakeNode) break;
                 try
                 {
-                    properties.Add(new(property.Name, Create(property.GetValue(value), depth + 1, path, budget)));
+                    if (TryReadPropertyWithoutSubmittedCode(value, property, out var propertyValue))
+                    {
+                        properties.Add(new(property.Name, Create(propertyValue, depth + 1, path, budget)));
+                    }
+                    else if (budget.TryTakeNode())
+                    {
+                        properties.Add(new(property.Name, new(
+                            SnapshotKind.String,
+                            "getter not evaluated",
+                            property.PropertyType.FullName,
+                            IsTruncated: true)));
+                    }
                 }
                 catch (Exception error)
                 {
@@ -248,6 +293,207 @@ public sealed class ResultSnapshotFactory
         }
     }
 
+    private ResultSnapshot CreateTask(
+        Task task,
+        Type type,
+        string typeName,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        if (depth >= MaximumDepth)
+            return new(SnapshotKind.MaxDepth, "…", typeName, IsTruncated: true);
+        if (!path.Add(task))
+            return new(SnapshotKind.Circular, "↻ circular reference", typeName, IsTruncated: true);
+        try
+        {
+            var values = new List<(string Name, object? Value)>
+            {
+                ("Status", task.Status),
+                ("IsCompleted", task.IsCompleted),
+                ("IsCompletedSuccessfully", task.IsCompletedSuccessfully),
+                ("IsCanceled", task.IsCanceled),
+                ("IsFaulted", task.IsFaulted)
+            };
+            if (task.IsCompletedSuccessfully && FindGenericBaseType(type, typeof(Task<>)) is { } genericTaskType)
+                values.Add(("Result", genericTaskType
+                    .GetProperty("Result", BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)!
+                    .GetValue(task)));
+            else if (task.IsFaulted)
+                values.Add(("Exception", task.Exception));
+            return CreateKnownProperties(typeName, task.Status.ToString(), values, depth, path, budget);
+        }
+        finally
+        {
+            path.Remove(task);
+        }
+    }
+
+    private ResultSnapshot CreateLazy(
+        object lazy,
+        Type lazyType,
+        string typeName,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        if (depth >= MaximumDepth)
+            return new(SnapshotKind.MaxDepth, "…", typeName, IsTruncated: true);
+        if (!path.Add(lazy))
+            return new(SnapshotKind.Circular, "↻ circular reference", typeName, IsTruncated: true);
+        try
+        {
+            var isValueCreated = (bool)lazyType
+                .GetProperty("IsValueCreated", BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)!
+                .GetValue(lazy)!;
+            var values = new List<(string Name, object? Value)>
+            {
+                ("IsValueCreated", isValueCreated)
+            };
+            if (isValueCreated)
+                values.Add(("Value", lazyType
+                    .GetProperty("Value", BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)!
+                    .GetValue(lazy)));
+            return CreateKnownProperties(
+                typeName,
+                isValueCreated ? "ValueCreated" : "NotCreated",
+                values,
+                depth,
+                path,
+                budget);
+        }
+        finally
+        {
+            path.Remove(lazy);
+        }
+    }
+
+    private ResultSnapshot CreateGenericValueTask(
+        object value,
+        Type type,
+        string typeName,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        bool Read(string propertyName) => (bool)type.GetProperty(propertyName)!.GetValue(value)!;
+        return CreateValueTask(
+            typeName,
+            Read("IsCompleted"),
+            Read("IsCompletedSuccessfully"),
+            Read("IsCanceled"),
+            Read("IsFaulted"),
+            depth,
+            path,
+            budget);
+    }
+
+    private ResultSnapshot CreateValueTask(
+        string typeName,
+        bool isCompleted,
+        bool isCompletedSuccessfully,
+        bool isCanceled,
+        bool isFaulted,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        if (depth >= MaximumDepth)
+            return new(SnapshotKind.MaxDepth, "…", typeName, IsTruncated: true);
+        var status = isCompletedSuccessfully
+            ? "RanToCompletion"
+            : isCanceled
+                ? "Canceled"
+                : isFaulted
+                    ? "Faulted"
+                    : isCompleted ? "Completed" : "Pending";
+        return CreateKnownProperties(
+            typeName,
+            status,
+            [
+                ("Status", status),
+                ("IsCompleted", isCompleted),
+                ("IsCompletedSuccessfully", isCompletedSuccessfully),
+                ("IsCanceled", isCanceled),
+                ("IsFaulted", isFaulted)
+            ],
+            depth,
+            path,
+            budget);
+    }
+
+    private ResultSnapshot CreateKnownProperties(
+        string typeName,
+        string display,
+        IReadOnlyList<(string Name, object? Value)> values,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        var properties = new List<ResultProperty>(values.Count);
+        foreach (var (name, value) in values)
+        {
+            if (!budget.CanTakeNode) break;
+            properties.Add(new(name, Create(value, depth + 1, path, budget)));
+        }
+        return new(
+            SnapshotKind.Object,
+            display,
+            typeName,
+            Properties: properties,
+            IsTruncated: properties.Count < values.Count,
+            TotalCount: values.Count);
+    }
+
+    private static Type? FindGenericBaseType(Type type, Type genericTypeDefinition)
+    {
+        for (Type? current = type; current is not null; current = current.BaseType)
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == genericTypeDefinition) return current;
+        return null;
+    }
+
+    private static bool TryReadPropertyWithoutSubmittedCode(
+        object value,
+        PropertyInfo property,
+        out object? propertyValue)
+    {
+        var declaringType = property.DeclaringType;
+        if (declaringType is null || !IsSubmittedCodeType(declaringType))
+        {
+            propertyValue = property.GetValue(value);
+            return true;
+        }
+
+        const BindingFlags backingFieldFlags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var backingField = declaringType.GetField(
+                               $"<{property.Name}>k__BackingField",
+                               backingFieldFlags) ??
+                           declaringType.GetField(
+                               $"<{property.Name}>i__Field",
+                               backingFieldFlags);
+        if (backingField?.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false) == true)
+        {
+            propertyValue = backingField.GetValue(value);
+            return true;
+        }
+
+        propertyValue = null;
+        return false;
+    }
+
+    private static bool IsSubmittedCodeType(Type type)
+    {
+        if (type.Assembly.IsDynamic) return true;
+        try
+        {
+            return string.IsNullOrEmpty(type.Assembly.Location);
+        }
+        catch (NotSupportedException)
+        {
+            return true;
+        }
+    }
+
     private ResultSnapshot CreateStringDictionary(
         IDictionary dictionary,
         string typeName,
@@ -278,13 +524,15 @@ public sealed class ResultSnapshotFactory
                 properties.Add(new("…", CreateExceptionSnapshot(error, null, budget)));
         }
 
+        var snapshotCount = reachedEnd && !enumerationFailed ? properties.Count : count;
+
         return new(
             SnapshotKind.Object,
-            count is { } knownCount ? $"{knownCount:N0} entries" : $"{properties.Count:N0} captured entries",
+            snapshotCount is { } knownCount ? $"{knownCount:N0} entries" : $"{properties.Count:N0} captured entries",
             typeName,
             Properties: properties,
-            IsTruncated: enumerationFailed || (count is { } total ? properties.Count < total : !reachedEnd),
-            TotalCount: count);
+            IsTruncated: enumerationFailed || (snapshotCount is { } total ? properties.Count < total : !reachedEnd),
+            TotalCount: snapshotCount);
     }
 
     private static bool HasOnlyStringKeys(IDictionary dictionary)
@@ -360,14 +608,16 @@ public sealed class ResultSnapshotFactory
             }
         }
 
+        var snapshotCount = reachedEnd && !enumerationFailed ? properties.Count : count;
+
         return new(
             SnapshotKind.Object,
-            count is { } knownCount ? $"{knownCount:N0} entries" : $"{properties.Count:N0} captured entries",
+            snapshotCount is { } knownCount ? $"{knownCount:N0} entries" : $"{properties.Count:N0} captured entries",
             typeName,
             Properties: properties,
             IsTruncated: enumerationFailed ||
-                         (count is { } total ? properties.Count < total : !reachedEnd),
-            TotalCount: count);
+                         (snapshotCount is { } total ? properties.Count < total : !reachedEnd),
+            TotalCount: snapshotCount);
     }
 
     private static bool TryGetStringDictionaryEntryType(Type type, out Type entryType)
@@ -494,16 +744,19 @@ public sealed class ResultSnapshotFactory
                     break;
                 }
             }
-            var truncated = totalCount is { } count
-                ? sourceHasMoreItems || enumerationFailed || items.Count < count
+            var snapshotCount = reachedEnd && !enumerationFailed && !sourceHasMoreItems
+                ? items.Count
+                : totalCount;
+            var truncated = snapshotCount is { } reliableCount
+                ? sourceHasMoreItems || enumerationFailed || items.Count < reliableCount
                 : sourceHasMoreItems || enumerationFailed || !reachedEnd;
             return new(
                 SnapshotKind.Sequence,
-                totalCount is { } knownCount ? $"{knownCount:N0} items" : $"{items.Count:N0} captured items",
+                snapshotCount is { } knownCount ? $"{knownCount:N0} items" : $"{items.Count:N0} captured items",
                 typeName,
                 Items: items,
                 IsTruncated: truncated,
-                TotalCount: totalCount);
+                TotalCount: snapshotCount);
         }
         finally
         {
@@ -632,13 +885,17 @@ public sealed class ResultSnapshotFactory
         public int GetHashCode(object value) => RuntimeHelpers.GetHashCode(value);
     }
 
-    private sealed class SnapshotBudget(int remainingNodes, int remainingTextCharacters)
+    private sealed class SnapshotBudget(
+        int remainingNodes,
+        int remainingTextCharacters,
+        CancellationToken cancellationToken)
     {
         public bool CanTakeNode => remainingNodes > 0;
         public int RemainingTextCharacters => remainingTextCharacters;
 
         public bool TryTakeNode()
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (remainingNodes <= 0) return false;
             remainingNodes--;
             return true;
@@ -646,6 +903,7 @@ public sealed class ResultSnapshotFactory
 
         public string TakeText(string value, int perValueMaximum, out bool truncated)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var length = Math.Min(value.Length, Math.Min(perValueMaximum, remainingTextCharacters));
             remainingTextCharacters -= length;
             truncated = length < value.Length;

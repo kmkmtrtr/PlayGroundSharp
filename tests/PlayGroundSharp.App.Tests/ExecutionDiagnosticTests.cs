@@ -29,4 +29,26 @@ public sealed class ExecutionDiagnosticTests
         Assert.Contains("600", viewModel.Transcript[^1].Text, StringComparison.Ordinal);
         Assert.Contains("500", viewModel.Transcript[^1].Text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task TranscriptUsesWorkerDiagnosticTotalWhenPayloadIsBounded()
+    {
+        await using var viewModel = new MainViewModel();
+        var diagnostics = Enumerable.Range(1, 100)
+            .Select(index => new DiagnosticInfo(
+                "CS0103",
+                DiagnosticLevel.Error,
+                $"missing{index} does not exist",
+                index,
+                1,
+                index,
+                8))
+            .ToArray();
+
+        viewModel.ApplyExecutionDiagnostics(diagnostics, 600);
+
+        Assert.Equal(101, viewModel.Transcript.Count);
+        Assert.Contains("600", viewModel.Transcript[^1].Text, StringComparison.Ordinal);
+        Assert.Contains("500", viewModel.Transcript[^1].Text, StringComparison.Ordinal);
+    }
 }

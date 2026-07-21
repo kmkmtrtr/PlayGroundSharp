@@ -7,7 +7,7 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
         Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="Window_Deactivated"
-        SizeChanged="Window_SizeChanged" StateChanged="Window_StateChanged"
+        LocationChanged="Window_LocationChanged" SizeChanged="Window_SizeChanged" StateChanged="Window_StateChanged"
         PreviewKeyDown="Window_PreviewKeyDown" PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown">
     <Window.Resources>
         <DataTemplate x:Key="CompletionItemTemplate">

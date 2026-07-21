@@ -61,6 +61,82 @@ public sealed class ScriptSessionTests
         Assert.Equal("123456789012345678901234567891", result.Snapshot?.Display);
     }
 
+    [Fact]
+    public async Task BoundsCompilationDiagnosticsWhilePreservingTheirTotalCount()
+    {
+        var code = string.Join(
+            Environment.NewLine,
+            Enumerable.Range(1, 150).Select(static index => $"missing{index};"));
+
+        var result = await new ScriptSession().ExecuteAsync(1, code);
+
+        Assert.False(result.StateAccepted);
+        Assert.Equal(100, result.Diagnostics.Count);
+        Assert.True(result.TotalDiagnosticCount >= 150);
+        Assert.Contains(result.Diagnostics, static diagnostic => diagnostic.Message.Contains("missing50", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Diagnostics, static diagnostic => diagnostic.Message.Contains("missing51", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReturnsIncompleteTasksWithoutBlockingTheSession()
+    {
+        var session = new ScriptSession();
+
+        var pending = await session.ExecuteAsync(1, "new TaskCompletionSource<int>().Task")
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        var next = await session.ExecuteAsync(2, "40 + 2")
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(pending.StateAccepted);
+        Assert.Equal("WaitingForActivation", pending.Snapshot?.Display);
+        Assert.Equal("WaitingForActivation",
+            Assert.Single(pending.Snapshot!.Properties!, static property => property.Name == "Status").Value.Display);
+        Assert.Equal("42", next.Snapshot?.Display);
+        Assert.Equal(2, session.Context.Submissions.Count);
+    }
+
+    [Fact]
+    public async Task ReturnsUnevaluatedLazyValuesWithoutRunningTheirFactory()
+    {
+        var session = new ScriptSession();
+
+        var pending = await session.ExecuteAsync(1, "new Lazy<int>(() => { while (true) { } })")
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        var next = await session.ExecuteAsync(2, "40 + 2")
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(pending.StateAccepted);
+        Assert.Equal("NotCreated", pending.Snapshot?.Display);
+        Assert.Equal("42", next.Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task DoesNotInvokeComputedPropertyGettersFromSubmittedTypes()
+    {
+        var session = new ScriptSession();
+        var declaration = await session.ExecuteAsync(1, """
+            class SnapshotSafetyValue
+            {
+                public int Safe { get; } = 42;
+                public int Blocking { get { while (true) { } } }
+            }
+            """);
+
+        var result = await session.ExecuteAsync(2, "new SnapshotSafetyValue()")
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(declaration.StateAccepted);
+        Assert.True(result.StateAccepted);
+        Assert.Equal("42",
+            Assert.Single(result.Snapshot!.Properties!, static property => property.Name == "Safe").Value.Display);
+        var blocking = Assert.Single(
+            result.Snapshot.Properties!,
+            static property => property.Name == "Blocking").Value;
+        Assert.Equal("getter not evaluated", blocking.Display);
+        Assert.True(blocking.IsTruncated);
+        Assert.Contains("$playgroundSharp", SnapshotJsonFormatter.Format(blocking), StringComparison.Ordinal);
+    }
+
     private static string NormalizeUnresolvedReferenceDisplay(string? display)
     {
         if (display is null) return string.Empty;
@@ -123,6 +199,25 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task CancellationDuringResultCaptureDoesNotAcceptTheSubmission()
+    {
+        var session = new ScriptSession();
+        Assert.True((await session.ExecuteAsync(1, "var retained = 21;")).StateAccepted);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(800));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.ExecuteAsync(
+                2,
+                "Enumerable.Range(1, 10_000).Select(i => { System.Threading.Thread.SpinWait(5_000_000); return i; })",
+                cancellationToken: cancellation.Token))
+            .WaitAsync(TimeSpan.FromSeconds(4));
+
+        Assert.Single(session.Context.Submissions);
+        var next = await session.ExecuteAsync(2, "retained * 2");
+        Assert.Equal("42", next.Snapshot?.Display);
+        Assert.Equal(2, session.Context.Submissions.Count);
+    }
+
+    [Fact]
     public async Task ReportsRetainedVariablesWithBoundedSnapshots()
     {
         var session = new ScriptSession();
@@ -144,6 +239,28 @@ public sealed class ScriptSessionTests
         var values = Assert.Single(variables, static variable => variable.Name == "values");
         Assert.Equal(10, values.Value.Items?.Count);
         Assert.Equal("10", values.Value.Items?[9].Display);
+    }
+
+    [Fact]
+    public async Task BoundsSnapshotsAcrossTheEntireVariableList()
+    {
+        var session = new ScriptSession();
+        var aliases = string.Join(
+            Environment.NewLine,
+            Enumerable.Range(1, 48).Select(static index => $"var alias{index} = shared;"));
+        var result = await session.ExecuteAsync(1, $$"""
+            var shared = Enumerable.Repeat(new string('x', 512), 512).ToArray();
+            {{aliases}}
+            """);
+
+        var variables = session.GetVariables();
+
+        Assert.True(result.StateAccepted);
+        Assert.Equal(49, variables.Count);
+        Assert.Equal(SnapshotKind.Sequence,
+            Assert.Single(variables, static variable => variable.Name == "shared").Value.Kind);
+        Assert.Contains(variables, static variable =>
+            variable.Value.Kind == SnapshotKind.MaxDepth && variable.Value.IsTruncated);
     }
 
     [Fact]

@@ -141,6 +141,12 @@
                                     <strong>@diagnostic.Id</strong><span>@diagnostic.Message</span><small>@diagnostic.StartLine:@diagnostic.StartColumn</small>
                                 </div>
                             }
+                            @if (item.DiagnosticTotalCount > item.Diagnostics.Count)
+                            {
+                                <div class="diagnostic diagnostic-warning">
+                                    <strong>省略</strong><span>全@item.DiagnosticTotalCount 件のうち先頭@item.Diagnostics.Count 件を表示しています。</span>
+                                </div>
+                            }
                             @if (item.Error is not null)
                             {
                                 <div class="runtime-error"><strong>@item.Error.TypeName</strong><span>@item.Error.Message</span></div>

@@ -270,7 +270,11 @@ public partial class Home
                     view.StandardOutput.Add(envelope.ReadPayload<ConsoleEvent>().Text);
                     break;
                 case MessageKinds.Diagnostics:
-                    view.Diagnostics.AddRange(envelope.ReadPayload<DiagnosticsEvent>().Diagnostics);
+                    var diagnosticEvent = envelope.ReadPayload<DiagnosticsEvent>();
+                    view.Diagnostics.AddRange(diagnosticEvent.Diagnostics);
+                    view.DiagnosticTotalCount = Math.Max(
+                        diagnosticEvent.Diagnostics.Count,
+                        diagnosticEvent.TotalCount ?? diagnosticEvent.Diagnostics.Count);
                     break;
                 case MessageKinds.Result:
                     view.Result = envelope.ReadPayload<ResultEvent>().Snapshot;
@@ -651,6 +655,7 @@ public partial class Home
         public string Code { get; } = code;
         public List<string> StandardOutput { get; } = [];
         public List<DiagnosticInfo> Diagnostics { get; } = [];
+        public int DiagnosticTotalCount { get; set; }
         public ResultSnapshot? Result { get; set; }
         public ExceptionInfo? Error { get; set; }
         public bool StateAccepted { get; set; }

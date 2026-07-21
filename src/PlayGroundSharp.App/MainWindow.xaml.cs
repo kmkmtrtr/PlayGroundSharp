@@ -50,6 +50,7 @@ public partial class MainWindow : Window
         App.ApplyLanguage(viewModel.LanguageMode);
         InitializeComponent();
         DataContext = viewModel;
+        viewModel.PropertyChanged += ViewModel_PropertyChanged;
         ApplySavedWindowLayout();
         App.ApplyTheme(viewModel.ThemeMode);
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("C#");
@@ -86,6 +87,13 @@ public partial class MainWindow : Window
             completionDescriptionTimer.Stop();
             await LoadCompletionDescriptionAsync();
         };
+    }
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainViewModel.LanguageMode) || helpWindow is not { IsVisible: true } help) return;
+        help.ApplyLanguage(viewModel.LanguageMode);
+        helpWindowLanguage = viewModel.LanguageMode;
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -127,6 +135,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            viewModel.PropertyChanged -= ViewModel_PropertyChanged;
             closeCompleted = true;
             Close();
         }

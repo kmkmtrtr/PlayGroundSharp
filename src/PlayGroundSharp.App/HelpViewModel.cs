@@ -30,7 +30,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("入力と補完", "C#補完、シグネチャ、診断を現在のセッション状態から生成します。",
         [
-            new("キー操作", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterで改行します。Ctrl+Spaceで補完、Tabで明示選択、↑↓で1件、PageUp/PageDownで1ページ移動し、Escで閉じます。Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。補完Popup中央の境界をドラッグすると候補とドキュメントの幅を変更できます。"),
+            new("キー操作", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterまたはShift+Enterで改行します。Ctrl+Spaceで補完、Tabで明示選択、↑↓で1件、PageUp/PageDownで1ページ移動し、Escで閉じます。Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。補完Popup中央の境界をドラッグすると候補とドキュメントの幅を変更できます。"),
             new("履歴", "一行入力で上下キーを押すと履歴を移動します。過去の入力行をクリックして現在の入力へコピーできます。"),
             new("ファイルとフォルダのドロップ", "入力欄へドロップすると操作メニューを表示します。パス挿入、JSONやテキストの読み込みコード、フォルダ内ファイルの列挙を選べます。コードを自動実行することはありません。複数パスは配列として挿入します。"),
             new("補完の確定", "候補は入力内容に応じて絞り込まれます。未usingの型や拡張メソッドには「using 名前空間」を表示し、確定時にusingを自動追加します。拡張メソッドを手入力した場合も、名前空間が一意なら実行前に追加します。Enterでは候補を確定せず、Tabまたはダブルクリックだけで挿入します。")
@@ -51,7 +51,7 @@ public sealed partial class HelpViewModel : ObservableObject
         [
             new("確認とプレビュー", "Inspectは内容を読まずサイズを返します。PreviewTextとReadBytesは最大1 MiBに制限されます。", "Data.Inspect(@\"C:\\data\\large.json\")\nData.PreviewText(@\"C:\\data\\large.log\", 65536)"),
             new("行ストリーム", "ReadLinesは遅延列挙です。Takeなどで件数を絞ってください。", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)"),
-            new("JSON", "オブジェクト、配列、スカラーを含む1つのJSON値を読み込みます。結果はその場で展開でき、ツリーで選択した値はCtrl+C、結果全体は右クリックからコピー、保存、別ウィンドウの詳細表示を利用できます。大きな配列やオブジェクトは最初は折りたたまれ、100件単位の範囲から必要な部分だけ展開できます。", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
+            new("JSON", "オブジェクト、配列、スカラーを含む1つのJSON値を読み込みます。結果はその場で展開でき、ツリーで選択した値はCtrl+C、結果全体は右クリックからコピー、保存、別ウィンドウの詳細表示を利用できます。詳細画面ではCtrl+Fで検索、Ctrl+Shift+Cで全体コピー、Ctrl+Sで保存できます。検索は総一致数を数えつつ先頭250件だけを描画します。大きな配列やオブジェクトは最初は折りたたまれ、100件単位の範囲から必要な部分だけ展開できます。", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
             new("JSON配列", "トップレベル配列をストリーム解析し、指定件数だけ保持します。takeは最大10,000件です。", "await Data.ReadJsonArrayAsync(@\"C:\\data\\large.json\", take: 100)"),
             new("JSON Lines", "一行一JSONを非同期列挙します。必要な件数でbreakしてください。", "var rows = new List<JsonElement>();\nawait foreach (var row in Data.ReadJsonLinesAsync(@\"C:\\data\\events.jsonl\"))\n{\n    rows.Add(row);\n    if (rows.Count == 100) break;\n}\nrows")
         ]),
@@ -76,7 +76,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Input and IntelliSense", "Completion and diagnostics use the current session state.",
         [
-            new("Keys", "With Enter-to-run, Shift+Enter inserts a line break; with Ctrl+Enter-to-run, Enter inserts one. Ctrl+Space opens completion, Tab explicitly accepts, arrow keys move one item, PageUp/PageDown move one page, and Esc closes it. Ctrl+L focuses input and Ctrl+F focuses symbol search. Drag the center divider to resize completion items and documentation."),
+            new("Keys", "With Enter-to-run, Shift+Enter inserts a line break; with Ctrl+Enter-to-run, Enter or Shift+Enter inserts one. Ctrl+Space opens completion, Tab explicitly accepts, arrow keys move one item, PageUp/PageDown move one page, and Esc closes it. Ctrl+L focuses input and Ctrl+F focuses symbol search. Drag the center divider to resize completion items and documentation."),
             new("Automatic imports", "Unimported types and extension methods show a 'using Namespace' badge. Accepting one adds that using before inserting the completion."),
             new("Dropping files and folders", "Drop onto the input editor to choose between inserting a path, generating data-reading code, or enumerating a folder. Nothing is executed automatically. Multiple paths are inserted as an array."),
             new("History", "Use Up and Down on a single line, or click a prior input to copy it into the editor.")
@@ -94,7 +94,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Large files and JSON", "Data helpers avoid loading entire files by default.",
         [
             new("Preview", "PreviewText and ReadBytes are bounded to 1 MiB.", "Data.Inspect(@\"C:\\data\\large.json\")\nData.PreviewText(@\"C:\\data\\large.log\")"),
-            new("JSON", "ReadJsonAsync loads one complete JSON object, array, or scalar. Expand it inline, press Ctrl+C to copy the selected tree value, or right-click the result to copy, save, or inspect it in a separate window. Large structures start collapsed and can be opened in groups of 100 items.", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
+            new("JSON", "ReadJsonAsync loads one complete JSON object, array, or scalar. Expand it inline, press Ctrl+C to copy the selected tree value, or right-click the result to copy, save, or inspect it in a separate window. In the inspector, Ctrl+F searches, Ctrl+Shift+C copies all, and Ctrl+S saves. Search counts every match while rendering only the first 250. Large structures start collapsed and can be opened in groups of 100 items.", "await Data.ReadJsonAsync(@\"C:\\data\\settings.json\")"),
             new("Streaming", "ReadLines is lazy. JSON arrays and JSON Lines are parsed incrementally.", "Data.ReadLines(@\"C:\\data\\large.csv\").Take(100)\nawait Data.ReadJsonArrayAsync(@\"C:\\data\\large.json\", 100)")
         ]),
         new("Dependencies", "Add NuGet packages, DLLs, and usings to execution and IntelliSense.",

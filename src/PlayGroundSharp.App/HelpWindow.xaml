@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="{DynamicResource Help.Title}" Width="920" Height="680" MinWidth="720" MinHeight="500"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
-        WindowStartupLocation="CenterOwner" PreviewKeyDown="Window_PreviewKeyDown">
+        WindowStartupLocation="CenterOwner" Loaded="Window_Loaded" PreviewKeyDown="Window_PreviewKeyDown">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="230" />
@@ -15,7 +15,9 @@
                     <TextBlock Text="PlayGroundSharp" FontSize="19" FontWeight="SemiBold" />
                     <TextBlock Text="{DynamicResource Help.Title}" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0" />
                 </StackPanel>
-                <ListBox ItemsSource="{Binding Topics}" SelectedItem="{Binding SelectedTopic}" BorderThickness="0" Background="Transparent"
+                <ListBox x:Name="TopicList" ItemsSource="{Binding Topics}" SelectedItem="{Binding SelectedTopic}"
+                         AutomationProperties.Name="{DynamicResource Help.Title}"
+                         BorderThickness="0" Background="Transparent" SelectionChanged="TopicList_SelectionChanged"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
@@ -29,7 +31,7 @@
                 </ListBox>
             </DockPanel>
         </Border>
-        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="34,28,38,32">
+        <ScrollViewer x:Name="DetailScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="34,28,38,32">
             <StackPanel DataContext="{Binding SelectedTopic}">
                 <TextBlock Text="{Binding Title}" FontSize="25" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding Subtitle}" FontSize="13.5" Foreground="{DynamicResource MutedBrush}"

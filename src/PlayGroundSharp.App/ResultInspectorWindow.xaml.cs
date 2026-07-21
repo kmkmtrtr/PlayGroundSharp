@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,7 +13,7 @@ namespace PlayGroundSharp.App;
 public partial class ResultInspectorWindow : Window
 {
     private readonly MainViewModel viewModel;
-    private readonly AppLanguageMode languageMode;
+    private AppLanguageMode languageMode;
     private readonly ResultSnapshot snapshot;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private readonly DispatcherTimer notificationTimer = new() { Interval = TimeSpan.FromSeconds(1.8) };
@@ -30,6 +31,7 @@ public partial class ResultInspectorWindow : Window
         selectedNode = Roots[0];
         InitializeComponent();
         DataContext = this;
+        viewModel.PropertyChanged += ViewModel_PropertyChanged;
         var settings = viewModel.SavedSettings;
         Width = settings.InspectorWidth;
         Height = settings.InspectorHeight;
@@ -45,6 +47,7 @@ public partial class ResultInspectorWindow : Window
         };
         Closed += (_, _) =>
         {
+            viewModel.PropertyChanged -= ViewModel_PropertyChanged;
             searchTimer.Stop();
             notificationTimer.Stop();
             searchCancellation?.Cancel();
@@ -57,6 +60,14 @@ public partial class ResultInspectorWindow : Window
     }
 
     public ObservableCollection<SnapshotTreeNode> Roots { get; }
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
+        languageMode = viewModel.LanguageMode;
+        searchTimer.Stop();
+        _ = ApplySearchAsync();
+    }
 
     private void Window_Loaded(object sender, RoutedEventArgs e) =>
         Dispatcher.BeginInvoke(FocusFirstResult, DispatcherPriority.Input);

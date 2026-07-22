@@ -494,6 +494,13 @@ public partial class MainWindow : Window
             e.Handled = true;
             await CopyTranscriptAsync();
         }
+        else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None &&
+                 FindAncestor<TreeView>(Keyboard.FocusedElement as DependencyObject) is
+                 { DataContext: TranscriptLine { Snapshot: { } snapshot } })
+        {
+            e.Handled = true;
+            OpenResultInspector(snapshot);
+        }
         else if (e.Key == Key.Escape && SymbolDetailPopup.IsOpen)
         {
             e.Handled = true;
@@ -1956,7 +1963,7 @@ public partial class MainWindow : Window
     private void InspectResult_Click(object sender, RoutedEventArgs e)
     {
         if (GetTranscriptLine(sender)?.Snapshot is { } snapshot)
-            new ResultInspectorWindow(snapshot, viewModel) { Owner = this }.Show();
+            OpenResultInspector(snapshot);
     }
 
     private async void CopyTranscriptLine_Click(object sender, RoutedEventArgs e)
@@ -1973,11 +1980,29 @@ public partial class MainWindow : Window
 
     private async void TranscriptTree_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None &&
+            sender is TreeView { DataContext: TranscriptLine { Snapshot: { } snapshot } })
+        {
+            e.Handled = true;
+            OpenResultInspector(snapshot);
+            return;
+        }
         if (e.Key != Key.C || Keyboard.Modifiers != ModifierKeys.Control ||
             sender is not TreeView { SelectedItem: ConsoleSnapshotNode node }) return;
         e.Handled = true;
         await CopyTextAsync(() => node.CopyText);
     }
+
+    private void TranscriptTree_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left ||
+            sender is not TreeView { DataContext: TranscriptLine { Snapshot: { } snapshot } }) return;
+        e.Handled = true;
+        OpenResultInspector(snapshot);
+    }
+
+    private void OpenResultInspector(ResultSnapshot snapshot) =>
+        new ResultInspectorWindow(snapshot, viewModel) { Owner = this }.Show();
 
     private void TranscriptTree_ExpansionChanged(object sender, RoutedEventArgs e)
     {

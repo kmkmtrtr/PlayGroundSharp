@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Data;
 using System.Text.Json.Nodes;
 using System.Dynamic;
 using System.Numerics;
@@ -77,6 +78,27 @@ public sealed class ResultSnapshotFactoryTests
         Assert.Equal(42, document.RootElement.GetProperty("answer").GetInt32());
         Assert.Equal(2, document.RootElement.GetProperty("items")[1].GetInt32());
         Assert.Equal(System.Text.Json.JsonValueKind.Null, document.RootElement.GetProperty("empty").ValueKind);
+    }
+
+    [Fact]
+    public void DataTablesUseRowsAndColumnNamesAndPreserveDatabaseNulls()
+    {
+        var table = new DataTable("people");
+        table.Columns.Add("Id", typeof(int));
+        table.Columns.Add("Name", typeof(string));
+        table.Rows.Add(1, "Ada");
+        table.Rows.Add(2, DBNull.Value);
+
+        var snapshot = factory.Create(table);
+
+        Assert.Equal(SnapshotKind.Sequence, snapshot.Kind);
+        Assert.Equal(2, snapshot.TotalCount);
+        var rows = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(snapshot.Items);
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, static row => Assert.Equal(["Id", "Name"], row.Properties!.Select(property => property.Name)));
+        Assert.Equal("Ada", rows[0].Properties![1].Value.Display);
+        Assert.Equal(SnapshotKind.Null, rows[1].Properties![1].Value.Kind);
+        Assert.Equal("null", rows[1].Properties![1].Value.Display);
     }
 
     [Fact]

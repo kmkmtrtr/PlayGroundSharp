@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Data;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -63,6 +64,10 @@ public sealed class ResultSnapshotFactory
         if (value is null)
         {
             return new(SnapshotKind.Null, "null", null);
+        }
+        if (value is DBNull)
+        {
+            return new(SnapshotKind.Null, "null", typeof(DBNull).FullName);
         }
 
         var type = value.GetType();
@@ -186,6 +191,14 @@ public sealed class ResultSnapshotFactory
         if (value is JsonNode node)
         {
             return CreateJsonElement(JsonSerializer.SerializeToElement(node), typeName, depth, budget, nodeAlreadyTaken: true);
+        }
+        if (value is DataTable table)
+        {
+            return CreateDataTable(table, typeName, depth, path, budget);
+        }
+        if (value is DataRow row)
+        {
+            return CreateDataRow(row, typeName, depth, path, budget);
         }
         if (value is Exception exception)
         {
@@ -326,6 +339,79 @@ public sealed class ResultSnapshotFactory
         finally
         {
             path.Remove(task);
+        }
+    }
+
+    private ResultSnapshot CreateDataTable(
+        DataTable table,
+        string typeName,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        if (depth >= MaximumDepth)
+            return new(SnapshotKind.MaxDepth, "…", typeName, IsTruncated: true);
+        if (!path.Add(table))
+            return new(SnapshotKind.Circular, "↻ circular reference", typeName, IsTruncated: true);
+        try
+        {
+            var count = table.Rows.Count;
+            var items = new List<ResultSnapshot>(Math.Min(count, MaximumItems));
+            for (var index = 0; index < count && items.Count < MaximumItems && budget.CanTakeNode; index++)
+                items.Add(Create(table.Rows[index], depth + 1, path, budget));
+            return new(
+                SnapshotKind.Sequence,
+                $"{count:N0} rows",
+                typeName,
+                Items: items,
+                IsTruncated: items.Count < count,
+                TotalCount: count);
+        }
+        finally
+        {
+            path.Remove(table);
+        }
+    }
+
+    private ResultSnapshot CreateDataRow(
+        DataRow row,
+        string typeName,
+        int depth,
+        HashSet<object> path,
+        SnapshotBudget budget)
+    {
+        if (depth >= MaximumDepth)
+            return new(SnapshotKind.MaxDepth, "…", typeName, IsTruncated: true);
+        if (!path.Add(row))
+            return new(SnapshotKind.Circular, "↻ circular reference", typeName, IsTruncated: true);
+        try
+        {
+            var columns = row.Table.Columns;
+            var properties = new List<ResultProperty>(columns.Count);
+            foreach (DataColumn column in columns)
+            {
+                if (!budget.CanTakeNode) break;
+                try
+                {
+                    properties.Add(new(column.ColumnName, Create(row[column], depth + 1, path, budget)));
+                }
+                catch (Exception error)
+                {
+                    if (budget.TryTakeNode())
+                        properties.Add(new(column.ColumnName, CreateExceptionSnapshot(error, column.DataType.FullName, budget)));
+                }
+            }
+            return new(
+                SnapshotKind.Object,
+                $"{columns.Count:N0} columns",
+                typeName,
+                Properties: properties,
+                IsTruncated: properties.Count < columns.Count,
+                TotalCount: columns.Count);
+        }
+        finally
+        {
+            path.Remove(row);
         }
     }
 
@@ -471,7 +557,10 @@ public sealed class ResultSnapshotFactory
                            declaringType.GetField(
                                $"<{property.Name}>i__Field",
                                backingFieldFlags);
-        if (backingField?.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false) == true)
+        // C# source cannot declare the angle-bracket field names used here. Roslyn's
+        // script anonymous types omit CompilerGeneratedAttribute on their i__Field,
+        // so the generated name itself is the reliable and still non-executing check.
+        if (backingField is not null)
         {
             propertyValue = backingField.GetValue(value);
             return true;

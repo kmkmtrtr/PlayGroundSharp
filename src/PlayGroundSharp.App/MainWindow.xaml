@@ -417,7 +417,9 @@
                                     <TreeView ItemsSource="{Binding SnapshotRoots}" Background="Transparent" BorderThickness="0"
                                               Padding="0" FontFamily="Cascadia Mono,Consolas" FontSize="14"
                                               Foreground="{DynamicResource ForegroundBrush}" HorizontalContentAlignment="Stretch"
-                                              PreviewKeyDown="TranscriptTree_PreviewKeyDown">
+                                              PreviewKeyDown="TranscriptTree_PreviewKeyDown"
+                                              MouseDoubleClick="TranscriptTree_MouseDoubleClick"
+                                              ToolTip="{DynamicResource Inspector.OpenHint}">
                                         <TreeView.Style>
                                             <Style TargetType="TreeView">
                                                 <Setter Property="Visibility" Value="Collapsed" />

@@ -154,6 +154,20 @@ public sealed class ScriptSessionTests
         Assert.Contains("$playgroundSharp", SnapshotJsonFormatter.Format(blocking), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task CapturesAnonymousProjectionValuesWithoutInvokingGetters()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            "new[] { new { Id = 1, Name = \"Ada\" }, new { Id = 2, Name = \"Grace\" } }");
+
+        Assert.True(result.StateAccepted);
+        var rows = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(result.Snapshot!.Items);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(["1", "Ada"], rows[0].Properties!.Select(static property => property.Value.Display));
+        Assert.Equal(["2", "Grace"], rows[1].Properties!.Select(static property => property.Value.Display));
+    }
+
     private static string NormalizeUnresolvedReferenceDisplay(string? display)
     {
         if (display is null) return string.Empty;

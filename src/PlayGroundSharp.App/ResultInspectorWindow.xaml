@@ -31,10 +31,16 @@
                         Click="SaveAll_Click" Margin="4,0,0,0"
                         ToolTip="{DynamicResource Inspector.SaveAllTooltip}" />
             </StackPanel>
-            <TextBlock Text="{DynamicResource Inspector.Snapshot}" Foreground="{DynamicResource MutedBrush}"
-                       VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{DynamicResource Inspector.Snapshot}" Foreground="{DynamicResource MutedBrush}"
+                           VerticalAlignment="Center" Margin="0,0,12,0" />
+                <Button x:Name="TreeModeButton" Content="{DynamicResource Inspector.TreeView}" Style="{StaticResource MiniButtonStyle}"
+                        Click="TreeMode_Click" Margin="0,0,4,0" />
+                <Button x:Name="TableModeButton" Content="{DynamicResource Inspector.TableView}" Style="{StaticResource MiniButtonStyle}"
+                        Click="TableMode_Click" ToolTip="{DynamicResource Inspector.TableUnavailableTooltip}" />
+            </StackPanel>
         </DockPanel>
-        <Grid Grid.Row="1" Margin="0,0,0,8">
+        <Grid x:Name="TreeSearchPanel" Grid.Row="1" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
@@ -79,9 +85,9 @@
                 </Style>
             </TreeView.ItemContainerStyle>
         </TreeView>
-        <GridSplitter Grid.Row="3" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+        <GridSplitter x:Name="TreeSplitter" Grid.Row="3" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                       Background="Transparent" ShowsPreview="True" Cursor="SizeNS" />
-        <DockPanel Grid.Row="4" Margin="2,5,0,5">
+        <DockPanel x:Name="TreeSelectionPanel" Grid.Row="4" Margin="2,5,0,5">
             <Button x:Name="CopyPathButton" Content="{DynamicResource Inspector.CopyPath}" Style="{StaticResource MiniButtonStyle}"
                     DockPanel.Dock="Right" Click="CopyPath_Click" />
             <TextBlock x:Name="PathText" FontFamily="Cascadia Mono,Consolas" TextTrimming="CharacterEllipsis"
@@ -92,5 +98,50 @@
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                  Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                  BorderBrush="{DynamicResource BorderBrush}" FontFamily="Cascadia Mono,Consolas" Padding="8" />
+        <Grid x:Name="TablePanel" Grid.Row="1" Grid.RowSpan="5" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DockPanel Margin="2,0,0,8">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                    <Button Content="{DynamicResource Inspector.CopyTable}" Style="{StaticResource MiniButtonStyle}"
+                            Click="CopyTable_Click" ToolTip="{DynamicResource Inspector.CopyTableTooltip}" />
+                    <Button Content="{DynamicResource Inspector.SaveTable}" Style="{StaticResource MiniButtonStyle}"
+                            Click="SaveTable_Click" Margin="4,0,0,0" />
+                </StackPanel>
+                <TextBlock x:Name="TableStatus" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"
+                           AutomationProperties.LiveSetting="Polite" />
+            </DockPanel>
+            <DataGrid x:Name="TableGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+                      AutomationProperties.Name="{DynamicResource Inspector.TableView}"
+                      Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
+                      BorderBrush="{DynamicResource BorderBrush}" GridLinesVisibility="All"
+                      HorizontalGridLinesBrush="{DynamicResource BorderBrush}" VerticalGridLinesBrush="{DynamicResource BorderBrush}"
+                      HeadersVisibility="All" RowHeaderWidth="58" RowHeight="26"
+                      EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                      SelectionMode="Extended" SelectionUnit="CellOrRowHeader"
+                      ClipboardCopyMode="IncludeHeader" LoadingRow="TableGrid_LoadingRow">
+                <DataGrid.Resources>
+                    <Style TargetType="DataGridColumnHeader">
+                        <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                        <Setter Property="Padding" Value="7,5" />
+                    </Style>
+                    <Style TargetType="DataGridRowHeader">
+                        <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                        <Setter Property="HorizontalContentAlignment" Value="Right" />
+                        <Setter Property="Padding" Value="5,0" />
+                    </Style>
+                    <Style TargetType="DataGridCell">
+                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                        <Setter Property="Padding" Value="6,3" />
+                    </Style>
+                </DataGrid.Resources>
+            </DataGrid>
+        </Grid>
     </Grid>
 </Window>

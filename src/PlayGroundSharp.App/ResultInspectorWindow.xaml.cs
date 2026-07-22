@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -15,18 +17,22 @@ public partial class ResultInspectorWindow : Window
     private readonly MainViewModel viewModel;
     private AppLanguageMode languageMode;
     private readonly ResultSnapshot snapshot;
+    private readonly SnapshotTableModel? tableModel;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private readonly DispatcherTimer notificationTimer = new() { Interval = TimeSpan.FromSeconds(1.8) };
     private SnapshotTreeNode? selectedNode;
     private CancellationTokenSource? searchCancellation;
     private string currentSearchStatus = string.Empty;
+    private string tableSummaryStatus = string.Empty;
     private string appliedQuery = string.Empty;
     private bool copyInProgress;
+    private bool isTableMode;
 
     public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel)
     {
         this.viewModel = viewModel;
         this.snapshot = snapshot;
+        tableModel = SnapshotTableModel.TryCreate(snapshot);
         languageMode = viewModel.LanguageMode;
         Roots = [SnapshotTreeNode.CreateRoot(snapshot, languageMode)];
         selectedNode = Roots[0];
@@ -39,12 +45,14 @@ public partial class ResultInspectorWindow : Window
         SnapshotTreeRow.Height = new(Math.Min(
             settings.InspectorTreeHeight,
             Math.Max(120, settings.InspectorHeight - 180)));
+        ConfigureTable();
         SetSelectedNode(Roots[0]);
+        SetTableMode(tableModel?.PreferTableView == true);
         searchTimer.Tick += async (_, _) => await ApplySearchAsync();
         notificationTimer.Tick += (_, _) =>
         {
             notificationTimer.Stop();
-            SearchStatus.Text = currentSearchStatus;
+            RestoreStatusDisplays();
         };
         Closed += (_, _) =>
         {
@@ -65,12 +73,19 @@ public partial class ResultInspectorWindow : Window
     {
         if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
         languageMode = viewModel.LanguageMode;
+        UpdateTableSummary();
         searchTimer.Stop();
         _ = ApplySearchAsync();
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e) =>
-        Dispatcher.BeginInvoke(() => FocusFirstResult(), DispatcherPriority.Input);
+        Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (isTableMode) TableGrid.Focus();
+                else FocusFirstResult();
+            },
+            DispatcherPriority.Input);
 
     private void SnapshotTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
@@ -90,6 +105,7 @@ public partial class ResultInspectorWindow : Window
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
         {
             e.Handled = true;
+            SetTableMode(false);
             SearchBox.Focus();
             SearchBox.SelectAll();
             return;
@@ -114,6 +130,7 @@ public partial class ResultInspectorWindow : Window
             (Keyboard.Modifiers == ModifierKeys.None || Keyboard.Modifiers == ModifierKeys.Shift))
         {
             e.Handled = true;
+            if (isTableMode) SetTableMode(false);
             searchTimer.Stop();
             if (!string.Equals(appliedQuery, SearchBox.Text, StringComparison.Ordinal))
                 await ApplySearchAsync();
@@ -123,6 +140,11 @@ public partial class ResultInspectorWindow : Window
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
+            if (isTableMode)
+            {
+                Close();
+                return;
+            }
             if (SearchBox.Text.Length > 0)
             {
                 SearchBox.Clear();
@@ -139,7 +161,7 @@ public partial class ResultInspectorWindow : Window
             e.Handled = true;
             await CopyToClipboardAsync(() => SnapshotTextFormatter.FormatFull(snapshot));
         }
-        else if (Keyboard.Modifiers == ModifierKeys.Control && Keyboard.FocusedElement is not TextBox &&
+        else if (!isTableMode && Keyboard.Modifiers == ModifierKeys.Control && Keyboard.FocusedElement is not TextBox &&
                  selectedNode is not null)
         {
             e.Handled = true;
@@ -302,6 +324,21 @@ public partial class ResultInspectorWindow : Window
 
     private async void SaveAll_Click(object sender, RoutedEventArgs e) => await SaveAllAsync();
 
+    private void TreeMode_Click(object sender, RoutedEventArgs e) => SetTableMode(false);
+
+    private void TableMode_Click(object sender, RoutedEventArgs e) => SetTableMode(true);
+
+    private async void CopyTable_Click(object sender, RoutedEventArgs e)
+    {
+        if (tableModel is not null)
+            await CopyToClipboardAsync(() => tableModel.FormatDelimited('\t'));
+    }
+
+    private async void SaveTable_Click(object sender, RoutedEventArgs e) => await SaveTableAsync();
+
+    private void TableGrid_LoadingRow(object sender, DataGridRowEventArgs e) =>
+        e.Row.Header = (e.Row.GetIndex() + 1).ToString("N0");
+
     private async Task SaveAllAsync()
     {
         var dialog = new SaveFileDialog
@@ -329,6 +366,125 @@ public partial class ResultInspectorWindow : Window
             SetSearchStatus(AppLocalization.Text(languageMode, "Status.SaveFailed"));
             MessageBox.Show(this, error.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private async Task SaveTableAsync()
+    {
+        if (tableModel is null) return;
+        var dialog = new SaveFileDialog
+        {
+            Title = AppLocalization.Text(languageMode, "Dialog.TableSaveTitle"),
+            Filter = AppLocalization.Text(languageMode, "Dialog.CsvFileFilter"),
+            DefaultExt = ".csv",
+            AddExtension = true,
+            FileName = $"PlayGroundSharp-table-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            SetSearchStatus(AppLocalization.Text(languageMode, "Status.SavingResult"));
+            var text = await Task.Run(() => tableModel.FormatDelimited(','));
+            await File.WriteAllTextAsync(dialog.FileName, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            ShowNotification("Status.Saved", Path.GetFileName(dialog.FileName));
+        }
+        catch (Exception error)
+        {
+            SetSearchStatus(AppLocalization.Text(languageMode, "Status.SaveFailed"));
+            MessageBox.Show(this, error.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ConfigureTable()
+    {
+        TableModeButton.IsEnabled = tableModel is not null;
+        if (tableModel is null) return;
+
+        TableGrid.ItemsSource = tableModel.Rows;
+        for (var index = 0; index < tableModel.Columns.Count; index++)
+        {
+            var columnIndex = index;
+            var elementStyle = new Style(typeof(TextBlock));
+            elementStyle.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+            elementStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center));
+            elementStyle.Setters.Add(new Setter(ToolTipService.ToolTipProperty,
+                new Binding($"Cells[{columnIndex}].Display")));
+            TableGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = tableModel.Columns[columnIndex],
+                Binding = new Binding($"Cells[{columnIndex}].Display") { Mode = BindingMode.OneWay },
+                ClipboardContentBinding = new Binding($"Cells[{columnIndex}].ExportValue") { Mode = BindingMode.OneWay },
+                ElementStyle = elementStyle,
+                MinWidth = 80,
+                MaxWidth = 420,
+                Width = new DataGridLength(140),
+                SortMemberPath = $"Cells[{columnIndex}].Display"
+            });
+        }
+        UpdateTableSummary();
+    }
+
+    private void SetTableMode(bool tableMode)
+    {
+        if (tableMode && tableModel is null) return;
+        isTableMode = tableMode;
+        var treeVisibility = tableMode ? Visibility.Collapsed : Visibility.Visible;
+        TreeSearchPanel.Visibility = treeVisibility;
+        SnapshotTree.Visibility = treeVisibility;
+        TreeSplitter.Visibility = treeVisibility;
+        TreeSelectionPanel.Visibility = treeVisibility;
+        DetailText.Visibility = treeVisibility;
+        TablePanel.Visibility = tableMode ? Visibility.Visible : Visibility.Collapsed;
+        ExpandSelectedButton.Visibility = treeVisibility;
+        CollapseSelectedButton.Visibility = treeVisibility;
+        CopySelectedButton.Visibility = treeVisibility;
+        CopyPathButton.Visibility = treeVisibility;
+        TableModeButton.IsEnabled = tableModel is not null;
+        UpdateViewModeButtons();
+        RestoreStatusDisplays();
+        Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (tableMode) TableGrid.Focus();
+                else FocusFirstResult();
+            },
+            DispatcherPriority.Input);
+    }
+
+    private void UpdateViewModeButtons()
+    {
+        SetViewModeButtonState(TreeModeButton, selected: !isTableMode);
+        SetViewModeButtonState(TableModeButton, selected: isTableMode);
+    }
+
+    private static void SetViewModeButtonState(Button button, bool selected)
+    {
+        button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
+        button.SetResourceReference(
+            Control.BackgroundProperty,
+            selected ? "SelectionBrush" : "PanelBrush");
+        button.SetResourceReference(
+            Control.BorderBrushProperty,
+            selected ? "AccentBrush" : "BorderBrush");
+    }
+
+    private void UpdateTableSummary()
+    {
+        if (tableModel is null) return;
+        var parts = new List<string>
+        {
+            AppLocalization.Text(languageMode, "Inspector.TableSummary", tableModel.Rows.Count, tableModel.Columns.Count)
+        };
+        if (tableModel.TotalRowCount is { } total && total > tableModel.Rows.Count)
+            parts.Add(AppLocalization.Text(
+                languageMode, "Inspector.TableRowsLimited", total, tableModel.Rows.Count));
+        else if (tableModel.RowsTruncated)
+            parts.Add(AppLocalization.Text(
+                languageMode, "Inspector.TableRowsCaptureLimited", tableModel.Rows.Count));
+        if (tableModel.ColumnsTruncated)
+            parts.Add(AppLocalization.Text(
+                languageMode, "Inspector.TableColumnsLimited", tableModel.Columns.Count));
+        tableSummaryStatus = string.Join(" · ", parts);
+        if (!notificationTimer.IsEnabled) TableStatus.Text = tableSummaryStatus;
     }
 
     private void SetSelectedNode(SnapshotTreeNode node)
@@ -397,12 +553,21 @@ public partial class ResultInspectorWindow : Window
         notificationTimer.Stop();
         currentSearchStatus = text;
         SearchStatus.Text = text;
+        if (isTableMode) TableStatus.Text = text;
     }
 
     private void ShowNotification(string key, params object?[] arguments)
     {
         notificationTimer.Stop();
-        SearchStatus.Text = AppLocalization.Text(languageMode, key, arguments);
+        var text = AppLocalization.Text(languageMode, key, arguments);
+        SearchStatus.Text = text;
+        TableStatus.Text = text;
         notificationTimer.Start();
+    }
+
+    private void RestoreStatusDisplays()
+    {
+        SearchStatus.Text = currentSearchStatus;
+        TableStatus.Text = tableSummaryStatus;
     }
 }

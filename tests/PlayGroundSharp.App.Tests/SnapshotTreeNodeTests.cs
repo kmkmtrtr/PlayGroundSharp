@@ -60,6 +60,36 @@ public sealed class SnapshotTreeNodeTests
         Assert.Equal(250, CountSearchMatches(root!));
     }
 
+    [Fact]
+    public void LabelsSummarizePropertiesInsteadOfShowingOnlyTheirCount()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Json,
+            "3 properties",
+            "JsonObject",
+            Properties:
+            [
+                new("id", new(SnapshotKind.Number, "42", "System.Int32")),
+                new("name", new(SnapshotKind.String, "Ada", "System.String")),
+                new("tags", new(
+                    SnapshotKind.Json,
+                    "2 items",
+                    null,
+                    Items:
+                    [
+                        new(SnapshotKind.String, "admin", null),
+                        new(SnapshotKind.String, "owner", null)
+                    ],
+                    TotalCount: 2))
+            ]);
+
+        var root = SnapshotTreeNode.CreateRoot(snapshot, AppLanguageMode.Japanese);
+
+        Assert.Equal("JsonObject = {id: 42, name: \"Ada\", tags: (2) [\"admin\", \"owner\"]}", root.Label);
+        Assert.Contains("{id: 42, name: \"Ada\", tags: (2) [\"admin\", \"owner\"]}", root.Detail);
+        Assert.DoesNotContain("3 プロパティ", root.Label, StringComparison.Ordinal);
+    }
+
     private static int CountNodes(SnapshotTreeNode node) =>
         1 + node.Children.Sum(CountNodes);
 

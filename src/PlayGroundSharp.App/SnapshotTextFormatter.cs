@@ -12,6 +12,11 @@ internal static class SnapshotTextFormatter
 {
     private const int PreviewCharacterLimit = 20_000;
     private const int PreviewItemLimit = 200;
+    private const int CompactMaximumDepth = 3;
+    private const int CompactRootMemberLimit = 6;
+    private const int CompactNestedMemberLimit = 4;
+    private const int CompactScalarLength = 80;
+    private const int CompactMaximumLength = 500;
     private static readonly JsonSerializerOptions DisplayJsonOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
@@ -25,15 +30,10 @@ internal static class SnapshotTextFormatter
 
     public static string FormatCompact(ResultSnapshot snapshot)
     {
-        if (snapshot.Items is not null)
-            return $"[{snapshot.TotalCount?.ToString("N0") ?? snapshot.Items.Count.ToString("N0")} items]" +
-                   (snapshot.IsTruncated ? " …" : string.Empty);
-        if (snapshot.Properties is not null)
-            return $"{{{snapshot.TotalCount?.ToString("N0") ?? snapshot.Properties.Count.ToString("N0")} properties}}" +
-                   (snapshot.IsTruncated ? " …" : string.Empty);
-        var display = snapshot.Display ?? snapshot.Kind.ToString();
-        if (snapshot.TypeName == typeof(char).FullName) display = QuoteCharacter(display);
-        return display + (snapshot.IsTruncated ? " …" : string.Empty);
+        var compact = FormatCompact(snapshot, 0);
+        return compact.Length <= CompactMaximumLength
+            ? compact
+            : compact[..(CompactMaximumLength - 1)] + "…";
     }
 
     internal static string QuoteJsonString(string value) => JsonSerializer.Serialize(value, DisplayJsonOptions);
@@ -64,6 +64,80 @@ internal static class SnapshotTextFormatter
         };
         return $"'{escaped}'";
     }
+
+    private static string FormatCompact(ResultSnapshot snapshot, int depth)
+    {
+        if (snapshot.Properties is { } properties)
+            return FormatCompactProperties(snapshot, properties, depth);
+        if (snapshot.Items is { } items)
+            return FormatCompactItems(snapshot, items, depth);
+        return FormatCompactScalar(snapshot);
+    }
+
+    private static string FormatCompactProperties(
+        ResultSnapshot snapshot,
+        IReadOnlyList<ResultProperty> properties,
+        int depth)
+    {
+        if (properties.Count == 0)
+            return snapshot.IsTruncated ? "{…}" : "{}";
+        if (depth >= CompactMaximumDepth)
+            return "{…}";
+
+        var limit = depth == 0 ? CompactRootMemberLimit : CompactNestedMemberLimit;
+        var shown = Math.Min(properties.Count, limit);
+        var members = properties.Take(shown).Select(property =>
+            $"{FormatPropertyName(property.Name)}: {FormatCompact(property.Value, depth + 1)}");
+        return $"{{{string.Join(", ", members)}{FormatCompactRemainder(snapshot, shown, properties.Count)}}}";
+    }
+
+    private static string FormatCompactItems(
+        ResultSnapshot snapshot,
+        IReadOnlyList<ResultSnapshot> items,
+        int depth)
+    {
+        var count = snapshot.TotalCount ?? items.Count;
+        if (items.Count == 0)
+            return snapshot.IsTruncated ? $"({count:N0}) […]" : $"({count:N0}) []";
+        if (depth >= CompactMaximumDepth)
+            return $"({count:N0}) […]";
+
+        var limit = depth == 0 ? CompactRootMemberLimit : CompactNestedMemberLimit;
+        var shown = Math.Min(items.Count, limit);
+        var members = items.Take(shown).Select(item => FormatCompact(item, depth + 1));
+        return $"({count:N0}) [{string.Join(", ", members)}{FormatCompactRemainder(snapshot, shown, items.Count)}]";
+    }
+
+    private static string FormatCompactRemainder(ResultSnapshot snapshot, int shown, int captured)
+    {
+        var total = snapshot.TotalCount;
+        if (!snapshot.IsTruncated && shown >= captured && (total is null || shown >= total))
+            return string.Empty;
+
+        var remaining = total is { } knownTotal
+            ? Math.Max(0, knownTotal - shown)
+            : Math.Max(0, captured - shown);
+        return remaining > 0 ? $", … (+{remaining:N0})" : ", …";
+    }
+
+    private static string FormatCompactScalar(ResultSnapshot snapshot)
+    {
+        var display = snapshot.Display ?? snapshot.Kind.ToString();
+        var labelTruncated = display.Length > CompactScalarLength;
+        if (labelTruncated) display = display[..CompactScalarLength];
+        var value = snapshot.TypeName == typeof(char).FullName
+            ? QuoteCharacter(display)
+            : snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid
+                ? QuoteJsonString(display)
+                : display;
+        return labelTruncated || snapshot.IsTruncated ? value + "…" : value;
+    }
+
+    private static string FormatPropertyName(string value) =>
+        value.Length > 0 && (char.IsLetter(value[0]) || value[0] == '_') &&
+        value.Skip(1).All(static character => char.IsLetterOrDigit(character) || character == '_')
+            ? value
+            : QuoteJsonString(value);
 
     private static SnapshotFormatResult Format(ResultSnapshot snapshot, int characterLimit, int itemLimit)
     {

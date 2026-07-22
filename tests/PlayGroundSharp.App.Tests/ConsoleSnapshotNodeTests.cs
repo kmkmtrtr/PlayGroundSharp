@@ -29,6 +29,7 @@ public sealed class ConsoleSnapshotNodeTests
         var property = Assert.Single(root.Children);
         var firstItem = property.Children[0];
 
+        Assert.Equal("{hoge: (2) [1, 2]}", root.Preview);
         Assert.Equal(root.Preview, root.AccessibleLabel);
         Assert.Equal("hoge: (2) [1, 2]", property.AccessibleLabel);
         Assert.Equal("[0]: 1", firstItem.AccessibleLabel);
@@ -55,5 +56,45 @@ public sealed class ConsoleSnapshotNodeTests
         Assert.Equal("(4) ['a', '\\n', '\\uD83D', '\\uDE00']", root.Preview);
         Assert.DoesNotContain('�', root.Preview);
         Assert.Contains("'\\uD83D'", root.CopyText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void JsonLikeObjectsPreviewNestedPropertiesAndValues()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Json,
+            "4 properties",
+            "System.Text.Json.Nodes.JsonObject",
+            Properties:
+            [
+                new("id", new(SnapshotKind.Number, "42", "System.Int32")),
+                new("name", new(SnapshotKind.String, "Ada", "System.String")),
+                new("profile", new(
+                    SnapshotKind.Json,
+                    "2 properties",
+                    null,
+                    Properties:
+                    [
+                        new("active", new(SnapshotKind.Boolean, "true", "System.Boolean")),
+                        new("role", new(SnapshotKind.String, "admin", "System.String"))
+                    ])),
+                new("scores", new(
+                    SnapshotKind.Json,
+                    "3 items",
+                    null,
+                    Items:
+                    [
+                        new(SnapshotKind.Number, "10", null),
+                        new(SnapshotKind.Number, "20", null),
+                        new(SnapshotKind.Number, "30", null)
+                    ],
+                    TotalCount: 3))
+            ]);
+
+        var root = ConsoleSnapshotNode.CreateRoot(snapshot);
+
+        Assert.Equal(
+            "{id: 42, name: \"Ada\", profile: {active: true, role: \"admin\"}, scores: (3) [10, 20, 30]}",
+            root.Preview);
     }
 }

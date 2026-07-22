@@ -33,7 +33,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         Path = path;
         IsSearchMatch = isSearchMatch;
         this.isExpanded = isExpanded;
-        var compact = FormatCompact(snapshot, languageMode).ReplaceLineEndings(" ");
+        var compact = SnapshotTextFormatter.FormatCompact(snapshot).ReplaceLineEndings(" ");
         if (compact.Length > MaximumLabelLength) compact = compact[..MaximumLabelLength] + "…";
         Label = $"{name} = {compact}";
         Detail = BuildDetail();
@@ -140,7 +140,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
             lines.Add(count);
         }
         lines.Add(string.Empty);
-        lines.Add(FormatCompact(snapshot, languageMode));
+        lines.Add(SnapshotTextFormatter.FormatCompact(snapshot));
         return string.Join(Environment.NewLine, lines);
     }
 
@@ -270,17 +270,6 @@ public sealed partial class SnapshotTreeNode : ObservableObject
 
     private static bool Contains(string? value, string query) =>
         value?.Contains(query, StringComparison.CurrentCultureIgnoreCase) == true;
-
-    private static string FormatCompact(ResultSnapshot value, AppLanguageMode languageMode)
-    {
-        if (value.Items is not null)
-            return AppLocalization.Text(languageMode, "Inspector.ItemSummary", value.TotalCount ?? value.Items.Count) +
-                   (value.IsTruncated ? " …" : string.Empty);
-        if (value.Properties is not null)
-            return AppLocalization.Text(languageMode, "Inspector.PropertySummary", value.TotalCount ?? value.Properties.Count) +
-                   (value.IsTruncated ? " …" : string.Empty);
-        return (value.Display ?? value.Kind.ToString()) + (value.IsTruncated ? " …" : string.Empty);
-    }
 
     private string Text(string key, params object?[] arguments) =>
         AppLocalization.Text(languageMode, key, arguments);

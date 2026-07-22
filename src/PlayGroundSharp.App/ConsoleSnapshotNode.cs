@@ -139,51 +139,5 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
         snapshot.Properties is { Count: > 0 } || snapshot.Items is { Count: > 0 };
 
     private static string FormatPreview(ResultSnapshot snapshot)
-    {
-        if (snapshot.Properties is { } properties)
-        {
-            var members = properties.Take(4)
-                .Select(property => $"{FormatPropertyName(property.Name)}: {FormatChildPreview(property.Value)}");
-            var suffix = properties.Count > 4 || snapshot.IsTruncated ? ", …" : string.Empty;
-            return $"{{{string.Join(", ", members)}{suffix}}}";
-        }
-
-        if (snapshot.Items is { } items)
-        {
-            var count = snapshot.TotalCount ?? items.Count;
-            var members = items.Take(6).Select(FormatChildPreview);
-            var suffix = items.Count > 6 || snapshot.IsTruncated ? ", …" : string.Empty;
-            return $"({count:N0}) [{string.Join(", ", members)}{suffix}]";
-        }
-
-        return FormatScalar(snapshot);
-    }
-
-    private static string FormatChildPreview(ResultSnapshot snapshot)
-    {
-        if (snapshot.Items is { } items)
-            return $"Array({snapshot.TotalCount ?? items.Count:N0})";
-        if (snapshot.Properties is not null)
-            return "{…}";
-        return FormatScalar(snapshot);
-    }
-
-    private static string FormatScalar(ResultSnapshot snapshot)
-    {
-        var display = snapshot.Display ?? snapshot.Kind.ToString();
-        var labelTruncated = display.Length > 160;
-        if (labelTruncated) display = display[..160];
-        var value = snapshot.TypeName == typeof(char).FullName
-            ? SnapshotTextFormatter.QuoteCharacter(display)
-            : snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid
-                ? SnapshotTextFormatter.QuoteJsonString(display)
-                : display;
-        return labelTruncated || snapshot.IsTruncated ? value + "…" : value;
-    }
-
-    private static string FormatPropertyName(string value) =>
-        value.Length > 0 && (char.IsLetter(value[0]) || value[0] == '_') &&
-        value.Skip(1).All(static character => char.IsLetterOrDigit(character) || character == '_')
-            ? value
-            : SnapshotTextFormatter.QuoteJsonString(value);
+        => SnapshotTextFormatter.FormatCompact(snapshot);
 }

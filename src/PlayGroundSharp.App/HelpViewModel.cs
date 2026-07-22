@@ -57,7 +57,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("依存関係", "NuGet、DLL、usingを実行環境と補完環境へ反映します。",
         [
-            new("NuGet", "右上の［セッション］→［NuGet］から検索・追加するか、コロンコマンドを使います。", ":package add Humanizer.Core --version 3.0.10\n:package list"),
+            new("NuGet", "右上の［セッション］→［NuGet］から検索し、候補からバージョンを選択するか正確なバージョンを直接入力して追加できます。コロンコマンドも利用できます。", ":package add Humanizer.Core --version 3.0.10\n:package list"),
             new("DLLとusing", "［セッション］→［ライブラリ］の［DLLを追加］から複数選択できます。入力欄へDLLをドロップして［DLL参照として追加］を選ぶか、コロンコマンドも利用できます。", ":reference add \"C:\\Libraries\\Example.dll\"\n:using add Example.Namespace")
         ]),
         new("停止と安全性", "Worker分離は安定性のためであり、サンドボックスではありません。",
@@ -99,7 +99,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Dependencies", "Add NuGet packages, DLLs, and usings to execution and IntelliSense.",
         [
-            new("Commands", "Install packages in Workspace > NuGet. Add one or more local assemblies in Libraries, drop a DLL onto the input, or use colon commands.", ":package add Humanizer.Core --version 3.0.10\n:reference add \"C:\\Libraries\\Example.dll\"\n:using add Example.Namespace")
+            new("Commands", "Search in Workspace > NuGet, then choose a version or enter an exact version before installing. Add one or more local assemblies in Libraries, drop a DLL onto the input, or use colon commands.", ":package add Humanizer.Core --version 3.0.10\n:reference add \"C:\\Libraries\\Example.dll\"\n:using add Example.Namespace")
         ]),
         new("Cancellation and security", "Worker isolation improves recovery; it is not a sandbox.",
         [

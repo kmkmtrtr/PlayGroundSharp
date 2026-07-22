@@ -55,7 +55,8 @@ public sealed class PackageSearchService
                     GetString(item, "description"),
                     GetAuthors(item),
                     item.TryGetProperty("totalDownloads", out var downloads) && downloads.TryGetInt64(out var count) ? count : 0,
-                    item.TryGetProperty("verified", out var verified) && verified.ValueKind == JsonValueKind.True));
+                    item.TryGetProperty("verified", out var verified) && verified.ValueKind == JsonValueKind.True,
+                    GetVersions(item, version)));
             }
         }
 
@@ -110,6 +111,19 @@ public sealed class PackageSearchService
             JsonValueKind.String => authors.GetString() ?? string.Empty,
             _ => string.Empty
         };
+    }
+
+    private static IReadOnlyList<string> GetVersions(JsonElement item, string currentVersion)
+    {
+        var versions = item.TryGetProperty("versions", out var versionItems) && versionItems.ValueKind == JsonValueKind.Array
+            ? versionItems.EnumerateArray()
+                .Select(static versionItem => GetString(versionItem, "version"))
+                .Where(static version => version.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : [];
+        if (!versions.Contains(currentVersion, StringComparer.OrdinalIgnoreCase)) versions.Add(currentVersion);
+        return versions;
     }
 
     private static string GetString(JsonElement item, string propertyName) =>

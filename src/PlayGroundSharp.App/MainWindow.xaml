@@ -163,15 +163,10 @@
                     IsVisibleChanged="TypeExplorerPane_IsVisibleChanged">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,12,12,10">
-                        <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock Text="{DynamicResource Explorer.Title}" FontSize="14" FontWeight="SemiBold" />
-                                <TextBlock Text="{DynamicResource Explorer.Subtitle}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
-                            </StackPanel>
-                            <TextBlock Grid.Column="1" Text="{Binding TypeExplorerStatus}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}"
-                                       VerticalAlignment="Top" Margin="8,2,0,0" />
-                        </Grid>
+                        <StackPanel>
+                            <TextBlock Text="{DynamicResource Explorer.Title}" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="{DynamicResource Explorer.Subtitle}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
+                        </StackPanel>
                     </Border>
                     <Grid Margin="10,10,8,8">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -287,7 +282,8 @@
                             </TreeView>
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
                                 <TextBlock Text="{DynamicResource Explorer.Empty}" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                                <TextBlock Text="{DynamicResource Explorer.EmptyHint}" Foreground="{DynamicResource MutedBrush}" FontSize="10.5" Margin="0,4,0,0" />
+                                <TextBlock Text="{DynamicResource Explorer.EmptyHint}" Foreground="{DynamicResource MutedBrush}" FontSize="10.5"
+                                           TextWrapping="Wrap" TextAlignment="Center" MaxWidth="190" Margin="0,4,0,0" />
                                 <StackPanel.Style>
                                     <Style TargetType="StackPanel">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -697,6 +693,7 @@
                                     <ListBox.ItemContainerStyle>
                                         <Style TargetType="ListBoxItem">
                                             <Setter Property="AutomationProperties.Name" Value="{Binding PackageId}" />
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                         </Style>
                                     </ListBox.ItemContainerStyle>
                                     <ListBox.ItemTemplate>
@@ -704,22 +701,40 @@
                                             <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                                                     CornerRadius="7" Padding="10" Margin="0,0,0,8">
                                                 <Grid>
-                                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBlock Text="{Binding PackageId}" FontWeight="SemiBold" />
-                                                        <TextBlock Text="{Binding Version, StringFormat={}  {0}}" Foreground="{DynamicResource MutedBrush}" />
-                                                        <TextBlock Text="{DynamicResource NuGet.Verified}" Foreground="{DynamicResource AccentBrush}"
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding PackageId}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding PackageId, Mode=OneWay}" />
+                                                        <TextBlock Grid.Column="1" Text="{DynamicResource NuGet.Verified}" Foreground="{DynamicResource AccentBrush}"
+                                                                   Margin="8,0,0,0"
                                                                    Visibility="{Binding IsVerified, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    </StackPanel>
-                                                    <Button Grid.Column="1" Grid.RowSpan="2" Content="{DynamicResource NuGet.Install}" Style="{StaticResource AccentButtonStyle}" Padding="10,4"
-                                                            Command="{Binding DataContext.InstallPackageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"
-                                                            IsEnabled="{Binding DataContext.CanChangeSession, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                                    <TextBlock Grid.Row="1" Text="{Binding Description}" TextWrapping="Wrap" MaxHeight="42" Margin="0,4,8,0" />
-                                                    <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}">
-                                                        <Run Text="{Binding Authors}"/><Run Text=" · "/><Run Text="{Binding TotalDownloads, StringFormat={}{0:N0}}"/><Run Text="{DynamicResource NuGet.DownloadsSuffix}"/>
+                                                    </Grid>
+                                                    <TextBlock Grid.Row="1" Text="{Binding Description}" TextWrapping="Wrap" MaxHeight="42" Margin="0,4,0,0"
+                                                               ToolTip="{Binding Description, Mode=OneWay}" />
+                                                    <TextBlock Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}"
+                                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Authors, Mode=OneWay}">
+                                                        <Run Text="{Binding Authors, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding TotalDownloads, Mode=OneWay, StringFormat={}{0:N0}}"/><Run Text="{DynamicResource NuGet.DownloadsSuffix}"/>
                                                     </TextBlock>
+                                                    <Grid Grid.Row="3" Margin="0,8,0,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="128"/>
+                                                            <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{DynamicResource NuGet.Version}" VerticalAlignment="Center" Margin="0,0,7,0" />
+                                                        <ComboBox Grid.Column="1" ItemsSource="{Binding Versions}" IsEditable="True"
+                                                                  Text="{Binding SelectedVersion, UpdateSourceTrigger=PropertyChanged}"
+                                                                  AutomationProperties.Name="{DynamicResource NuGet.Version}"
+                                                                  ToolTip="{DynamicResource NuGet.VersionTooltip}" />
+                                                        <Button Grid.Column="3" Content="{DynamicResource NuGet.Install}" Style="{StaticResource AccentButtonStyle}"
+                                                                Padding="10,4" Margin="8,0,0,0"
+                                                                Command="{Binding DataContext.InstallPackageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                CommandParameter="{Binding}"
+                                                                IsEnabled="{Binding DataContext.CanChangeSession, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                    </Grid>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
@@ -848,8 +863,9 @@
                     </Ellipse.Style>
                 </Ellipse>
                 <TextBlock Grid.Column="1" Text="{Binding Status}" AutomationProperties.LiveSetting="Polite"
-                           Foreground="{DynamicResource ForegroundBrush}" FontSize="11.5" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="2" Text="{Binding SessionStatus}" Margin="16,0" Foreground="{DynamicResource MutedBrush}" FontSize="11.5" VerticalAlignment="Center" />
+                           Foreground="{DynamicResource ForegroundBrush}" FontSize="11.5" VerticalAlignment="Center" ToolTip="{Binding Status}" />
+                <TextBlock Grid.Column="2" Text="{Binding SessionStatus}" Margin="16,0" Foreground="{DynamicResource MutedBrush}"
+                           FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding SessionStatus}" />
                 <TextBlock Grid.Column="3" Text="{Binding DiagnosticStatus}" ToolTip="{Binding DiagnosticDetails}"
                            ToolTipService.InitialShowDelay="250" ToolTipService.ShowDuration="20000"
                            FontSize="11.5" VerticalAlignment="Center" Margin="0,0,18,0"

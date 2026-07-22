@@ -54,7 +54,7 @@ public sealed class ProtocolTests
     public void PackageSearchResultsRoundTripAsNeutralDtos()
     {
         var payload = new PackageSearchResultsEvent("json", 1,
-            [new("Example.Package", "1.2.3", "Description", "Author", 42, true)]);
+            [new("Example.Package", "1.2.3", "Description", "Author", 42, true, ["1.0.0", "1.2.3"])]);
 
         var envelope = PipeEnvelope.Create(MessageKinds.PackageSearchResults, Guid.NewGuid(), payload);
         var restored = envelope.ReadPayload<PackageSearchResultsEvent>();
@@ -63,6 +63,18 @@ public sealed class ProtocolTests
         var package = Assert.Single(restored.Packages);
         Assert.Equal("Example.Package", package.PackageId);
         Assert.True(package.IsVerified);
+        Assert.Equal(["1.0.0", "1.2.3"], package.Versions);
+    }
+
+    [Fact]
+    public void PackageSearchMetadataAcceptsPayloadWithoutVersionList()
+    {
+        var restored = JsonSerializer.Deserialize<NuGetPackageInfo>(
+            """{"packageId":"Example.Package","version":"1.2.3","description":"","authors":"","totalDownloads":0,"isVerified":false}""",
+            ProtocolJson.Options);
+
+        Assert.NotNull(restored);
+        Assert.Null(restored.Versions);
     }
 
     [Fact]

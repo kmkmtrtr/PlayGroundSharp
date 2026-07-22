@@ -14,7 +14,7 @@ public sealed class PackageSearchServiceTests
             {"resources":[{"@id":"https://packages.test/query","@type":"SearchQueryService/3.5.0"}]}
             """,
             """
-            {"totalHits":1,"data":[{"id":"Example.Package","version":"2.1.0","description":"Example package","authors":["Example Author"],"totalDownloads":1234,"verified":true}]}
+            {"totalHits":1,"data":[{"id":"Example.Package","version":"2.1.0","description":"Example package","authors":["Example Author"],"totalDownloads":1234,"verified":true,"versions":[{"version":"1.0.0"},{"version":"2.0.0"},{"version":"2.1.0"}]}]}
             """);
         var service = new PackageSearchService(new HttpClient(handler), new Uri("https://packages.test/index.json"));
 
@@ -26,6 +26,7 @@ public sealed class PackageSearchServiceTests
         Assert.Equal("2.1.0", package.Version);
         Assert.Equal("Example Author", package.Authors);
         Assert.True(package.IsVerified);
+        Assert.Equal(["1.0.0", "2.0.0", "2.1.0"], package.Versions);
         Assert.Equal(2, handler.Requests.Count);
         Assert.Contains("q=json%20serializer", handler.Requests[1].OriginalString, StringComparison.Ordinal);
         Assert.Contains("prerelease=false", handler.Requests[1].Query, StringComparison.Ordinal);

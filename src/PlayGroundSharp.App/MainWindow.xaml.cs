@@ -1138,6 +1138,7 @@ public partial class MainWindow : Window
     private async void PackageSearchResults_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (Keyboard.Modifiers != ModifierKeys.None) return;
+        if (FindAncestor<ComboBox>(e.OriginalSource as DependencyObject) is not null) return;
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
@@ -1146,7 +1147,7 @@ public partial class MainWindow : Window
             return;
         }
         if (e.Key != Key.Enter || !viewModel.CanChangeSession ||
-            PackageSearchResults.SelectedItem is not NuGetPackageInfo package) return;
+            PackageSearchResults.SelectedItem is not PackageSearchItem package) return;
         e.Handled = true;
         if (viewModel.InstallPackageCommand.CanExecute(package))
             await viewModel.InstallPackageCommand.ExecuteAsync(package);

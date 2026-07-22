@@ -79,6 +79,7 @@ public sealed record NuGetPackageInfo(
     string Description,
     string Authors,
     long TotalDownloads,
-    bool IsVerified);
+    bool IsVerified,
+    IReadOnlyList<string>? Versions = null);
 public sealed record PackageSearchResultsEvent(string Query, long TotalHits, IReadOnlyList<NuGetPackageInfo> Packages);
 public sealed record WorkerErrorEvent(string Message);

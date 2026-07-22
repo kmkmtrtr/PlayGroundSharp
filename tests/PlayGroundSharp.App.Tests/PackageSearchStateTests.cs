@@ -37,7 +37,9 @@ public sealed class PackageSearchStateTests
         viewModel.PackageSearchText = "sample";
         viewModel.ApplyPackageSearchResults(CreateResults("sample"));
 
-        Assert.Single(viewModel.PackageSearchItems);
+        var package = Assert.Single(viewModel.PackageSearchItems);
+        Assert.Equal("1.0.0", package.SelectedVersion);
+        Assert.Equal(["1.0.0", "0.9.0"], package.Versions);
 
         viewModel.PackageSearchText = "different";
 
@@ -61,5 +63,5 @@ public sealed class PackageSearchStateTests
     private static PackageSearchResultsEvent CreateResults(string query) => new(
         query,
         1,
-        [new NuGetPackageInfo("Sample.Package", "1.0.0", "Description", "Author", 100, false)]);
+        [new NuGetPackageInfo("Sample.Package", "1.0.0", "Description", "Author", 100, false, ["0.9.0", "1.0.0"])]);
 }

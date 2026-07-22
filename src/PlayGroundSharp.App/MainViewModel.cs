@@ -25,6 +25,38 @@ public sealed record VariableItem(
 }
 
 public sealed record LibraryItem(string Kind, string Name, string Version, string Source, string? Path);
+public sealed partial class PackageSearchItem : ObservableObject
+{
+    public PackageSearchItem(NuGetPackageInfo package)
+    {
+        PackageId = package.PackageId;
+        Version = package.Version;
+        Description = package.Description;
+        Authors = package.Authors;
+        TotalDownloads = package.TotalDownloads;
+        IsVerified = package.IsVerified;
+
+        var versions = (package.Versions ?? [])
+            .Where(static candidate => !string.IsNullOrWhiteSpace(candidate))
+            .Reverse()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        versions.RemoveAll(candidate => candidate.Equals(package.Version, StringComparison.OrdinalIgnoreCase));
+        versions.Insert(0, package.Version);
+        Versions = versions;
+        selectedVersion = package.Version;
+    }
+
+    public string PackageId { get; }
+    public string Version { get; }
+    public string Description { get; }
+    public string Authors { get; }
+    public long TotalDownloads { get; }
+    public bool IsVerified { get; }
+    public IReadOnlyList<string> Versions { get; }
+    [ObservableProperty] private string selectedVersion;
+}
+
 public sealed partial class UiOption<T>(T value, string label) : ObservableObject where T : struct, Enum
 {
     public T Value { get; } = value;
@@ -102,7 +134,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private bool isReferenceDrawerOpen = InitialSettings.IsReferenceDrawerOpen;
     [ObservableProperty] private bool isTypeExplorerOpen = InitialSettings.IsTypeExplorerOpen;
     [ObservableProperty] private string typeExplorerSearchText = string.Empty;
-    [ObservableProperty] private string typeExplorerStatus = "Loading types…";
     [ObservableProperty] private SymbolExplorerNode? selectedExplorerNode;
     [ObservableProperty] private string variableFilterText = string.Empty;
     [ObservableProperty] private string packageSearchText = string.Empty;
@@ -154,7 +185,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<string> UsingItems { get; } = [.. SessionContext.DefaultImports];
     public ObservableCollection<VariableItem> VariableItems => variableItems;
     public ICollectionView VariableItemsView { get; }
-    public ObservableCollection<NuGetPackageInfo> PackageSearchItems { get; } = [];
+    public ObservableCollection<PackageSearchItem> PackageSearchItems { get; } = [];
     public ObservableCollection<LibraryItem> LibraryItems { get; } = [];
     public ObservableCollection<SymbolExplorerNode> TypeExplorerItems { get; } = [];
     public IReadOnlyList<UiOption<ExecutionKeyMode>> ExecutionKeyOptions { get; } =
@@ -178,7 +209,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public IRelayCommand ToggleReferenceDrawerCommand { get; }
     public IRelayCommand ToggleTypeExplorerCommand { get; }
     public IAsyncRelayCommand SearchPackagesCommand { get; }
-    public IAsyncRelayCommand<NuGetPackageInfo> InstallPackageCommand { get; }
+    public IAsyncRelayCommand<PackageSearchItem> InstallPackageCommand { get; }
     public IAsyncRelayCommand AddUsingFromGuiCommand { get; }
 
     public MainViewModel()
@@ -190,7 +221,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SetSessionStatus("Session.Count", 0);
         DiagnosticStatus = Localize("Diagnostics.Count", 0, 0);
         CursorStatus = Localize("Cursor.Position", 1, 1);
-        TypeExplorerStatus = Localize("Explorer.Loading");
         SetPackageSearchMessage("Package.SearchPrompt");
         ResetCommand = new AsyncRelayCommand(ResetAsync);
         RestartWorkerCommand = new AsyncRelayCommand(RestartWorkerAsync);
@@ -198,7 +228,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         ToggleReferenceDrawerCommand = new RelayCommand(() => IsReferenceDrawerOpen = !IsReferenceDrawerOpen);
         ToggleTypeExplorerCommand = new RelayCommand(() => IsTypeExplorerOpen = !IsTypeExplorerOpen);
         SearchPackagesCommand = new AsyncRelayCommand(SearchPackagesAsync);
-        InstallPackageCommand = new AsyncRelayCommand<NuGetPackageInfo>(InstallPackageAsync);
+        InstallPackageCommand = new AsyncRelayCommand<PackageSearchItem>(InstallPackageAsync);
         AddUsingFromGuiCommand = new AsyncRelayCommand(AddUsingFromGuiAsync);
         worker.EventReceived += envelope => InvokeOnUi(() => HandleWorkerEventSafely(envelope));
         worker.Disconnected += disconnection => InvokeOnUi(() =>
@@ -1198,7 +1228,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SetPackageSearchMessage("Package.QueryChanged", searchResults.Query);
             return;
         }
-        foreach (var item in searchResults.Packages) PackageSearchItems.Add(item);
+        foreach (var item in searchResults.Packages) PackageSearchItems.Add(new(item));
         packageResultQuery = searchResults.Query.Trim();
         packageResultIncludesPrerelease = requestedPrerelease;
         if (searchResults.TotalHits == 0)
@@ -1405,12 +1435,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private Task InstallPackageAsync(NuGetPackageInfo? package) => package is null
+    private Task InstallPackageAsync(PackageSearchItem? package) => package is null
         ? Task.CompletedTask
-        : AddPackageAsync(package.PackageId, package.Version);
+        : AddPackageAsync(package.PackageId, package.SelectedVersion);
 
     private async Task AddPackageAsync(string packageId, string? version)
     {
+        version = string.IsNullOrWhiteSpace(version) ? null : version.Trim();
         if (IsPackageSearchBusy) return;
         if (!IsWorkerConnected)
         {
@@ -1560,8 +1591,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var refresh = new CancellationTokenSource();
         typeExplorerRefresh = refresh;
         var context = Context;
-        TypeExplorerStatus = Localize("Explorer.Loading");
-
         try
         {
             var entries = await Task.Run(
@@ -1575,7 +1604,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception)
         {
-            if (!refresh.IsCancellationRequested) TypeExplorerStatus = Localize("Explorer.Unavailable");
         }
     }
 
@@ -1584,7 +1612,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         typeExplorerSearchDelay?.Cancel();
         typeExplorerSearchDelay?.Dispose();
         typeExplorerSearchDelay = new CancellationTokenSource();
-        TypeExplorerStatus = Localize("Explorer.Filtering");
         _ = RebuildTypeExplorerAfterDelayAsync(typeExplorerSearchDelay.Token);
     }
 
@@ -1616,9 +1643,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception)
         {
-            if (!cancellationToken.IsCancellationRequested &&
-                string.Equals(query, TypeExplorerSearchText.Trim(), StringComparison.Ordinal))
-                TypeExplorerStatus = Localize("Explorer.Unavailable");
             return false;
         }
 
@@ -1629,11 +1653,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         TypeExplorerItems.Clear();
         foreach (var item in result.Items) TypeExplorerItems.Add(item);
 
-        TypeExplorerStatus = string.IsNullOrEmpty(query)
-            ? Localize("Explorer.Count", result.TypeCount, result.MemberCount, result.EnumMemberCount)
-            : result.TotalMatchCount > result.DisplayedMatchCount
-                ? Localize("Explorer.MatchesLimited", result.TotalMatchCount, result.DisplayedMatchCount)
-                : Localize("Explorer.Matches", result.TotalMatchCount);
         return true;
     }
 
@@ -1643,13 +1662,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         IReadOnlyList<SymbolExplorerEntry> filtered;
-        var totalMatchCount = 0;
-        var displayedMatchCount = 0;
         if (string.IsNullOrEmpty(query))
         {
             filtered = entries;
-            totalMatchCount = entries.Count;
-            displayedMatchCount = totalMatchCount;
         }
         else
         {
@@ -1658,10 +1673,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!MatchesExplorerQuery(entry, query)) continue;
-                totalMatchCount++;
-                if (matched.Count < MaximumExplorerSearchResults) matched.Add(entry);
+                matched.Add(entry);
+                if (matched.Count == MaximumExplorerSearchResults) break;
             }
-            displayedMatchCount = matched.Count;
             var parentKeys = matched
                 .Where(static entry => entry.ContainingType is not null)
                 .Select(static entry => (entry.Namespace, TypeName: entry.ContainingType!, entry.AssemblyName))
@@ -1692,13 +1706,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                      .ThenBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
             .Select(item => item.Build(!string.IsNullOrEmpty(query), cancellationToken))
             .ToArray();
-        return new(
-            items,
-            totalMatchCount,
-            displayedMatchCount,
-            entries.Count(static entry => entry.ContainingType is null && entry.Kind != "method"),
-            entries.Count(static entry => entry.Kind is "method" or "constructor"),
-            entries.Count(static entry => entry.Kind == "enum member"));
+        return new(items);
     }
 
     private static bool MatchesExplorerQuery(SymbolExplorerEntry entry, string query) =>
@@ -1798,13 +1806,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private sealed record ExplorerBuildResult(
-        IReadOnlyList<SymbolExplorerNode> Items,
-        int TotalMatchCount,
-        int DisplayedMatchCount,
-        int TypeCount,
-        int MemberCount,
-        int EnumMemberCount);
+    private sealed record ExplorerBuildResult(IReadOnlyList<SymbolExplorerNode> Items);
 
     private sealed class BulkObservableCollection<T> : ObservableCollection<T>
     {

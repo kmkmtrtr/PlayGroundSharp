@@ -15,14 +15,15 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <DockPanel Margin="2,0,0,8">
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+        <Grid Margin="2,0,0,8">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,7,0,0">
                 <Button x:Name="ExpandSelectedButton" Content="{DynamicResource Inspector.Expand}" Style="{StaticResource MiniButtonStyle}"
-                        Click="ExpandSelected_Click" Margin="4,0,0,0" />
+                        Click="ExpandSelected_Click" />
                 <Button x:Name="CollapseSelectedButton" Content="{DynamicResource Inspector.Collapse}" Style="{StaticResource MiniButtonStyle}"
                         Click="CollapseSelected_Click" Margin="4,0,0,0" />
                 <Button x:Name="CopySelectedButton" Content="{DynamicResource Inspector.CopySelected}" Style="{StaticResource MiniButtonStyle}"
-                        Click="CopySelected_Click" Margin="12,0,0,0"
+                        Click="CopySelected_Click" Margin="8,0,0,0"
                         ToolTip="{DynamicResource Inspector.CopySelectedTooltip}" />
                 <Button Content="{DynamicResource Inspector.CopyAll}" Style="{StaticResource MiniButtonStyle}"
                         Click="CopyAll_Click" Margin="4,0,0,0"
@@ -39,7 +40,7 @@
                 <Button x:Name="TableModeButton" Content="{DynamicResource Inspector.TableView}" Style="{StaticResource MiniButtonStyle}"
                         Click="TableMode_Click" ToolTip="{DynamicResource Inspector.TableUnavailableTooltip}" />
             </StackPanel>
-        </DockPanel>
+        </Grid>
         <Grid x:Name="TreeSearchPanel" Grid.Row="1" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />

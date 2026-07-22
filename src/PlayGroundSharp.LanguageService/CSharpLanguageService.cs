@@ -676,7 +676,8 @@ public sealed class CSharpLanguageService
         workspace.AddProject(projectInfo);
         var usingDirectives = string.Join(Environment.NewLine, context.Imports.Select(static import => $"using {import};"));
         const string globals = "dynamic Last = default!; dynamic Out = default!; " +
-            "var Data = new PlayGroundSharp.Core.LargeDataAccess();";
+            "var Data = new PlayGroundSharp.Core.LargeDataAccess(); " +
+            "System.Threading.CancellationToken ExecutionCancellation = default;";
         var prefix = usingDirectives + Environment.NewLine + Environment.NewLine + globals + Environment.NewLine + Environment.NewLine +
             string.Join(Environment.NewLine + Environment.NewLine, context.Submissions.Select(NormalizeHistoricalSubmission));
         if (prefix.Length > 0) prefix += Environment.NewLine + Environment.NewLine;

@@ -48,6 +48,41 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task CompletesJsonElementMembersAfterReadingJsonWithExecutionCancellation()
+    {
+        var context = new SessionContext(
+            ["""var json = await Data.ReadJsonAsync(@"C:\data\sample.json", ExecutionCancellation)"""],
+            SessionContext.DefaultImports,
+            []);
+        const string code = "json.";
+
+        var items = await service.GetCompletionsAsync(context, code, code.Length);
+        var diagnostics = await service.GetDiagnosticsAsync(context, code);
+        var names = items.Select(static item => item.DisplayText).ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(names.Contains("GetProperty"),
+            string.Join(" | ", diagnostics.Select(static item => $"{item.Id}: {item.Message}")));
+        Assert.Contains("TryGetProperty", names);
+        Assert.Contains("EnumerateObject", names);
+        Assert.Contains("ValueKind", names);
+    }
+
+    [Fact]
+    public async Task CompletesJsonElementMembersWithinTheReadingSubmission()
+    {
+        const string code = """
+            var json = await Data.ReadJsonAsync(@"C:\data\sample.json", ExecutionCancellation);
+            json.
+            """;
+
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "GetProperty");
+        Assert.Contains(items, static item => item.DisplayText == "EnumerateArray");
+        Assert.Contains(items, static item => item.DisplayText == "GetRawText");
+    }
+
+    [Fact]
     public async Task AcceptsDynamicMemberBindingInDiagnostics()
     {
         const string code = "dynamic value = new { Number = 21 }; (int)value.Number * 2";

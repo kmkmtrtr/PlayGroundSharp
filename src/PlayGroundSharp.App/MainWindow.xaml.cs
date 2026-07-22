@@ -361,7 +361,8 @@ public partial class MainWindow : Window
     {
         var source = e.OriginalSource as DependencyObject;
         if (AssistPopup.IsOpen &&
-            FindAncestor<ICSharpCode.AvalonEdit.TextEditor>(source) != Editor)
+            FindAncestor<ICSharpCode.AvalonEdit.TextEditor>(source) != Editor &&
+            !IsDescendantOf(source, AssistPopupBorder))
             HideAssist();
         if (SymbolDetailPopup.IsOpen &&
             FindAncestor<TreeView>(source) != TypeExplorerTree)
@@ -417,6 +418,16 @@ public partial class MainWindow : Window
             current = GetParent(current);
         }
         return null;
+    }
+
+    private static bool IsDescendantOf(DependencyObject? current, DependencyObject ancestor)
+    {
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, ancestor)) return true;
+            current = GetParent(current);
+        }
+        return false;
     }
 
     private static DependencyObject? GetParent(DependencyObject current)
@@ -1299,7 +1310,8 @@ public partial class MainWindow : Window
             e.Handled = true;
             BeginQuickInfoChord();
         }
-        else if (assistMode == AssistMode.Completion && e.Key == Key.Tab &&
+        else if (assistMode == AssistMode.Completion &&
+            e.Key is Key.Tab or Key.Enter && Keyboard.Modifiers == ModifierKeys.None &&
             CompletionList.SelectedItem is CompletionCandidate candidate)
         {
             e.Handled = true;
@@ -1541,12 +1553,41 @@ public partial class MainWindow : Window
         CancelAndDispose(ref completionCancellation);
     }
 
-    private async void CompletionList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private async void CompletionList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (CompletionList.SelectedItem is CompletionCandidate item)
+        if (assistMode != AssistMode.Completion ||
+            FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext is not
+                CompletionCandidate item) return;
+
+        e.Handled = true;
+        await InsertCompletionAsync(item);
+    }
+
+    private void CompletionList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        var scrollViewer = FindDescendant<ScrollViewer>(CompletionList);
+        if (scrollViewer is not { ScrollableHeight: > 0 }) return;
+
+        var wheelNotches = Math.Max(1, Math.Abs(e.Delta) / 120);
+        var linesPerNotch = SystemParameters.WheelScrollLines;
+        if (linesPerNotch < 0)
         {
-            await InsertCompletionAsync(item);
+            for (var index = 0; index < wheelNotches; index++)
+            {
+                if (e.Delta > 0) scrollViewer.PageUp();
+                else scrollViewer.PageDown();
+            }
         }
+        else
+        {
+            var lineCount = wheelNotches * Math.Clamp(linesPerNotch, 1, 10);
+            for (var index = 0; index < lineCount; index++)
+            {
+                if (e.Delta > 0) scrollViewer.LineUp();
+                else scrollViewer.LineDown();
+            }
+        }
+        e.Handled = true;
     }
 
     private async Task InsertCompletionAsync(CompletionCandidate item)

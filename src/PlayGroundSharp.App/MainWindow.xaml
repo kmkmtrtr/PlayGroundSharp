@@ -490,7 +490,8 @@
                             <ListBox x:Name="CompletionList" Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
                                      FontFamily="Cascadia Mono,Consolas" Focusable="False"
                                      SelectionChanged="CompletionList_SelectionChanged"
-                                     MouseDoubleClick="CompletionList_MouseDoubleClick">
+                                     PreviewMouseLeftButtonUp="CompletionList_PreviewMouseLeftButtonUp"
+                                     PreviewMouseWheel="CompletionList_PreviewMouseWheel">
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem">
                                         <Setter Property="Focusable" Value="False" />

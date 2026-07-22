@@ -30,10 +30,10 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("入力と補完", "C#補完、シグネチャ、診断を現在のセッション状態から生成します。",
         [
-            new("キー操作", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterまたはShift+Enterで改行します。Ctrl+Spaceで補完、Tabで明示選択、↑↓で1件、PageUp/PageDownで1ページ移動し、Escで閉じます。Ctrl+K, Ctrl+Iでキャレット位置のクイック情報、F8／Shift+F8で次／前の診断、F6／Shift+F6でペイン移動ができます。Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。"),
+            new("キー操作", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterまたはShift+Enterで改行します。Ctrl+Spaceで補完を開き、Enter／Tab／クリックで確定、↑↓で1件、PageUp／PageDownで1ページ移動、ホイールでスクロールし、Escで閉じます。Ctrl+K, Ctrl+Iでキャレット位置のクイック情報、F8／Shift+F8で次／前の診断、F6／Shift+F6でペイン移動ができます。Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。"),
             new("履歴", "一行入力で上下キーを押すと履歴を移動します。過去の入力行をクリックして現在の入力へコピーできます。"),
             new("ファイルとフォルダのドロップ", "入力欄へドロップすると操作メニューを表示します。パス挿入、JSONやテキストの読み込みコード、フォルダ内ファイルの列挙を選べます。.pgsworkspaceは確認後にワークスペースとして開けます。コードを自動実行することはありません。複数パスは配列として挿入します。"),
-            new("補完の確定", "候補は入力内容に応じて絞り込まれます。未usingの型や拡張メソッドには「using 名前空間」を表示し、確定時にusingを自動追加します。拡張メソッドを手入力した場合も、名前空間が一意なら実行前に追加します。Enterでは候補を確定せず、Tabまたはダブルクリックだけで挿入します。")
+            new("補完の確定", "候補は入力内容に応じて絞り込まれます。未usingの型や拡張メソッドには「using 名前空間」を表示し、確定時にusingを自動追加します。拡張メソッドを手入力した場合も、名前空間が一意なら実行前に追加します。候補が表示されている間はEnter、Tab、または候補のクリックで挿入します。")
         ]),
         new("シンボル", "名前空間、型、メソッドとドキュメントを探索します。",
         [
@@ -76,7 +76,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Input and IntelliSense", "Completion and diagnostics use the current session state.",
         [
-            new("Keys", "With Enter-to-run, Shift+Enter inserts a line break; with Ctrl+Enter-to-run, Enter or Shift+Enter inserts one. Ctrl+Space opens completion, Tab accepts, arrow keys move one item, PageUp/PageDown move one page, and Esc closes it. Ctrl+K, Ctrl+I shows Quick Info at the caret; F8/Shift+F8 moves through diagnostics; F6/Shift+F6 cycles panes. Ctrl+L focuses input and Ctrl+F focuses symbol search."),
+            new("Keys", "With Enter-to-run, Shift+Enter inserts a line break; with Ctrl+Enter-to-run, Enter or Shift+Enter inserts one. Ctrl+Space opens completion; Enter, Tab, or a click accepts; arrow keys move one item; PageUp/PageDown move one page; the wheel scrolls; and Esc closes it. Ctrl+K, Ctrl+I shows Quick Info at the caret; F8/Shift+F8 moves through diagnostics; F6/Shift+F6 cycles panes. Ctrl+L focuses input and Ctrl+F focuses symbol search."),
             new("Automatic imports", "Unimported types and extension methods show a 'using Namespace' badge. Accepting one adds that using before inserting the completion."),
             new("Dropping files and folders", "Drop onto the input editor to choose between inserting a path, generating data-reading code, or enumerating a folder. A .pgsworkspace file can be opened as a workspace after confirmation. Nothing is executed automatically. Multiple paths are inserted as an array."),
             new("History", "Use Up and Down on a single line, or click a prior input to copy it into the editor.")

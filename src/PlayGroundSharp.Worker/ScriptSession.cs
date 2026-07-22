@@ -32,6 +32,7 @@ public sealed class ScriptSession
     private readonly List<string> imports = [.. SessionContext.DefaultImports];
     private readonly List<string> references = [];
     private readonly Dictionary<string, (string Identity, string Path)> assemblyIdentities = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> resolvedAssemblyNames = new(StringComparer.OrdinalIgnoreCase);
     private ScriptState<object?>? state;
     private ScriptOptions options;
 
@@ -46,6 +47,14 @@ public sealed class ScriptSession
                 typeof(JsonElement).Assembly,
                 typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly,
                 typeof(System.Numerics.BigInteger).Assembly);
+        foreach (var reference in options.MetadataReferences)
+        {
+            var display = reference.Display;
+            if (string.IsNullOrWhiteSpace(display)) continue;
+            var separator = display.LastIndexOf(": ", StringComparison.Ordinal);
+            var normalizedDisplay = separator >= 0 ? display[(separator + 2)..] : display;
+            resolvedAssemblyNames.Add(Path.GetFileNameWithoutExtension(normalizedDisplay));
+        }
     }
 
     public SessionContext Context => new([.. submissions], [.. imports], [.. references]);
@@ -192,7 +201,13 @@ public sealed class ScriptSession
         {
             throw new InvalidOperationException($"Assembly '{simpleName}' is already loaded from another path or version. Worker reconstruction is required.");
         }
+        var platformReferences = PlatformReferenceResolver.ResolveRuntimeDependencies([fullPath])
+            .Where(path => resolvedAssemblyNames.Add(Path.GetFileNameWithoutExtension(path)))
+            .Select(static path => MetadataReference.CreateFromFile(path))
+            .ToArray();
+        if (platformReferences.Length > 0) options = options.AddReferences(platformReferences);
         options = options.AddReferences(MetadataReference.CreateFromFile(fullPath));
+        resolvedAssemblyNames.Add(simpleName);
         references.Add(fullPath);
         assemblyIdentities[simpleName] = (identity, fullPath);
     }

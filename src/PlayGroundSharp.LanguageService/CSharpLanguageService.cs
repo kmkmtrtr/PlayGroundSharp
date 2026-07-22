@@ -89,6 +89,8 @@ public sealed class CSharpLanguageService
         new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, DocumentationInfo>> DocumentationFileCache =
         new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> ExtensionContainerCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Returns whether accepting a submission can add entries to the symbol explorer.</summary>
     public static bool ContainsSymbolExplorerDeclarations(string code)
@@ -145,11 +147,10 @@ public sealed class CSharpLanguageService
                     .Select(CreateSymbolCompletionCandidate));
             }
         }
-        if (items.Any(static item => item.IsExtensionMethod && item.SourceNamespace is null))
-            await AddExtensionNamespacesAsync(
-                workspaceDocument.Document, workspaceDocument.CurrentOffset, position, context.Imports,
-                context.ReferencePaths, items, cancellationToken)
-                .ConfigureAwait(false);
+        await AddExtensionCompletionsAndNamespacesAsync(
+            workspaceDocument.Document, workspaceDocument.CurrentOffset, position, context.Imports,
+            context.ReferencePaths, items, cancellationToken)
+            .ConfigureAwait(false);
         for (var index = 0; index < items.Count; index++)
         {
             var item = items[index];
@@ -328,22 +329,44 @@ public sealed class CSharpLanguageService
         if (root is null || model is null) return null;
         var absolutePosition = workspaceDocument.CurrentOffset + position;
         var invocation = FindInvocationAtPosition(root, absolutePosition);
-        if (invocation is null) return null;
-        var methods = model.GetMemberGroup(invocation.Expression, cancellationToken)
-            .OfType<IMethodSymbol>()
+        var objectCreation = FindObjectCreationAtPosition(root, absolutePosition);
+        var useObjectCreation = objectCreation?.ArgumentList is { } creationArguments &&
+            (invocation is null || creationArguments.FullSpan.Length < invocation.ArgumentList.FullSpan.Length);
+        if (invocation is null && !useObjectCreation) return null;
+
+        var argumentList = useObjectCreation ? objectCreation!.ArgumentList! : invocation!.ArgumentList;
+        var symbolInfo = useObjectCreation
+            ? model.GetSymbolInfo(objectCreation!, cancellationToken)
+            : model.GetSymbolInfo(invocation!, cancellationToken);
+        var resolvedMethod = symbolInfo.Symbol as IMethodSymbol;
+        IEnumerable<IMethodSymbol> methodCandidates;
+        if (useObjectCreation)
+        {
+            var createdType = model.GetTypeInfo(objectCreation!, cancellationToken).Type as INamedTypeSymbol;
+            methodCandidates = (createdType?.InstanceConstructors ?? [])
+                .Concat(symbolInfo.CandidateSymbols.OfType<IMethodSymbol>())
+                .Where(method => method.MethodKind == MethodKind.Constructor &&
+                                 model.IsAccessible(absolutePosition, method));
+        }
+        else
+        {
+            methodCandidates = model.GetMemberGroup(invocation!.Expression, cancellationToken)
+                .OfType<IMethodSymbol>()
+                .Concat(symbolInfo.CandidateSymbols.OfType<IMethodSymbol>());
+        }
+        var methods = methodCandidates
             .Distinct<IMethodSymbol>(SymbolEqualityComparer.Default)
             .ToArray();
         if (methods.Length == 0) return null;
 
-        var resolvedMethod = model.GetSymbolInfo(invocation, cancellationToken).Symbol as IMethodSymbol;
-        var activeArgument = GetActiveArgumentIndex(invocation.ArgumentList, absolutePosition);
+        var activeArgument = GetActiveArgumentIndex(argumentList, absolutePosition);
         var rankedMethods = methods
             .Select((method, originalIndex) => new
             {
                 Method = method,
                 OriginalIndex = originalIndex,
                 IsResolved = AreSameMethod(method, resolvedMethod),
-                Score = GetOverloadScore(method, invocation.ArgumentList, model, cancellationToken)
+                Score = GetOverloadScore(method, argumentList, model, cancellationToken)
             })
             .OrderByDescending(static item => item.IsResolved)
             .ThenByDescending(static item => item.Score.IsCompatible)
@@ -364,7 +387,7 @@ public sealed class CSharpLanguageService
                 method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
                 documentation.Summary,
                 parameters,
-                GetActiveParameterIndex(method, invocation.ArgumentList, activeArgument));
+                GetActiveParameterIndex(method, argumentList, activeArgument));
         }).DistinctBy(static item => item.DisplayText, StringComparer.Ordinal).ToArray();
         return new(signatures, 0);
     }
@@ -387,6 +410,27 @@ public sealed class CSharpLanguageService
             .OrderBy(static candidate => candidate.ArgumentList.FullSpan.Length)
             .FirstOrDefault();
 
+    }
+
+    private static BaseObjectCreationExpressionSyntax? FindObjectCreationAtPosition(SyntaxNode root, int position)
+    {
+        var probePosition = Math.Clamp(
+            position > root.FullSpan.Start ? position - 1 : position,
+            root.FullSpan.Start,
+            Math.Max(root.FullSpan.Start, root.FullSpan.End - 1));
+        var objectCreation = root.FindToken(probePosition, findInsideTrivia: true).Parent?
+            .AncestorsAndSelf()
+            .OfType<BaseObjectCreationExpressionSyntax>()
+            .FirstOrDefault(candidate => candidate.ArgumentList is { } argumentList &&
+                                         IsPositionInArgumentList(argumentList, position));
+        if (objectCreation is not null) return objectCreation;
+
+        return root.DescendantNodes()
+            .OfType<BaseObjectCreationExpressionSyntax>()
+            .Where(candidate => candidate.ArgumentList is { } argumentList &&
+                                IsPositionInArgumentList(argumentList, position))
+            .OrderBy(static candidate => candidate.ArgumentList!.FullSpan.Length)
+            .FirstOrDefault();
     }
 
     private static bool IsPositionInArgumentList(ArgumentListSyntax argumentList, int position) =>
@@ -619,8 +663,11 @@ public sealed class CSharpLanguageService
         var parseOptions = new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script);
         var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
             usings: context.Imports, nullableContextOptions: NullableContextOptions.Enable);
+        var dynamicReferencePaths = context.ReferencePaths.Where(File.Exists).Select(Path.GetFullPath).ToArray();
         var references = PlatformReferences.Value
-            .Concat(context.ReferencePaths.Where(File.Exists).Select(CreateMetadataReference))
+            .Concat(PlatformReferenceResolver.ResolveRuntimeDependencies(dynamicReferencePaths)
+                .Select(CreateMetadataReference))
+            .Concat(dynamicReferencePaths.Select(CreateMetadataReference))
             .GroupBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.First());
         var projectInfo = ProjectInfo.Create(projectId, VersionStamp.Create(), "PlayGroundSharp.Session",
@@ -713,7 +760,7 @@ public sealed class CSharpLanguageService
         }
     }
 
-    private static async Task AddExtensionNamespacesAsync(
+    private static async Task AddExtensionCompletionsAndNamespacesAsync(
         RoslynDocument document,
         int currentOffset,
         int position,
@@ -727,7 +774,21 @@ public sealed class CSharpLanguageService
         if (root is null || model is null) return;
         var absolutePosition = currentOffset + position;
         var access = FindMemberAccessAtPosition(root, absolutePosition);
+        var receiverSymbol = access is null
+            ? null
+            : model.GetSymbolInfo(access.Expression, cancellationToken).Symbol;
+        if (receiverSymbol is INamedTypeSymbol) return;
         var receiverType = access is null ? null : model.GetTypeInfo(access.Expression, cancellationToken).Type;
+        if (receiverType is null && access is not null)
+        {
+            receiverType = receiverSymbol switch
+            {
+                ILocalSymbol local => local.Type,
+                IFieldSymbol field => field.Type,
+                IPropertySymbol property => property.Type,
+                _ => null
+            };
+        }
         if (receiverType is null || access is null) return;
 
         var namespaceCandidates = model.LookupSymbols(
@@ -742,23 +803,30 @@ public sealed class CSharpLanguageService
             .Select(static item => (item.Name, Namespace: item.Namespace!))
             .ToList();
 
-        var unresolvedNames = items.Where(static item => item.IsExtensionMethod)
-            .Select(static item => item.DisplayText)
-            .ToHashSet(StringComparer.Ordinal);
         var dynamicPaths = referencePaths.Where(File.Exists).Select(Path.GetFullPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var addedDynamicExtensions = new HashSet<(string Name, string Namespace)>(
+            ExtensionCompletionIdentityComparer.Instance);
         foreach (var reference in model.Compilation.References.OfType<PortableExecutableReference>())
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (reference.FilePath is null || !dynamicPaths.Contains(Path.GetFullPath(reference.FilePath))) continue;
             if (model.Compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly) continue;
-            foreach (var type in EnumeratePublicTypes(assembly.GlobalNamespace))
-            foreach (var method in type.GetMembers().OfType<IMethodSymbol>())
+            foreach (var metadataName in ExtensionContainerCache.GetOrAdd(
+                         Path.GetFullPath(reference.FilePath), ReadExtensionContainerNames))
             {
-                if (!method.IsExtensionMethod || !unresolvedNames.Contains(method.Name) ||
-                    method.ReduceExtensionMethod(receiverType) is null) continue;
-                var @namespace = method.ContainingNamespace?.ToDisplayString();
-                if (!string.IsNullOrWhiteSpace(@namespace)) namespaceCandidates.Add((method.Name, @namespace));
+                if (assembly.GetTypeByMetadataName(metadataName) is not { } type) continue;
+                foreach (var method in type.GetMembers().OfType<IMethodSymbol>())
+                {
+                    if (!method.IsExtensionMethod || !method.CanBeReferencedByName ||
+                        !model.IsAccessible(absolutePosition, method) ||
+                        method.ReduceExtensionMethod(receiverType) is not { } reducedMethod) continue;
+                    var @namespace = method.ContainingNamespace?.ToDisplayString();
+                    if (string.IsNullOrWhiteSpace(@namespace)) continue;
+                    namespaceCandidates.Add((method.Name, @namespace));
+                    if (addedDynamicExtensions.Add((method.Name, @namespace)))
+                        items.Add(CreateSymbolCompletionCandidate(reducedMethod));
+                }
             }
         }
 
@@ -775,6 +843,7 @@ public sealed class CSharpLanguageService
         for (var index = 0; index < items.Count; index++)
         {
             var item = items[index];
+            if (item.SourceNamespace is not null) continue;
             if (!namespacesByName.TryGetValue(item.DisplayText, out var sourceNamespace)) continue;
             items[index] = item with
             {
@@ -1122,6 +1191,95 @@ public sealed class CSharpLanguageService
         }
     }
 
+    private static IReadOnlyList<string> ReadExtensionContainerNames(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            using var peReader = new PEReader(stream);
+            if (!peReader.HasMetadata) return [];
+            var metadata = peReader.GetMetadataReader();
+            var names = new List<string>();
+            foreach (var handle in metadata.TypeDefinitions)
+            {
+                var type = metadata.GetTypeDefinition(handle);
+                var visibility = type.Attributes & TypeAttributes.VisibilityMask;
+                if (visibility is not (TypeAttributes.Public or TypeAttributes.NestedPublic)) continue;
+                if (!type.GetMethods().Any(methodHandle =>
+                    {
+                        var method = metadata.GetMethodDefinition(methodHandle);
+                        return method.Attributes.HasFlag(MethodAttributes.Public) &&
+                               method.Attributes.HasFlag(MethodAttributes.Static) &&
+                               HasExtensionAttribute(metadata, method.GetCustomAttributes());
+                    })) continue;
+                names.Add(GetMetadataTypeName(metadata, handle));
+            }
+            return names;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or BadImageFormatException)
+        {
+            return [];
+        }
+    }
+
+    private static bool HasExtensionAttribute(
+        MetadataReader metadata,
+        CustomAttributeHandleCollection attributes)
+    {
+        foreach (var handle in attributes)
+        {
+            var attribute = metadata.GetCustomAttribute(handle);
+            EntityHandle typeHandle;
+            switch (attribute.Constructor.Kind)
+            {
+                case HandleKind.MemberReference:
+                    typeHandle = metadata.GetMemberReference((MemberReferenceHandle)attribute.Constructor).Parent;
+                    break;
+                case HandleKind.MethodDefinition:
+                    typeHandle = metadata.GetMethodDefinition((MethodDefinitionHandle)attribute.Constructor)
+                        .GetDeclaringType();
+                    break;
+                default:
+                    continue;
+            }
+            var (name, @namespace) = typeHandle.Kind switch
+            {
+                HandleKind.TypeReference => GetTypeName(metadata, (TypeReferenceHandle)typeHandle),
+                HandleKind.TypeDefinition => GetTypeName(metadata, (TypeDefinitionHandle)typeHandle),
+                _ => default
+            };
+            if (name == nameof(System.Runtime.CompilerServices.ExtensionAttribute) &&
+                @namespace == "System.Runtime.CompilerServices") return true;
+        }
+        return false;
+    }
+
+    private static (string Name, string Namespace) GetTypeName(
+        MetadataReader metadata,
+        TypeReferenceHandle handle)
+    {
+        var type = metadata.GetTypeReference(handle);
+        return (metadata.GetString(type.Name), metadata.GetString(type.Namespace));
+    }
+
+    private static (string Name, string Namespace) GetTypeName(
+        MetadataReader metadata,
+        TypeDefinitionHandle handle)
+    {
+        var type = metadata.GetTypeDefinition(handle);
+        return (metadata.GetString(type.Name), metadata.GetString(type.Namespace));
+    }
+
+    private static string GetMetadataTypeName(MetadataReader metadata, TypeDefinitionHandle handle)
+    {
+        var type = metadata.GetTypeDefinition(handle);
+        var name = metadata.GetString(type.Name);
+        var declaringType = type.GetDeclaringType();
+        if (!declaringType.IsNil) return $"{GetMetadataTypeName(metadata, declaringType)}+{name}";
+        var @namespace = metadata.GetString(type.Namespace);
+        return string.IsNullOrEmpty(@namespace) ? name : $"{@namespace}.{name}";
+    }
+
     private static DocumentationInfo ParseDocumentationElement(XElement root)
     {
         var parameters = root.Elements("param")
@@ -1260,6 +1418,17 @@ public sealed class CSharpLanguageService
         public int GetHashCode((string Text, string? Namespace) value) =>
             HashCode.Combine(StringComparer.Ordinal.GetHashCode(value.Text),
                 value.Namespace is null ? 0 : StringComparer.Ordinal.GetHashCode(value.Namespace));
+    }
+
+    private sealed class ExtensionCompletionIdentityComparer : IEqualityComparer<(string Name, string Namespace)>
+    {
+        public static ExtensionCompletionIdentityComparer Instance { get; } = new();
+        public bool Equals((string Name, string Namespace) left, (string Name, string Namespace) right) =>
+            left.Name.Equals(right.Name, StringComparison.Ordinal) &&
+            left.Namespace.Equals(right.Namespace, StringComparison.Ordinal);
+        public int GetHashCode((string Name, string Namespace) value) => HashCode.Combine(
+            StringComparer.Ordinal.GetHashCode(value.Name),
+            StringComparer.Ordinal.GetHashCode(value.Namespace));
     }
 
     private sealed record DocumentationInfo(

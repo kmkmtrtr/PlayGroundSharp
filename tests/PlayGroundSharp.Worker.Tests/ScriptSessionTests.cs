@@ -62,6 +62,23 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task ExecutesExtensionsWhoseReceiverUsesAnAdditionalFrameworkReference()
+    {
+        var session = new ScriptSession();
+        session.AddReference(typeof(FixtureConnection).Assembly.Location);
+        session.AddReference(typeof(ConnectionExtensions).Assembly.Location);
+        session.AddUsing("PlayGroundSharp.TestFixture");
+
+        var result = await session.ExecuteAsync(
+            1,
+            "new PlayGroundSharp.TestDependency.FixtureConnection().Query<int>(\"select 1\").Count()");
+
+        Assert.True(result.StateAccepted,
+            string.Join(" | ", result.Diagnostics.Select(static diagnostic => $"{diagnostic.Id}: {diagnostic.Message}")));
+        Assert.Equal("0", result.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task BoundsCompilationDiagnosticsWhilePreservingTheirTotalCount()
     {
         var code = string.Join(

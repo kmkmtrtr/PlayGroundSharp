@@ -267,6 +267,62 @@ public sealed class CSharpLanguageServiceTests
         Assert.Contains(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 
+    [Fact]
+    public async Task ReturnsConstructorSignatureHelp()
+    {
+        var context = new SessionContext(
+            ["record User(string Name, int Age)"],
+            SessionContext.DefaultImports,
+            []);
+        const string code = "new User(";
+
+        var help = await service.GetSignatureHelpAsync(context, code, code.Length);
+
+        Assert.NotNull(help);
+        var signature = Assert.Single(help.Signatures);
+        Assert.Contains("string Name", signature.DisplayText, StringComparison.Ordinal);
+        Assert.Contains("int Age", signature.DisplayText, StringComparison.Ordinal);
+        Assert.Equal("Name", signature.Parameters[signature.ActiveParameter].Name);
+    }
+
+    [Fact]
+    public async Task SelectsConstructorOverloadCompatibleWithEnteredArguments()
+    {
+        var context = new SessionContext(
+            [
+                "class Widget { public Widget(string name) { } public Widget(int count, string name) { } }"
+            ],
+            SessionContext.DefaultImports,
+            []);
+        const string code = "new Widget(42, ";
+
+        var help = await service.GetSignatureHelpAsync(context, code, code.Length);
+
+        Assert.NotNull(help);
+        Assert.Equal(2, help.Signatures.Count);
+        var selected = help.Signatures[help.SelectedSignature];
+        Assert.Contains("int count", selected.DisplayText, StringComparison.Ordinal);
+        Assert.Contains("string name", selected.DisplayText, StringComparison.Ordinal);
+        Assert.Equal("name", selected.Parameters[selected.ActiveParameter].Name);
+    }
+
+    [Fact]
+    public async Task CompletesExtensionsFromASeparateDynamicReferenceWhenRegularMembersExist()
+    {
+        var context = new SessionContext(
+            ["var connection = new PlayGroundSharp.TestDependency.FixtureConnection();"],
+            SessionContext.DefaultImports,
+            [typeof(PlayGroundSharp.TestDependency.FixtureConnection).Assembly.Location, typeof(Greeter).Assembly.Location]);
+        const string code = "connection.Que";
+
+        var items = await service.GetCompletionsAsync(context, code, code.Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "ConnectionString");
+        var query = Assert.Single(items, static item => item.DisplayText == "Query");
+        Assert.True(query.IsExtensionMethod);
+        Assert.Equal("PlayGroundSharp.TestFixture", query.RequiredNamespace);
+    }
+
     [Theory]
     [InlineData("1 + 2")]
     [InlineData("delayed + 1")]

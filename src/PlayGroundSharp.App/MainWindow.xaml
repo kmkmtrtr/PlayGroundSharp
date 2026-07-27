@@ -24,7 +24,7 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <TextBlock Grid.Column="1" Text="{Binding DisplayText}" VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis" />
+                           TextWrapping="Wrap" LineHeight="18" />
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,2,0">
                     <Border Visibility="{Binding HasNamespaceHint, Converter={StaticResource BooleanToVisibilityConverter}}"
                             ToolTip="{Binding NamespaceDisplayText}" CornerRadius="3" Padding="4,1" Margin="0,0,6,0">

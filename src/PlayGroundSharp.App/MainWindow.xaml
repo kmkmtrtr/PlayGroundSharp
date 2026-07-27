@@ -153,7 +153,6 @@
                         <MenuItem Header="{DynamicResource Menu.ReadLines}" Tag="Lines" Click="InsertDataSnippet_Click" />
                         <Separator />
                         <MenuItem Header="{DynamicResource Menu.ReadJson}" Tag="Json" Click="InsertDataSnippet_Click" />
-                        <MenuItem Header="{DynamicResource Menu.ReadJsonArray}" Tag="JsonArray" Click="InsertDataSnippet_Click" />
                         <MenuItem Header="{DynamicResource Menu.ReadJsonLines}" Tag="JsonLines" Click="InsertDataSnippet_Click" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource Menu.View}" Style="{StaticResource HeaderMenuItemStyle}">

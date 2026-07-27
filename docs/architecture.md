@@ -27,7 +27,7 @@ The first submission uses `CSharpScript.RunAsync`; accepted submissions use `Con
 
 Imports can be added in place. Roslyn continuation states inherit imports, so removing one after a submission cannot mutate the existing state safely. The App confirms the state loss, starts a fresh Worker, reapplies the remaining imports and dependencies, and clears live variables/types/methods without replaying user code or its side effects. Before the first submission, removal is applied directly.
 
-`SessionGlobals.Data` exposes `LargeDataAccess` inside the Worker. Preview and byte APIs are bounded to 1 MiB, line enumeration is lazy, and JSON array/JSON Lines APIs parse incrementally. File content and arbitrary parser objects never cross IPC; only bounded result snapshots do.
+`SessionGlobals.Data` exposes `LargeDataAccess` inside the Worker. Preview and byte APIs are bounded to 1 MiB, line enumeration is lazy, ordinary JSON is returned uniformly as a `JsonNode`, and JSON Lines remains a separate asynchronous node stream. The compatibility array-streaming API still supports bounded incremental reads. File content and arbitrary parser objects never cross IPC; only bounded result snapshots do.
 
 ## Language workspace
 

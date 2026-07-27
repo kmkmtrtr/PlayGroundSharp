@@ -495,6 +495,32 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task ReadsOrdinaryJsonAsJsonNodeFromSessionGlobals()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(path, """{"name":"Ada","scores":[10,20]}""");
+        try
+        {
+            var escapedPath = path.Replace("\"", "\"\"");
+            var session = new ScriptSession();
+            var loaded = await session.ExecuteAsync(
+                1,
+                $"var json = await Data.ReadJsonAsync(@\"{escapedPath}\"); json");
+            var property = await session.ExecuteAsync(2, """json!["name"]!.GetValue<string>()""");
+
+            Assert.True(loaded.StateAccepted);
+            Assert.Equal("System.Text.Json.Nodes.JsonObject", loaded.Snapshot?.TypeName);
+            Assert.Equal(["name", "scores"], loaded.Snapshot?.Properties?.Select(static item => item.Name));
+            Assert.True(property.StateAccepted);
+            Assert.Equal("Ada", property.Snapshot?.Display);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task JsonArrayPreviewSnapshotReportsUncapturedItems()
     {
         var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.json");

@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using PlayGroundSharp.Core;
 
 namespace PlayGroundSharp.Core.Tests;
@@ -26,18 +26,20 @@ public sealed class LargeDataAccessTests : IDisposable
         var preview = data.PreviewText(textPath, 5);
         var lines = data.ReadLines(textPath).Take(2).ToArray();
         var array = await data.ReadJsonArrayAsync(jsonPath, 2);
-        var jsonObject = await data.ReadJsonAsync(jsonObjectPath);
-        var jsonLines = new List<JsonElement>();
+        var jsonArray = Assert.IsType<JsonArray>(await data.ReadJsonAsync(jsonPath));
+        var jsonObject = Assert.IsType<JsonObject>(await data.ReadJsonAsync(jsonObjectPath));
+        var jsonLines = new List<JsonNode?>();
         await foreach (var item in data.ReadJsonLinesAsync(jsonLinesPath)) jsonLines.Add(item);
 
         Assert.Equal(new FileInfo(textPath).Length, info.Length);
         Assert.Equal("alpha", preview);
         Assert.Equal(["alpha", "beta"], lines);
-        Assert.Equal([1, 2], array.Select(static item => item.GetProperty("id").GetInt32()));
+        Assert.Equal([1, 2], array.Select(static item => item!["id"]!.GetValue<int>()));
         Assert.True(Assert.IsAssignableFrom<IBoundedSequenceResult>(array).HasMoreItems);
-        Assert.Equal("Ada", jsonObject.GetProperty("name").GetString());
-        Assert.Equal([10, 20], jsonObject.GetProperty("scores").EnumerateArray().Select(static item => item.GetInt32()));
-        Assert.Equal([4, 5], jsonLines.Select(static item => item.GetProperty("id").GetInt32()));
+        Assert.Equal([1, 2, 3], jsonArray.Select(static item => item!["id"]!.GetValue<int>()));
+        Assert.Equal("Ada", jsonObject["name"]!.GetValue<string>());
+        Assert.Equal([10, 20], jsonObject["scores"]!.AsArray().Select(static item => item!.GetValue<int>()));
+        Assert.Equal([4, 5], jsonLines.Select(static item => item!["id"]!.GetValue<int>()));
     }
 
     [Fact]
@@ -50,9 +52,9 @@ public sealed class LargeDataAccessTests : IDisposable
         var limited = await data.ReadJsonArrayAsync(path, 2);
         var exact = await data.ReadJsonArrayAsync(path, 3);
 
-        Assert.Equal([1, 2], limited.Select(static item => item.GetInt32()));
+        Assert.Equal([1, 2], limited.Select(static item => item!.GetValue<int>()));
         Assert.True(Assert.IsAssignableFrom<IBoundedSequenceResult>(limited).HasMoreItems);
-        Assert.Equal([1, 2, 3], exact.Select(static item => item.GetInt32()));
+        Assert.Equal([1, 2, 3], exact.Select(static item => item!.GetValue<int>()));
         Assert.False(Assert.IsAssignableFrom<IBoundedSequenceResult>(exact).HasMoreItems);
     }
 
@@ -82,9 +84,11 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Contains("@\"C:\\one.txt\"", array, StringComparison.Ordinal);
         Assert.Contains("@\"D:\\two.json\"", array, StringComparison.Ordinal);
         Assert.Contains($"ReadJsonLinesAsync({literal}, ExecutionCancellation)", jsonLines, StringComparison.Ordinal);
+        Assert.Contains("new List<JsonNode?>()", jsonLines, StringComparison.Ordinal);
         Assert.Contains("Select(path => Data.Inspect(path))", inspections, StringComparison.Ordinal);
         Assert.Contains("@\"C:\\one.txt\"", inspections, StringComparison.Ordinal);
         Assert.Contains("foreach (var path", jsonBatch, StringComparison.Ordinal);
+        Assert.Contains("new List<JsonNode?>()", jsonBatch, StringComparison.Ordinal);
         Assert.Contains("jsonValues.Add(await Data.ReadJsonAsync(path, ExecutionCancellation))", jsonBatch, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.WhenAll", jsonBatch, StringComparison.Ordinal);
     }

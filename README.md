@@ -106,10 +106,11 @@ Workspace files do not serialize live objects or Roslyn state. Opening one start
 Data.Inspect(@"C:\data\large.json")
 Data.PreviewText(@"C:\data\large.log", 65536)
 Data.ReadLines(@"C:\data\large.csv").Take(100)
-await Data.ReadJsonArrayAsync(@"C:\data\large.json", take: 100)
+var json = await Data.ReadJsonAsync(@"C:\data\large.json");
+json?["items"]
 ```
 
-`PreviewText` and `ReadBytes` are capped at 1 MiB per call. JSON arrays are streamed and retain only the requested items (maximum 10,000); JSON Lines is exposed as an `IAsyncEnumerable<JsonElement>`. Result snapshots capture up to 10,000 collection items and 50,000 total nodes. Captured structures are expandable inline instead of being cut to the transcript's former 200-item text preview.
+`PreviewText` and `ReadBytes` are capped at 1 MiB per call. `ReadJsonAsync` returns a `JsonNode` whose runtime type reflects the input (`JsonObject`, `JsonArray`, or `JsonValue`) without requiring a separate array operation. JSON Lines remains distinct and is exposed as an `IAsyncEnumerable<JsonNode?>`. Result snapshots capture up to 10,000 collection items and 50,000 total nodes. Captured structures are expandable inline instead of being cut to the transcript's former 200-item text preview.
 
 ## Commands
 

@@ -675,7 +675,6 @@ public partial class MainWindow : Window
             "Preview" => $"Data.PreviewText({literal}, 65536)",
             "Lines" => $"Data.ReadLines({literal}).Take(100)",
             "Json" => $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)",
-            "JsonArray" => $"await Data.ReadJsonArrayAsync({literal}, take: 100, cancellationToken: ExecutionCancellation)",
             "JsonLines" => DataSnippetBuilder.CreateJsonLines(dialog.FileName),
             _ => null
         };
@@ -774,10 +773,7 @@ public partial class MainWindow : Window
             if (extension.Equals(".dll", StringComparison.OrdinalIgnoreCase))
                 menu.Items.Add(CreateDropReferenceAction(path));
             if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
-            {
                 menu.Items.Add(CreateDropAction("Drop.ReadJson", $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)"));
-                menu.Items.Add(CreateDropAction("Drop.ReadJsonArray", $"await Data.ReadJsonArrayAsync({literal}, take: 100, cancellationToken: ExecutionCancellation)"));
-            }
             else if (extension.Equals(".jsonl", StringComparison.OrdinalIgnoreCase) ||
                      extension.Equals(".ndjson", StringComparison.OrdinalIgnoreCase))
             {

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace PlayGroundSharp.Core;
 
@@ -15,14 +16,14 @@ internal interface IBoundedSequenceResult
 }
 
 /// <summary>A read-only JSON batch that records whether the source array contained more items.</summary>
-internal sealed class BoundedJsonElementList(
-    IReadOnlyList<JsonElement> items,
-    bool hasMoreItems) : IReadOnlyList<JsonElement>, IBoundedSequenceResult
+internal sealed class BoundedJsonNodeList(
+    IReadOnlyList<JsonNode?> items,
+    bool hasMoreItems) : IReadOnlyList<JsonNode?>, IBoundedSequenceResult
 {
     public bool HasMoreItems { get; } = hasMoreItems;
     public int Count => items.Count;
-    public JsonElement this[int index] => items[index];
-    public IEnumerator<JsonElement> GetEnumerator() => items.GetEnumerator();
+    public JsonNode? this[int index] => items[index];
+    public IEnumerator<JsonNode?> GetEnumerator() => items.GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
@@ -34,15 +35,13 @@ public sealed class LargeDataAccess
     public const int MaximumJsonItemCount = 10_000;
 
     /// <summary>Reads one complete JSON value such as an object, scalar, or array.</summary>
-    public async Task<JsonElement> ReadJsonAsync(
+    public async Task<JsonNode?> ReadJsonAsync(
         string path,
         CancellationToken cancellationToken = default)
     {
         var file = GetFile(path);
         await using var stream = file.OpenRead();
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        return document.RootElement.Clone();
+        return await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Returns metadata for an existing file without loading its content.</summary>
@@ -85,7 +84,7 @@ public sealed class LargeDataAccess
     }
 
     /// <summary>Streams a top-level JSON array and retains only the requested number of elements.</summary>
-    public async Task<IReadOnlyList<JsonElement>> ReadJsonArrayAsync(
+    public async Task<IReadOnlyList<JsonNode?>> ReadJsonArrayAsync(
         string path,
         int take = 100,
         CancellationToken cancellationToken = default)
@@ -93,9 +92,9 @@ public sealed class LargeDataAccess
         var file = GetFile(path);
         var boundedTake = ValidateRange(take, 1, MaximumJsonItemCount, nameof(take));
         await using var stream = file.OpenRead();
-        var items = new List<JsonElement>(Math.Min(boundedTake, 256));
+        var items = new List<JsonNode?>(Math.Min(boundedTake, 256));
         var hasMoreItems = false;
-        await foreach (var item in JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(stream, cancellationToken: cancellationToken)
+        await foreach (var item in JsonSerializer.DeserializeAsyncEnumerable<JsonNode?>(stream, cancellationToken: cancellationToken)
                            .WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             if (items.Count >= boundedTake)
@@ -103,13 +102,13 @@ public sealed class LargeDataAccess
                 hasMoreItems = true;
                 break;
             }
-            items.Add(item.Clone());
+            items.Add(item);
         }
-        return new BoundedJsonElementList(items, hasMoreItems);
+        return new BoundedJsonNodeList(items, hasMoreItems);
     }
 
     /// <summary>Streams newline-delimited JSON and parses one independent value at a time.</summary>
-    public async IAsyncEnumerable<JsonElement> ReadJsonLinesAsync(
+    public async IAsyncEnumerable<JsonNode?> ReadJsonLinesAsync(
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -118,8 +117,7 @@ public sealed class LargeDataAccess
         while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
-            using var document = JsonDocument.Parse(line);
-            yield return document.RootElement.Clone();
+            yield return JsonNode.Parse(line);
         }
     }
 

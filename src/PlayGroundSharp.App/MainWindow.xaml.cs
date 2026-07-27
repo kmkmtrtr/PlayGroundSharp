@@ -1560,9 +1560,19 @@ public partial class MainWindow : Window
 
     private async void CompletionList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        var row = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
+        if (assistMode == AssistMode.Signature &&
+            row?.DataContext is SignatureInformation signature)
+        {
+            var selectionChanged = !ReferenceEquals(CompletionList.SelectedItem, signature);
+            CompletionList.SelectedItem = signature;
+            CompletionList.ScrollIntoView(signature);
+            if (!selectionChanged) ShowSignatureDocumentation(signature);
+            e.Handled = true;
+            return;
+        }
         if (assistMode != AssistMode.Completion ||
-            FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext is not
-                CompletionCandidate item) return;
+            row?.DataContext is not CompletionCandidate item) return;
 
         e.Handled = true;
         await InsertCompletionAsync(item);

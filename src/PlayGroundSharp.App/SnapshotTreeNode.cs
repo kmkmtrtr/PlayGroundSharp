@@ -45,6 +45,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
     public bool IsSearchMatch { get; }
     [ObservableProperty] private bool isExpanded;
     [ObservableProperty] private bool isSelected;
+    internal ResultSnapshot Snapshot => snapshot;
     public string CopyText => SnapshotTextFormatter.FormatFull(snapshot);
     public IReadOnlyList<SnapshotTreeNode> Children => children ??= childrenFactory?.Invoke() ?? CreateChildren();
 

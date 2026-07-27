@@ -56,7 +56,7 @@ public sealed class SnapshotTableModelTests
     }
 
     [Fact]
-    public void ScalarSequencesDoNotOfferAMisleadingTableView()
+    public void ScalarSequencesOfferAnOptionalSingleValueColumn()
     {
         var snapshot = new ResultSnapshot(
             SnapshotKind.Sequence,
@@ -65,7 +65,68 @@ public sealed class SnapshotTableModelTests
             Items: [Number("1"), Number("2")],
             TotalCount: 2);
 
-        Assert.Null(SnapshotTableModel.TryCreate(snapshot));
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(snapshot));
+
+        Assert.True(SnapshotTableModel.CanCreate(snapshot));
+        Assert.False(table.PreferTableView);
+        Assert.True(table.HasSyntheticValueColumn);
+        Assert.Equal(["Value"], table.Columns);
+        Assert.Equal(["1", "2"], table.Rows.Select(static row => row.Cells[0].Display));
+    }
+
+    [Fact]
+    public void StructuredCellsRetainTheirSourceForNestedTableNavigation()
+    {
+        var orders = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "2 items",
+            "Order[]",
+            Items:
+            [
+                Row(("Id", Number("101")), ("Total", Number("25"))),
+                Row(("Id", Number("102")), ("Total", Number("40")))
+            ],
+            TotalCount: 2);
+        var profile = Row(("Country", Text("UK")), ("Active", Boolean("true")));
+        var scores = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "2 items",
+            "System.Int32[]",
+            Items: [Number("8"), Number("13")],
+            TotalCount: 2);
+        var customers = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "1 item",
+            "Customer[]",
+            Items: [Row(("Name", Text("Ada")), ("Profile", profile), ("Orders", orders), ("Scores", scores))],
+            TotalCount: 1);
+
+        var customerTable = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
+        var profileColumn = customerTable.Columns.ToList().IndexOf("Profile");
+        var ordersColumn = customerTable.Columns.ToList().IndexOf("Orders");
+        var scoresColumn = customerTable.Columns.ToList().IndexOf("Scores");
+        var profileCell = customerTable.Rows[0].Cells[profileColumn];
+        var ordersCell = customerTable.Rows[0].Cells[ordersColumn];
+        var scoresCell = customerTable.Rows[0].Cells[scoresColumn];
+        var profileTable = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(profileCell.Source!));
+        var ordersTable = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(ordersCell.Source!));
+        var scoresTable = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(scoresCell.Source!));
+
+        Assert.Same(profile, profileCell.Source);
+        Assert.Same(orders, ordersCell.Source);
+        Assert.Same(scores, scoresCell.Source);
+        Assert.True(SnapshotTableModel.CanCreate(profileCell.Source!));
+        Assert.True(SnapshotTableModel.CanCreate(ordersCell.Source!));
+        Assert.True(customerTable.SourceRowsAreItems);
+        Assert.Equal(0, customerTable.Rows[0].SourceIndex);
+        Assert.Equal(["Country", "Active"], profileTable.Columns);
+        Assert.Single(profileTable.Rows);
+        Assert.Equal(["Id", "Total"], ordersTable.Columns);
+        Assert.Equal(2, ordersTable.Rows.Count);
+        Assert.False(scoresTable.PreferTableView);
+        Assert.True(scoresTable.HasSyntheticValueColumn);
+        Assert.Equal(["Value"], scoresTable.Columns);
+        Assert.Equal(["8", "13"], scoresTable.Rows.Select(static row => row.Cells[0].Display));
     }
 
     private static ResultSnapshot Row(params (string Name, ResultSnapshot Value)[] properties) => new(

@@ -102,6 +102,7 @@
         <Grid x:Name="TablePanel" Grid.Row="1" Grid.RowSpan="5" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <DockPanel Margin="2,0,0,8">
@@ -111,10 +112,20 @@
                     <Button Content="{DynamicResource Inspector.SaveTable}" Style="{StaticResource MiniButtonStyle}"
                             Click="SaveTable_Click" Margin="4,0,0,0" />
                 </StackPanel>
-                <TextBlock x:Name="TableStatus" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"
-                           AutomationProperties.LiveSetting="Polite" />
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button x:Name="TableBackButton" Content="{DynamicResource Inspector.TableBack}"
+                            Style="{StaticResource MiniButtonStyle}" Click="TableBack_Click" IsEnabled="False"
+                            ToolTip="{DynamicResource Inspector.TableBackTooltip}" />
+                    <Button x:Name="OpenCellTableButton" Content="{DynamicResource Inspector.OpenCellTable}"
+                            Style="{StaticResource MiniButtonStyle}" Click="OpenCellTable_Click" IsEnabled="False"
+                            ToolTip="{DynamicResource Inspector.OpenCellTableTooltip}" Margin="4,0,0,0" />
+                </StackPanel>
             </DockPanel>
-            <DataGrid x:Name="TableGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+            <TextBlock x:Name="TableStatus" Grid.Row="1" Foreground="{DynamicResource MutedBrush}"
+                       VerticalAlignment="Center" Margin="2,0,2,8" TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                       AutomationProperties.LiveSetting="Polite" />
+            <DataGrid x:Name="TableGrid" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True"
                       AutomationProperties.Name="{DynamicResource Inspector.TableView}"
                       Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
                       BorderBrush="{DynamicResource BorderBrush}" GridLinesVisibility="All"
@@ -122,7 +133,10 @@
                       HeadersVisibility="All" RowHeaderWidth="58" RowHeight="26"
                       EnableRowVirtualization="True" EnableColumnVirtualization="True"
                       SelectionMode="Extended" SelectionUnit="CellOrRowHeader"
-                      ClipboardCopyMode="IncludeHeader" LoadingRow="TableGrid_LoadingRow">
+                      ClipboardCopyMode="IncludeHeader" LoadingRow="TableGrid_LoadingRow"
+                      SelectedCellsChanged="TableGrid_SelectedCellsChanged"
+                      MouseDoubleClick="TableGrid_MouseDoubleClick"
+                      PreviewKeyDown="TableGrid_PreviewKeyDown">
                 <DataGrid.Resources>
                     <Style TargetType="DataGridColumnHeader">
                         <Setter Property="Background" Value="{DynamicResource PanelBrush}" />

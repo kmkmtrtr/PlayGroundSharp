@@ -3,13 +3,14 @@ using PlayGroundSharp.Core;
 
 namespace PlayGroundSharp.App;
 
-internal sealed record SnapshotTableCell(string Display, string ExportValue)
+internal sealed record SnapshotTableCell(string Display, string ExportValue, ResultSnapshot? Source)
 {
-    public static SnapshotTableCell Missing { get; } = new(string.Empty, string.Empty);
+    public static SnapshotTableCell Missing { get; } = new(string.Empty, string.Empty, null);
 }
 
-internal sealed class SnapshotTableRow(IReadOnlyList<SnapshotTableCell> cells)
+internal sealed class SnapshotTableRow(int sourceIndex, IReadOnlyList<SnapshotTableCell> cells)
 {
+    public int SourceIndex { get; } = sourceIndex;
     public IReadOnlyList<SnapshotTableCell> Cells { get; } = cells;
 }
 
@@ -26,7 +27,9 @@ internal sealed class SnapshotTableModel
         int? totalRowCount,
         bool rowsTruncated,
         bool columnsTruncated,
-        bool preferTableView)
+        bool preferTableView,
+        bool sourceRowsAreItems,
+        bool hasSyntheticValueColumn)
     {
         Columns = columns;
         Rows = rows;
@@ -34,6 +37,8 @@ internal sealed class SnapshotTableModel
         RowsTruncated = rowsTruncated;
         ColumnsTruncated = columnsTruncated;
         PreferTableView = preferTableView;
+        SourceRowsAreItems = sourceRowsAreItems;
+        HasSyntheticValueColumn = hasSyntheticValueColumn;
     }
 
     public IReadOnlyList<string> Columns { get; }
@@ -42,15 +47,21 @@ internal sealed class SnapshotTableModel
     public bool RowsTruncated { get; }
     public bool ColumnsTruncated { get; }
     public bool PreferTableView { get; }
+    public bool SourceRowsAreItems { get; }
+    public bool HasSyntheticValueColumn { get; }
+
+    public static bool CanCreate(ResultSnapshot snapshot) =>
+        snapshot.Items is { Count: > 0 } ||
+        snapshot.Properties is { Count: > 0 };
 
     public static SnapshotTableModel? TryCreate(ResultSnapshot snapshot)
     {
         IReadOnlyList<ResultSnapshot> sourceRows;
-        var preferTableView = false;
+        var sourceRowsAreItems = false;
         if (snapshot.Items is { Count: > 0 } items)
         {
             sourceRows = items;
-            preferTableView = true;
+            sourceRowsAreItems = true;
         }
         else if (snapshot.Properties is { Count: > 0 })
         {
@@ -62,37 +73,54 @@ internal sealed class SnapshotTableModel
         }
 
         var displayedRows = sourceRows.Take(MaximumRows).ToArray();
-        if (displayedRows.Any(static row => row.Properties is null)) return null;
+        var rowsAreObjects =
+            displayedRows.All(static row => row.Properties is not null) &&
+            displayedRows.Any(static row => row.Properties is { Count: > 0 });
+        var hasSyntheticValueColumn = sourceRowsAreItems && !rowsAreObjects;
 
         var columns = new List<string>();
         var columnIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
         var columnsTruncated = false;
-        foreach (var row in displayedRows)
+        if (hasSyntheticValueColumn)
         {
-            foreach (var property in row.Properties!)
+            columns.Add("Value");
+        }
+        else
+        {
+            foreach (var row in displayedRows)
             {
-                if (columnIndexes.ContainsKey(property.Name)) continue;
-                if (columns.Count >= MaximumColumns)
+                foreach (var property in row.Properties!)
                 {
-                    columnsTruncated = true;
-                    continue;
+                    if (columnIndexes.ContainsKey(property.Name)) continue;
+                    if (columns.Count >= MaximumColumns)
+                    {
+                        columnsTruncated = true;
+                        continue;
+                    }
+                    columnIndexes.Add(property.Name, columns.Count);
+                    columns.Add(property.Name);
                 }
-                columnIndexes.Add(property.Name, columns.Count);
-                columns.Add(property.Name);
             }
         }
         if (columns.Count == 0) return null;
 
         var rows = new List<SnapshotTableRow>(displayedRows.Length);
-        foreach (var sourceRow in displayedRows)
+        for (var sourceIndex = 0; sourceIndex < displayedRows.Length; sourceIndex++)
         {
+            var sourceRow = displayedRows[sourceIndex];
+            if (hasSyntheticValueColumn)
+            {
+                rows.Add(new(sourceIndex, [CreateCell(sourceRow)]));
+                continue;
+            }
+
             var cells = Enumerable.Repeat(SnapshotTableCell.Missing, columns.Count).ToArray();
             foreach (var property in sourceRow.Properties!)
             {
                 if (!columnIndexes.TryGetValue(property.Name, out var columnIndex)) continue;
                 cells[columnIndex] = CreateCell(property.Value);
             }
-            rows.Add(new(cells));
+            rows.Add(new(sourceIndex, cells));
         }
 
         var totalRowCount = snapshot.Items is null
@@ -101,7 +129,15 @@ internal sealed class SnapshotTableModel
         var rowsTruncated = snapshot.Items is not null &&
                             (snapshot.IsTruncated || displayedRows.Length < sourceRows.Count ||
                              totalRowCount is { } total && displayedRows.Length < total);
-        return new(columns, rows, totalRowCount, rowsTruncated, columnsTruncated, preferTableView);
+        return new(
+            columns,
+            rows,
+            totalRowCount,
+            rowsTruncated,
+            columnsTruncated,
+            sourceRowsAreItems && rowsAreObjects,
+            sourceRowsAreItems,
+            hasSyntheticValueColumn);
     }
 
     public string FormatDelimited(char delimiter)
@@ -144,7 +180,7 @@ internal sealed class SnapshotTableModel
             .Replace('\t', '⇥');
         if (display.Length > MaximumCellPreviewLength)
             display = display[..(MaximumCellPreviewLength - 1)] + "…";
-        return new(display, exportValue);
+        return new(display, exportValue, snapshot);
     }
 
     private static void AppendDelimitedRow(StringBuilder builder, IEnumerable<string> values, char delimiter)

@@ -90,6 +90,26 @@ public sealed class SnapshotTreeNodeTests
         Assert.DoesNotContain("3 プロパティ", root.Label, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ChildNodesExposeTheirStructuredSnapshotForAlternateViews()
+    {
+        var nested = new ResultSnapshot(
+            SnapshotKind.Object,
+            "1 property",
+            "Address",
+            Properties: [new("City", new(SnapshotKind.String, "London", "System.String"))]);
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Object,
+            "1 property",
+            "Customer",
+            Properties: [new("Address", nested)]);
+
+        var address = Assert.Single(SnapshotTreeNode.CreateRoot(snapshot, AppLanguageMode.English).Children);
+
+        Assert.Same(nested, address.Snapshot);
+        Assert.Equal("$.Address", address.Path);
+    }
+
     private static int CountNodes(SnapshotTreeNode node) =>
         1 + node.Children.Sum(CountNodes);
 

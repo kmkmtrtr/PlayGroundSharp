@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using PlayGroundSharp.Core;
@@ -17,13 +18,16 @@ public partial class ResultInspectorWindow : Window
     private readonly MainViewModel viewModel;
     private AppLanguageMode languageMode;
     private readonly ResultSnapshot snapshot;
-    private readonly SnapshotTableModel? tableModel;
+    private readonly Dictionary<DataGridColumn, int> tableColumnIndexes = [];
+    private readonly Stack<TableNavigationState> tableHistory = [];
+    private SnapshotTableModel? tableModel;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private readonly DispatcherTimer notificationTimer = new() { Interval = TimeSpan.FromSeconds(1.8) };
     private SnapshotTreeNode? selectedNode;
     private CancellationTokenSource? searchCancellation;
     private string currentSearchStatus = string.Empty;
     private string tableSummaryStatus = string.Empty;
+    private string tablePath = "$";
     private string appliedQuery = string.Empty;
     private bool copyInProgress;
     private bool isTableMode;
@@ -142,6 +146,7 @@ public partial class ResultInspectorWindow : Window
             e.Handled = true;
             if (isTableMode)
             {
+                if (NavigateToParentTable()) return;
                 Close();
                 return;
             }
@@ -326,7 +331,19 @@ public partial class ResultInspectorWindow : Window
 
     private void TreeMode_Click(object sender, RoutedEventArgs e) => SetTableMode(false);
 
-    private void TableMode_Click(object sender, RoutedEventArgs e) => SetTableMode(true);
+    private void TableMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (isTableMode || selectedNode is null) return;
+        var selectedTable = SnapshotTableModel.TryCreate(selectedNode.Snapshot);
+        if (selectedTable is null) return;
+        tableHistory.Clear();
+        ShowTable(selectedTable, selectedNode.Path);
+        SetTableMode(true);
+    }
+
+    private void TableBack_Click(object sender, RoutedEventArgs e) => NavigateToParentTable();
+
+    private void OpenCellTable_Click(object sender, RoutedEventArgs e) => OpenSelectedCellTable();
 
     private async void CopyTable_Click(object sender, RoutedEventArgs e)
     {
@@ -338,6 +355,30 @@ public partial class ResultInspectorWindow : Window
 
     private void TableGrid_LoadingRow(object sender, DataGridRowEventArgs e) =>
         e.Row.Header = (e.Row.GetIndex() + 1).ToString("N0");
+
+    private void TableGrid_SelectedCellsChanged(object sender, SelectedCellsChangedEventArgs e) =>
+        UpdateOpenCellTableState();
+
+    private void TableGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<DataGridCell>(e.OriginalSource as DependencyObject) is null) return;
+        if (OpenSelectedCellTable()) e.Handled = true;
+    }
+
+    private void TableGrid_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.Enter)
+        {
+            if (OpenSelectedCellTable()) e.Handled = true;
+            return;
+        }
+        if ((Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.Back) ||
+            (Keyboard.Modifiers == ModifierKeys.Alt &&
+             (e.Key == Key.Left || e.Key == Key.System && e.SystemKey == Key.Left)))
+        {
+            if (NavigateToParentTable()) e.Handled = true;
+        }
+    }
 
     private async Task SaveAllAsync()
     {
@@ -394,8 +435,85 @@ public partial class ResultInspectorWindow : Window
         }
     }
 
+    private void ShowTable(SnapshotTableModel model, string path)
+    {
+        tableModel = model;
+        tablePath = path;
+        ConfigureTable();
+    }
+
+    private bool OpenSelectedCellTable()
+    {
+        if (!TryGetSelectedTableCell(out var cell, out var path) ||
+            cell.Source is null ||
+            SnapshotTableModel.TryCreate(cell.Source) is not { } nestedTable)
+            return false;
+
+        if (tableModel is not null) tableHistory.Push(new(tableModel, tablePath));
+        ShowTable(nestedTable, path);
+        Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
+        return true;
+    }
+
+    private bool NavigateToParentTable()
+    {
+        if (!tableHistory.TryPop(out var parent)) return false;
+        ShowTable(parent.Model, parent.Path);
+        Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
+        return true;
+    }
+
+    private void UpdateOpenCellTableState()
+    {
+        OpenCellTableButton.IsEnabled =
+            TryGetSelectedTableCell(out var cell, out _) &&
+            cell.Source is not null &&
+            SnapshotTableModel.CanCreate(cell.Source);
+    }
+
+    private bool TryGetSelectedTableCell(out SnapshotTableCell cell, out string path)
+    {
+        cell = SnapshotTableCell.Missing;
+        path = string.Empty;
+        if (tableModel is null) return false;
+        var selectedCell = TableGrid.CurrentCell.IsValid
+            ? TableGrid.CurrentCell
+            : TableGrid.SelectedCells.FirstOrDefault();
+        if (!selectedCell.IsValid ||
+            selectedCell.Item is not SnapshotTableRow row ||
+            !tableColumnIndexes.TryGetValue(selectedCell.Column, out var columnIndex) ||
+            columnIndex < 0 ||
+            columnIndex >= row.Cells.Count)
+            return false;
+
+        cell = row.Cells[columnIndex];
+        var rowPath = tableModel.SourceRowsAreItems
+            ? $"{tablePath}[{row.SourceIndex}]"
+            : tablePath;
+        path = tableModel.HasSyntheticValueColumn
+            ? rowPath
+            : AppendPropertyPath(rowPath, tableModel.Columns[columnIndex]);
+        return cell.Source is not null;
+    }
+
+    private static string AppendPropertyPath(string path, string propertyName) =>
+        IsSimpleIdentifier(propertyName)
+            ? $"{path}.{propertyName}"
+            : $"{path}[{SnapshotTextFormatter.QuoteJsonString(propertyName)}]";
+
+    private static bool IsSimpleIdentifier(string value) =>
+        value.Length > 0 &&
+        (char.IsLetter(value[0]) || value[0] == '_') &&
+        value.Skip(1).All(static character => char.IsLetterOrDigit(character) || character == '_');
+
     private void ConfigureTable()
     {
+        TableGrid.ItemsSource = null;
+        TableGrid.Columns.Clear();
+        tableColumnIndexes.Clear();
+        TableGrid.UnselectAllCells();
+        OpenCellTableButton.IsEnabled = false;
+        TableBackButton.IsEnabled = tableHistory.Count > 0;
         TableModeButton.IsEnabled = tableModel is not null;
         if (tableModel is null) return;
 
@@ -408,7 +526,7 @@ public partial class ResultInspectorWindow : Window
             elementStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center));
             elementStyle.Setters.Add(new Setter(ToolTipService.ToolTipProperty,
                 new Binding($"Cells[{columnIndex}].Display")));
-            TableGrid.Columns.Add(new DataGridTextColumn
+            var column = new DataGridTextColumn
             {
                 Header = tableModel.Columns[columnIndex],
                 Binding = new Binding($"Cells[{columnIndex}].Display") { Mode = BindingMode.OneWay },
@@ -418,7 +536,9 @@ public partial class ResultInspectorWindow : Window
                 MaxWidth = 420,
                 Width = new DataGridLength(140),
                 SortMemberPath = $"Cells[{columnIndex}].Display"
-            });
+            };
+            TableGrid.Columns.Add(column);
+            tableColumnIndexes.Add(column, columnIndex);
         }
         UpdateTableSummary();
     }
@@ -438,7 +558,9 @@ public partial class ResultInspectorWindow : Window
         CollapseSelectedButton.Visibility = treeVisibility;
         CopySelectedButton.Visibility = treeVisibility;
         CopyPathButton.Visibility = treeVisibility;
-        TableModeButton.IsEnabled = tableModel is not null;
+        TableModeButton.IsEnabled = tableMode
+            ? tableModel is not null
+            : selectedNode is not null && SnapshotTableModel.CanCreate(selectedNode.Snapshot);
         UpdateViewModeButtons();
         RestoreStatusDisplays();
         Dispatcher.BeginInvoke(
@@ -472,6 +594,7 @@ public partial class ResultInspectorWindow : Window
         if (tableModel is null) return;
         var parts = new List<string>
         {
+            tablePath,
             AppLocalization.Text(languageMode, "Inspector.TableSummary", tableModel.Rows.Count, tableModel.Columns.Count)
         };
         if (tableModel.TotalRowCount is { } total && total > tableModel.Rows.Count)
@@ -493,6 +616,7 @@ public partial class ResultInspectorWindow : Window
         UpdateSelectionActions(true);
         DetailText.Text = node.Detail;
         PathText.Text = node.Path;
+        if (!isTableMode) TableModeButton.IsEnabled = SnapshotTableModel.CanCreate(node.Snapshot);
     }
 
     private void ClearSelection()
@@ -502,6 +626,7 @@ public partial class ResultInspectorWindow : Window
         UpdateSelectionActions(false);
         DetailText.Clear();
         PathText.Text = string.Empty;
+        if (!isTableMode) TableModeButton.IsEnabled = false;
     }
 
     private void CancelAndDisposeSearch()
@@ -570,4 +695,16 @@ public partial class ResultInspectorWindow : Window
         SearchStatus.Text = currentSearchStatus;
         TableStatus.Text = tableSummaryStatus;
     }
+
+    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
+    {
+        while (current is not null)
+        {
+            if (current is T match) return match;
+            current = current is Visual ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
+    private sealed record TableNavigationState(SnapshotTableModel Model, string Path);
 }

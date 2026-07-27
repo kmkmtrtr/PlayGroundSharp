@@ -365,6 +365,21 @@ public partial class ResultInspectorWindow : Window
         if (OpenSelectedCellTable()) e.Handled = true;
     }
 
+    private void TableGrid_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled) return;
+        var forceHorizontal = ScrollWheelRouter.IsOverHorizontalScrollZone(
+            TableGrid,
+            e.GetPosition(TableGrid));
+        if (ScrollWheelRouter.TryRouteHorizontalWheel(
+                TableGrid,
+                e.OriginalSource as DependencyObject,
+                -e.Delta,
+                Keyboard.Modifiers,
+                forceHorizontal))
+            e.Handled = true;
+    }
+
     private void TableGrid_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.Enter)
@@ -517,7 +532,6 @@ public partial class ResultInspectorWindow : Window
         TableModeButton.IsEnabled = tableModel is not null;
         if (tableModel is null) return;
 
-        TableGrid.ItemsSource = tableModel.Rows;
         for (var index = 0; index < tableModel.Columns.Count; index++)
         {
             var columnIndex = index;
@@ -540,6 +554,9 @@ public partial class ResultInspectorWindow : Window
             TableGrid.Columns.Add(column);
             tableColumnIndexes.Add(column, columnIndex);
         }
+        // Attach the potentially large row source after all columns are ready. Adding
+        // columns to a live ItemsSource repeatedly invalidates the DataGrid layout.
+        TableGrid.ItemsSource = tableModel.Rows;
         UpdateTableSummary();
     }
 

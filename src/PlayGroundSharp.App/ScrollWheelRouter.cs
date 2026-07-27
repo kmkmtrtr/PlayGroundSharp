@@ -31,21 +31,54 @@ internal static class ScrollWheelRouter
         scrollViewer.ScrollToHorizontalOffset(offset);
     }
 
+    public static bool TryRouteHorizontalWheel(
+        DependencyObject scope,
+        DependencyObject? originalSource,
+        int delta,
+        ModifierKeys modifiers,
+        bool forceHorizontal = false)
+    {
+        var scrollViewer = scope as ScrollViewer ??
+                           FindDescendant<ScrollViewer>(
+                               scope,
+                               static viewer => viewer.ScrollableWidth > 0);
+        if (scrollViewer is not { ScrollableWidth: > 0 }) return false;
+
+        var overHorizontalBar = FindAncestor<ScrollBar>(originalSource) is
+            { Orientation: Orientation.Horizontal };
+        var requestsHorizontal = forceHorizontal ||
+                                 modifiers.HasFlag(ModifierKeys.Shift) ||
+                                 scrollViewer.ScrollableHeight <= 0 ||
+                                 overHorizontalBar;
+        if (!requestsHorizontal) return false;
+
+        ScrollHorizontally(scrollViewer, delta);
+        return true;
+    }
+
+    public static bool IsOverHorizontalScrollZone(FrameworkElement element, Point position)
+    {
+        if (element.ActualWidth <= 0 || element.ActualHeight <= 0) return false;
+        var horizontalBarTop = element.ActualHeight - SystemParameters.HorizontalScrollBarHeight;
+        var verticalBarLeft = element.ActualWidth - SystemParameters.VerticalScrollBarWidth;
+        return position.Y >= horizontalBarTop &&
+               position.Y <= element.ActualHeight &&
+               position.X >= 0 &&
+               position.X < verticalBarLeft;
+    }
+
     private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (e.Handled || sender is not ScrollViewer { ScrollableWidth: > 0 } scrollViewer ||
             !ReferenceEquals(FindAncestor<ScrollViewer>(e.OriginalSource as DependencyObject), scrollViewer))
             return;
 
-        var overHorizontalBar = FindAncestor<ScrollBar>(e.OriginalSource as DependencyObject) is
-            { Orientation: Orientation.Horizontal };
-        var requestsHorizontal = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ||
-                                 scrollViewer.ScrollableHeight <= 0 ||
-                                 overHorizontalBar;
-        if (!requestsHorizontal) return;
-
-        ScrollHorizontally(scrollViewer, -e.Delta);
-        e.Handled = true;
+        if (TryRouteHorizontalWheel(
+                scrollViewer,
+                e.OriginalSource as DependencyObject,
+                -e.Delta,
+                Keyboard.Modifiers))
+            e.Handled = true;
     }
 
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
@@ -54,6 +87,19 @@ internal static class ScrollWheelRouter
         {
             if (current is T match) return match;
             current = GetParent(current);
+        }
+        return null;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject current, Func<T, bool> predicate)
+        where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(current);
+        for (var index = 0; index < count; index++)
+        {
+            var child = VisualTreeHelper.GetChild(current, index);
+            if (child is T match && predicate(match)) return match;
+            if (FindDescendant<T>(child, predicate) is { } descendant) return descendant;
         }
         return null;
     }

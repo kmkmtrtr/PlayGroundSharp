@@ -132,10 +132,17 @@
                       HorizontalGridLinesBrush="{DynamicResource BorderBrush}" VerticalGridLinesBrush="{DynamicResource BorderBrush}"
                       HeadersVisibility="All" RowHeaderWidth="58" RowHeight="26"
                       EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                      ScrollViewer.CanContentScroll="True"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      VirtualizingPanel.ScrollUnit="Pixel"
+                      VirtualizingPanel.CacheLength="1,1"
+                      VirtualizingPanel.CacheLengthUnit="Page"
                       SelectionMode="Extended" SelectionUnit="CellOrRowHeader"
                       ClipboardCopyMode="IncludeHeader" LoadingRow="TableGrid_LoadingRow"
                       SelectedCellsChanged="TableGrid_SelectedCellsChanged"
                       MouseDoubleClick="TableGrid_MouseDoubleClick"
+                      PreviewMouseWheel="TableGrid_PreviewMouseWheel"
                       PreviewKeyDown="TableGrid_PreviewKeyDown">
                 <DataGrid.Resources>
                     <Style TargetType="DataGridColumnHeader">

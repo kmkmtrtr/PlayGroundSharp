@@ -59,6 +59,41 @@ public sealed record SignatureInformation(
     int ActiveParameter)
 {
     public string AccessibleDisplayText => DisplayText;
+
+    public string ListDisplayText
+    {
+        get
+        {
+            const int visibleParameterCount = 2;
+            if (Parameters.Count <= visibleParameterCount) return DisplayText;
+            var parameterListStart = FindParameterListStart(DisplayText);
+            if (parameterListStart < 0) return DisplayText;
+            var visibleParameters = string.Join(
+                ", ",
+                Parameters.Take(visibleParameterCount).Select(static parameter =>
+                    $"{parameter.TypeName} {parameter.Name}"));
+            return $"{DisplayText[..parameterListStart]}({visibleParameters}, … +{Parameters.Count - visibleParameterCount})";
+        }
+    }
+
+    private static int FindParameterListStart(string signature)
+    {
+        var depth = 0;
+        for (var index = signature.Length - 1; index >= 0; index--)
+        {
+            switch (signature[index])
+            {
+                case ')':
+                    depth++;
+                    break;
+                case '(':
+                    depth--;
+                    if (depth == 0) return index;
+                    break;
+            }
+        }
+        return -1;
+    }
 }
 public sealed record SignatureHelpResult(IReadOnlyList<SignatureInformation> Signatures, int SelectedSignature);
 

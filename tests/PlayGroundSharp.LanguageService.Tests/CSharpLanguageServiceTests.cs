@@ -20,6 +20,29 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public void CompactsLongSignatureListsWithoutShorteningTheMethodName()
+    {
+        var signature = new SignatureInformation(
+            "(int Left, int Right) ExtremelyLongMethodNameThatMustRemainVisible" +
+            "(int first, string second, bool third, decimal fourth, object fifth)",
+            string.Empty,
+            [
+                new("first", "int", string.Empty),
+                new("second", "string", string.Empty),
+                new("third", "bool", string.Empty),
+                new("fourth", "decimal", string.Empty),
+                new("fifth", "object", string.Empty)
+            ],
+            0);
+
+        Assert.Equal(
+            "(int Left, int Right) ExtremelyLongMethodNameThatMustRemainVisible" +
+            "(int first, string second, … +3)",
+            signature.ListDisplayText);
+        Assert.Equal(signature.DisplayText, signature.AccessibleDisplayText);
+    }
+
+    [Fact]
     public async Task CompletesSessionVariablesArrayAndLinqMembers()
     {
         var context = new SessionContext(["var values = Enumerable.Range(1, 10).ToArray();"], SessionContext.DefaultImports, []);

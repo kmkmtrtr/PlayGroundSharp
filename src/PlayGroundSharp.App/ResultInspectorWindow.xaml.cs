@@ -4,8 +4,10 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -15,6 +17,7 @@ namespace PlayGroundSharp.App;
 
 public partial class ResultInspectorWindow : Window
 {
+    private const int WmMouseHorizontalWheel = 0x020E;
     private readonly MainViewModel viewModel;
     private AppLanguageMode languageMode;
     private readonly ResultSnapshot snapshot;
@@ -31,6 +34,7 @@ public partial class ResultInspectorWindow : Window
     private string appliedQuery = string.Empty;
     private bool copyInProgress;
     private bool isTableMode;
+    private HwndSource? windowSource;
 
     public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel)
     {
@@ -60,6 +64,8 @@ public partial class ResultInspectorWindow : Window
         };
         Closed += (_, _) =>
         {
+            windowSource?.RemoveHook(WindowMessageHook);
+            windowSource = null;
             viewModel.PropertyChanged -= ViewModel_PropertyChanged;
             searchTimer.Stop();
             notificationTimer.Stop();
@@ -82,7 +88,10 @@ public partial class ResultInspectorWindow : Window
         _ = ApplySearchAsync();
     }
 
-    private void Window_Loaded(object sender, RoutedEventArgs e) =>
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        windowSource?.AddHook(WindowMessageHook);
         Dispatcher.BeginInvoke(
             () =>
             {
@@ -90,11 +99,45 @@ public partial class ResultInspectorWindow : Window
                 else FocusFirstResult();
             },
             DispatcherPriority.Input);
+    }
 
     private void SnapshotTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         if (e.NewValue is not SnapshotTreeNode node) return;
         SetSelectedNode(node);
+    }
+
+    private void SnapshotTree_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left ||
+            FindAncestor<ToggleButton>(e.OriginalSource as DependencyObject) is not null ||
+            FindAncestor<TreeViewItem>(e.OriginalSource as DependencyObject) is not null)
+            return;
+
+        var point = e.GetPosition(SnapshotTree);
+        if (point.X < 0 || point.Y < 0 ||
+            point.X >= SnapshotTree.ActualWidth - SystemParameters.VerticalScrollBarWidth ||
+            point.Y > SnapshotTree.ActualHeight)
+            return;
+
+        var item = FindTreeItemAtRow(point.Y);
+        if (item is null) return;
+        item.IsSelected = true;
+        item.Focus();
+        e.Handled = true;
+    }
+
+    private TreeViewItem? FindTreeItemAtRow(double y)
+    {
+        var scanWidth = Math.Max(
+            0,
+            SnapshotTree.ActualWidth - SystemParameters.VerticalScrollBarWidth);
+        for (var x = 2d; x < scanWidth; x += 8)
+        {
+            var hit = SnapshotTree.InputHitTest(new Point(x, y)) as DependencyObject;
+            if (FindAncestor<TreeViewItem>(hit) is { } item) return item;
+        }
+        return null;
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -365,9 +408,9 @@ public partial class ResultInspectorWindow : Window
         if (OpenSelectedCellTable()) e.Handled = true;
     }
 
-    private void TableGrid_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (e.Handled) return;
+        if (e.Handled || !isTableMode || !TableGrid.IsMouseOver) return;
         var forceHorizontal = ScrollWheelRouter.IsOverHorizontalScrollZone(
             TableGrid,
             e.GetPosition(TableGrid));
@@ -378,6 +421,33 @@ public partial class ResultInspectorWindow : Window
                 Keyboard.Modifiers,
                 forceHorizontal))
             e.Handled = true;
+    }
+
+    private IntPtr WindowMessageHook(
+        IntPtr windowHandle,
+        int message,
+        IntPtr wordParameter,
+        IntPtr longParameter,
+        ref bool handled)
+    {
+        if (message != WmMouseHorizontalWheel || !isTableMode) return IntPtr.Zero;
+
+        var delta = unchecked((short)((wordParameter.ToInt64() >> 16) & 0xffff));
+        var screenX = unchecked((short)(longParameter.ToInt64() & 0xffff));
+        var screenY = unchecked((short)((longParameter.ToInt64() >> 16) & 0xffff));
+        var point = TableGrid.PointFromScreen(new Point(screenX, screenY));
+        if (point.X < 0 || point.Y < 0 ||
+            point.X > TableGrid.ActualWidth || point.Y > TableGrid.ActualHeight)
+            return IntPtr.Zero;
+
+        if (ScrollWheelRouter.TryRouteHorizontalWheel(
+                TableGrid,
+                null,
+                delta,
+                ModifierKeys.None,
+                forceHorizontal: true))
+            handled = true;
+        return IntPtr.Zero;
     }
 
     private void TableGrid_PreviewKeyDown(object sender, KeyEventArgs e)

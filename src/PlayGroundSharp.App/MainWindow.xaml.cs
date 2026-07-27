@@ -683,21 +683,43 @@ public partial class MainWindow : Window
         viewModel.ShowStatusNotification("Status.SnippetInserted");
     }
 
-    private void Editor_PreviewDragOver(object sender, DragEventArgs e)
+    private void ConsoleSurface_PreviewDragEnter(object sender, DragEventArgs e)
     {
-        var canDrop = e.Data.GetDataPresent(DataFormats.FileDrop) &&
-                      e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 };
+        if (!CanAcceptFileDrop(e.Data)) return;
+        Activate();
+        Focus();
+        UpdateConsoleDropFeedback(e);
+    }
+
+    private void ConsoleSurface_PreviewDragOver(object sender, DragEventArgs e) =>
+        UpdateConsoleDropFeedback(e);
+
+    private void UpdateConsoleDropFeedback(DragEventArgs e)
+    {
+        var canDrop = CanAcceptFileDrop(e.Data);
         e.Effects = canDrop ? DragDropEffects.Copy : DragDropEffects.None;
         DropOverlay.Visibility = canDrop ? Visibility.Visible : Visibility.Collapsed;
         e.Handled = true;
     }
 
-    private void Editor_PreviewDragLeave(object sender, DragEventArgs e) =>
-        DropOverlay.Visibility = Visibility.Collapsed;
+    private static bool CanAcceptFileDrop(IDataObject data) =>
+        data.GetDataPresent(DataFormats.FileDrop) &&
+        data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 };
 
-    private void Editor_PreviewDrop(object sender, DragEventArgs e)
+    private void ConsoleSurface_PreviewDragLeave(object sender, DragEventArgs e)
+    {
+        var point = e.GetPosition(ConsoleSurface);
+        if (point.X < 0 || point.Y < 0 ||
+            point.X > ConsoleSurface.ActualWidth || point.Y > ConsoleSurface.ActualHeight)
+            DropOverlay.Visibility = Visibility.Collapsed;
+        e.Handled = true;
+    }
+
+    private void ConsoleSurface_PreviewDrop(object sender, DragEventArgs e)
     {
         DropOverlay.Visibility = Visibility.Collapsed;
+        Activate();
+        Focus();
         if (!TryGetDroppedPaths(e.Data, out var paths, out var omittedCount))
         {
             e.Effects = DragDropEffects.None;
@@ -705,7 +727,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (Editor.GetPositionFromPoint(e.GetPosition(Editor)) is { } position)
+        var editorPoint = e.GetPosition(Editor);
+        if (editorPoint.X >= 0 && editorPoint.Y >= 0 &&
+            editorPoint.X <= Editor.ActualWidth && editorPoint.Y <= Editor.ActualHeight &&
+            Editor.GetPositionFromPoint(editorPoint) is { } position)
             Editor.CaretOffset = Editor.Document.GetOffset(position.Location);
         e.Effects = DragDropEffects.Copy;
         e.Handled = true;

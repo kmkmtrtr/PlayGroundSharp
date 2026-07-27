@@ -5,7 +5,8 @@
         Title="{DynamicResource Inspector.Title}" Width="760" Height="560" MinWidth="480" MinHeight="340"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
-        Loaded="Window_Loaded" PreviewKeyDown="Window_PreviewKeyDown">
+        Loaded="Window_Loaded" PreviewKeyDown="Window_PreviewKeyDown"
+        PreviewMouseWheel="Window_PreviewMouseWheel">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -60,21 +61,28 @@
         <TreeView x:Name="SnapshotTree" Grid.Row="2" ItemsSource="{Binding Roots}"
                   AutomationProperties.Name="{DynamicResource Inspector.Snapshot}"
                   Background="{DynamicResource InputBrush}" Foreground="{DynamicResource ForegroundBrush}"
-                  BorderBrush="{DynamicResource BorderBrush}" SelectedItemChanged="SnapshotTree_SelectedItemChanged">
+                  BorderBrush="{DynamicResource BorderBrush}" SelectedItemChanged="SnapshotTree_SelectedItemChanged"
+                  HorizontalContentAlignment="Stretch"
+                  PreviewMouseLeftButtonDown="SnapshotTree_PreviewMouseLeftButtonDown"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
             <TreeView.Resources>
                 <HierarchicalDataTemplate DataType="{x:Type local:SnapshotTreeNode}" ItemsSource="{Binding Children}">
-                    <TextBlock Text="{Binding Label}" FontFamily="Cascadia Mono,Consolas">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
-                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
-                                        <Setter Property="FontWeight" Value="SemiBold" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                    <Grid Background="Transparent"
+                          MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType={x:Type TreeView}}}">
+                        <TextBlock Text="{Binding Label}" FontFamily="Cascadia Mono,Consolas"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                 </HierarchicalDataTemplate>
             </TreeView.Resources>
             <TreeView.ItemContainerStyle>
@@ -83,6 +91,8 @@
                     <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
                     <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
                     <Setter Property="AutomationProperties.HelpText" Value="{Binding Detail}" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Padding" Value="1,2" />
                 </Style>
             </TreeView.ItemContainerStyle>
         </TreeView>
@@ -142,7 +152,6 @@
                       ClipboardCopyMode="IncludeHeader" LoadingRow="TableGrid_LoadingRow"
                       SelectedCellsChanged="TableGrid_SelectedCellsChanged"
                       MouseDoubleClick="TableGrid_MouseDoubleClick"
-                      PreviewMouseWheel="TableGrid_PreviewMouseWheel"
                       PreviewKeyDown="TableGrid_PreviewKeyDown">
                 <DataGrid.Resources>
                     <Style TargetType="DataGridColumnHeader">

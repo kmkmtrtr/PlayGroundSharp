@@ -486,6 +486,32 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task ReturnsMethodAndParameterDocumentationForInvocationHover()
+    {
+        var context = new SessionContext(
+            [],
+            SessionContext.DefaultImports,
+            [typeof(Greeter).Assembly.Location]);
+        const string code = "PlayGroundSharp.TestFixture.Greeter.Greet(\"Ada\")";
+
+        var methodInfo = await service.GetQuickInfoAsync(
+            context,
+            code,
+            code.IndexOf("Greet", StringComparison.Ordinal) + 2);
+        var argumentInfo = await service.GetQuickInfoAsync(
+            context,
+            code,
+            code.IndexOf("Ada", StringComparison.Ordinal) + 1);
+
+        Assert.NotNull(methodInfo);
+        Assert.Contains("Creates a greeting", methodInfo.Text, StringComparison.Ordinal);
+        Assert.Contains("The person to greet", methodInfo.Text, StringComparison.Ordinal);
+        Assert.NotNull(argumentInfo);
+        Assert.Contains("name : string", argumentInfo.Text, StringComparison.Ordinal);
+        Assert.Contains("The person to greet", argumentInfo.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CompletesTypeFromDynamicReference()
     {
         var context = new SessionContext([], SessionContext.DefaultImports, [typeof(Greeter).Assembly.Location]);

@@ -5,6 +5,8 @@ namespace PlayGroundSharp.App;
 
 public partial class App : Application
 {
+    public App() => ScrollWheelRouter.Register();
+
     public static void ApplyLanguage(AppLanguageMode mode)
     {
         if (Current is null) return;

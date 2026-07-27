@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? pinnedQuickInfoCancellation;
     private readonly DispatcherTimer signatureHelpTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
     private readonly DispatcherTimer completionDescriptionTimer = new() { Interval = TimeSpan.FromMilliseconds(140) };
+    private readonly DispatcherTimer hoverQuickInfoTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly DispatcherTimer quickInfoChordTimer = new() { Interval = TimeSpan.FromSeconds(2.5) };
     private AssistMode assistMode;
     private int completionFilterStart;
@@ -45,6 +46,7 @@ public partial class MainWindow : Window
     private bool transcriptAutoScroll = true;
     private bool copyInProgress;
     private Action? quickInfoChordStatusRestore;
+    private Point? hoverQuickInfoPoint;
     private bool quickInfoChordPending;
     private WindowState lastNonMinimizedWindowState = WindowState.Normal;
     private bool typeExplorerAutoCollapsed;
@@ -81,6 +83,7 @@ public partial class MainWindow : Window
         Editor.TextArea.Caret.PositionChanged += (_, _) =>
         {
             viewModel.UpdateCursorPosition(Editor.TextArea.Caret.Line, Editor.TextArea.Caret.Column);
+            CancelHoverQuickInfo();
             ClosePinnedQuickInfo();
             if (assistMode == AssistMode.Signature) ScheduleSignatureHelpRefresh();
             else if (assistMode == AssistMode.Completion) ApplyCompletionFilter();
@@ -94,6 +97,13 @@ public partial class MainWindow : Window
         {
             completionDescriptionTimer.Stop();
             await LoadCompletionDescriptionAsync();
+        };
+        hoverQuickInfoTimer.Tick += async (_, _) =>
+        {
+            hoverQuickInfoTimer.Stop();
+            var point = hoverQuickInfoPoint;
+            hoverQuickInfoPoint = null;
+            if (point is not null) await ShowHoverQuickInfoAsync(point.Value);
         };
         quickInfoChordTimer.Tick += (_, _) => CancelQuickInfoChord();
     }
@@ -146,6 +156,8 @@ public partial class MainWindow : Window
         CancelAndDispose(ref signatureHelpCancellation);
         signatureHelpTimer.Stop();
         completionDescriptionTimer.Stop();
+        hoverQuickInfoTimer.Stop();
+        hoverQuickInfoPoint = null;
         quickInfoChordTimer.Stop();
         quickInfoChordStatusRestore = null;
         CancelAndDispose(ref hoverQuickInfoCancellation);
@@ -263,16 +275,6 @@ public partial class MainWindow : Window
         SymbolDetailPopup.IsOpen = true;
     }
 
-    private void TypeExplorerTree_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
-        var scrollViewer = FindAncestor<ScrollViewer>(e.OriginalSource as DependencyObject) ??
-                           FindDescendant<ScrollViewer>(TypeExplorerTree);
-        if (scrollViewer is not { ScrollableWidth: > 0 }) return;
-        ScrollHorizontally(scrollViewer, -e.Delta);
-        e.Handled = true;
-    }
-
     private void TypeExplorerPane_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.NewValue is true)
@@ -312,6 +314,7 @@ public partial class MainWindow : Window
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
+        CancelHoverQuickInfo();
         if (IsLoaded) EnsureResponsivePanes();
         if (IsLoaded && AssistPopup.IsOpen)
         {
@@ -322,6 +325,7 @@ public partial class MainWindow : Window
 
     private void Window_LocationChanged(object? sender, EventArgs e)
     {
+        CancelHoverQuickInfo();
         RefreshPopupPosition(AssistPopup);
         RefreshPopupPosition(QuickInfoPopup);
         RefreshPopupPosition(SymbolDetailPopup);
@@ -374,6 +378,7 @@ public partial class MainWindow : Window
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
+        CancelHoverQuickInfo();
         SymbolDetailPopup.IsOpen = false;
         ClosePinnedQuickInfo();
         if (AssistPopup.IsOpen) HideAssist();
@@ -395,19 +400,9 @@ public partial class MainWindow : Window
         var scrollViewer = FindAncestor<ScrollViewer>(hit);
         if (scrollViewer is not { ScrollableWidth: > 0 }) return IntPtr.Zero;
 
-        ScrollHorizontally(scrollViewer, delta);
+        ScrollWheelRouter.ScrollHorizontally(scrollViewer, delta);
         handled = true;
         return IntPtr.Zero;
-    }
-
-    private static void ScrollHorizontally(ScrollViewer scrollViewer, int delta)
-    {
-        var distance = Math.Clamp(scrollViewer.ViewportWidth * 0.15, 36, 120);
-        var offset = Math.Clamp(
-            scrollViewer.HorizontalOffset + Math.Sign(delta) * distance,
-            0,
-            scrollViewer.ScrollableWidth);
-        scrollViewer.ScrollToHorizontalOffset(offset);
     }
 
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
@@ -1840,6 +1835,7 @@ public partial class MainWindow : Window
     private async Task ShowQuickInfoAtCaretAsync()
     {
         HideAssist();
+        CancelHoverQuickInfo();
         ClosePinnedQuickInfo();
         var cancellation = new CancellationTokenSource();
         pinnedQuickInfoCancellation = cancellation;
@@ -1882,9 +1878,18 @@ public partial class MainWindow : Window
         pinnedQuickInfoCancellation?.Cancel();
     }
 
-    private async void Editor_MouseHover(object sender, MouseEventArgs e)
+    private void Editor_MouseMove(object sender, MouseEventArgs e)
     {
-        var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
+        hoverQuickInfoPoint = e.GetPosition(Editor);
+        hoverQuickInfoTimer.Stop();
+        hoverQuickInfoTimer.Start();
+        CancelAndDispose(ref hoverQuickInfoCancellation);
+        CloseHoverQuickInfo();
+    }
+
+    private async Task ShowHoverQuickInfoAsync(Point point)
+    {
+        var position = Editor.GetPositionFromPoint(point);
         if (position is null) return;
         var offset = Editor.Document.GetOffset(position.Value.Location);
         CancelAndDispose(ref hoverQuickInfoCancellation);
@@ -1894,15 +1899,29 @@ public partial class MainWindow : Window
         try
         {
             var result = await viewModel.GetQuickInfoAsync(offset, cancellation.Token);
-            if (!cancellation.IsCancellationRequested && requestText == Editor.Text)
-                Editor.ToolTip = result?.Text;
+            var currentPoint = Mouse.GetPosition(Editor);
+            if (!cancellation.IsCancellationRequested &&
+                requestText == Editor.Text &&
+                Editor.IsMouseOver &&
+                Math.Abs(currentPoint.X - point.X) <= 4 &&
+                Math.Abs(currentPoint.Y - point.Y) <= 4)
+            {
+                if (result is null)
+                {
+                    CloseHoverQuickInfo();
+                    return;
+                }
+                HoverQuickInfoText.Text = result.Text;
+                HoverQuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth, 300, 620);
+                HoverQuickInfoPopup.IsOpen = true;
+            }
         }
         catch (OperationCanceledException)
         {
         }
         catch (Exception)
         {
-            if (!cancellation.IsCancellationRequested) Editor.ToolTip = null;
+            if (!cancellation.IsCancellationRequested) CloseHoverQuickInfo();
         }
         finally
         {
@@ -1914,8 +1933,21 @@ public partial class MainWindow : Window
 
     private void Editor_MouseLeave(object sender, MouseEventArgs e)
     {
+        CancelHoverQuickInfo();
+    }
+
+    private void CancelHoverQuickInfo()
+    {
+        hoverQuickInfoTimer.Stop();
+        hoverQuickInfoPoint = null;
         CancelAndDispose(ref hoverQuickInfoCancellation);
-        Editor.ToolTip = null;
+        CloseHoverQuickInfo();
+    }
+
+    private void CloseHoverQuickInfo()
+    {
+        HoverQuickInfoPopup.IsOpen = false;
+        HoverQuickInfoText.Text = string.Empty;
     }
 
     private static void CancelAndDispose(ref CancellationTokenSource? source)

@@ -309,13 +309,126 @@ public sealed class CSharpLanguageService
     {
         using var workspaceDocument = CreateDocument(context, currentCode);
         var service = QuickInfoService.GetService(workspaceDocument.Document);
-        if (service is null) return null;
-        var item = await service.GetQuickInfoAsync(workspaceDocument.Document,
-            workspaceDocument.CurrentOffset + position, cancellationToken).ConfigureAwait(false);
-        if (item is null) return null;
-        return new(string.Join(Environment.NewLine,
-            item.Sections.Select(section => string.Concat(section.TaggedParts.Select(static part => part.Text)))));
+        var absolutePosition = workspaceDocument.CurrentOffset + position;
+        var item = service is null
+            ? null
+            : await service.GetQuickInfoAsync(
+                workspaceDocument.Document, absolutePosition, cancellationToken).ConfigureAwait(false);
+        var roslynText = item is null
+            ? null
+            : string.Join(Environment.NewLine,
+                item.Sections.Select(section => string.Concat(section.TaggedParts.Select(static part => part.Text))));
+
+        var root = await workspaceDocument.Document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        var model = await workspaceDocument.Document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+        var invocationText = root is null || model is null
+            ? null
+            : GetInvocationQuickInfo(root, model, absolutePosition, cancellationToken);
+        var text = invocationText ?? roslynText;
+        return string.IsNullOrWhiteSpace(text) ? null : new(text);
     }
+
+    private static string? GetInvocationQuickInfo(
+        SyntaxNode root,
+        SemanticModel model,
+        int position,
+        CancellationToken cancellationToken)
+    {
+        if (root.FullSpan.IsEmpty) return null;
+        var probePosition = Math.Clamp(position, root.FullSpan.Start, root.FullSpan.End - 1);
+        var ancestors = root.FindToken(probePosition, findInsideTrivia: true).Parent?
+            .AncestorsAndSelf()
+            .ToArray() ?? [];
+        var invocation = ancestors.OfType<InvocationExpressionSyntax>()
+            .FirstOrDefault(candidate => ContainsPosition(candidate.FullSpan, position));
+        var objectCreation = ancestors.OfType<BaseObjectCreationExpressionSyntax>()
+            .FirstOrDefault(candidate => candidate.ArgumentList is not null &&
+                                         ContainsPosition(candidate.FullSpan, position));
+
+        ArgumentListSyntax argumentList;
+        SymbolInfo symbolInfo;
+        if (invocation is not null &&
+            (objectCreation is null || invocation.FullSpan.Length <= objectCreation.FullSpan.Length))
+        {
+            argumentList = invocation.ArgumentList;
+            symbolInfo = model.GetSymbolInfo(invocation, cancellationToken);
+        }
+        else if (objectCreation?.ArgumentList is { } creationArguments)
+        {
+            argumentList = creationArguments;
+            symbolInfo = model.GetSymbolInfo(objectCreation, cancellationToken);
+        }
+        else
+        {
+            return null;
+        }
+
+        var method = symbolInfo.Symbol as IMethodSymbol ??
+                     symbolInfo.CandidateSymbols.OfType<IMethodSymbol>()
+                         .FirstOrDefault(candidate => model.IsAccessible(position, candidate)) ??
+                     symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        if (method is null) return null;
+
+        var hoveredArgument = argumentList.Arguments
+            .FirstOrDefault(argument => ContainsPosition(argument.Span, position));
+        var documentation = GetDocumentation(method, cancellationToken);
+        var hasDocumentation = !string.IsNullOrWhiteSpace(documentation.Summary) ||
+                               !string.IsNullOrWhiteSpace(documentation.Returns) ||
+                               documentation.Parameters.Values.Any(static summary => !string.IsNullOrWhiteSpace(summary));
+        if (hoveredArgument is null && !hasDocumentation) return null;
+
+        var sections = new List<string>
+        {
+            method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+        };
+        if (!string.IsNullOrWhiteSpace(documentation.Summary))
+            sections.Add(documentation.Summary);
+
+        if (hoveredArgument is not null)
+        {
+            var argumentIndex = argumentList.Arguments.IndexOf(hoveredArgument);
+            var parameterIndex = GetParameterIndex(method, hoveredArgument, argumentIndex);
+            if (parameterIndex >= 0)
+                sections.Add(FormatQuickInfoParameter(
+                    method.Parameters[parameterIndex],
+                    documentation.Parameters.GetValueOrDefault(method.Parameters[parameterIndex].Name),
+                    active: true));
+        }
+        else
+        {
+            var documentedParameters = method.Parameters
+                .Select(parameter => new
+                {
+                    Parameter = parameter,
+                    Summary = documentation.Parameters.GetValueOrDefault(parameter.Name)
+                })
+                .Where(static item => !string.IsNullOrWhiteSpace(item.Summary))
+                .Select(item => FormatQuickInfoParameter(item.Parameter, item.Summary, active: false))
+                .ToArray();
+            if (documentedParameters.Length > 0)
+                sections.Add(string.Join(Environment.NewLine, documentedParameters));
+        }
+
+        if (!string.IsNullOrWhiteSpace(documentation.Returns))
+            sections.Add($"→ {documentation.Returns}");
+        return string.Join(Environment.NewLine + Environment.NewLine, sections);
+    }
+
+    private static string FormatQuickInfoParameter(
+        IParameterSymbol parameter,
+        string? summary,
+        bool active)
+    {
+        var prefix = active ? "▶ " : "• ";
+        var header = $"{prefix}{parameter.Name} : " +
+                     parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        return string.IsNullOrWhiteSpace(summary)
+            ? header
+            : header + Environment.NewLine + "  " + summary;
+    }
+
+    private static bool ContainsPosition(TextSpan span, int position) =>
+        position >= span.Start && position <= span.End;
 
     public async Task<SignatureHelpResult?> GetSignatureHelpAsync(
         SessionContext context,

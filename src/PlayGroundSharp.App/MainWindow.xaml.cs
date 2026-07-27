@@ -1492,6 +1492,7 @@ public partial class MainWindow : Window
         CompletionList.DisplayMemberPath = null;
         CompletionList.ItemTemplate = (DataTemplate)FindResource("CompletionItemTemplate");
         assistMode = items.Count > 0 ? AssistMode.Completion : AssistMode.None;
+        AssistDocumentationLanguageHint.Visibility = Visibility.Visible;
         AssistHint.Text = viewModel.Localize("Assist.CompletionHint");
         ApplyCompletionFilter();
     }
@@ -1532,6 +1533,7 @@ public partial class MainWindow : Window
         CompletionList.IsHitTestVisible = true;
         CompletionList.DisplayMemberPath = null;
         CompletionList.ItemTemplate = (DataTemplate)FindResource("SignatureItemTemplate");
+        AssistDocumentationLanguageHint.Visibility = Visibility.Collapsed;
         CompletionList.SelectedIndex = Math.Clamp(help.SelectedSignature, 0, help.Signatures.Count - 1);
         PrepareAssistPopupLayout();
         AssistPopup.IsOpen = true;
@@ -1636,7 +1638,7 @@ public partial class MainWindow : Window
         CancelCompletionRequest();
         CancelAndDispose(ref completionDescriptionCancellation);
         CancelSignatureHelpRefresh();
-        AssistSummary.Text = string.Empty;
+        AssistDocumentation.Clear();
         AssistHint.Text = string.Empty;
         assistMode = AssistMode.None;
         if (!viewModel.IsRunning && wasCompletion) viewModel.SetLocalizedStatus("Status.Ready");
@@ -1707,11 +1709,11 @@ public partial class MainWindow : Window
         }
         if (assistMode != AssistMode.Completion || CompletionList.SelectedItem is not CompletionCandidate candidate)
         {
-            ShowAssistSummary(null);
+            ShowAssistMessage(null);
             return;
         }
 
-        ShowAssistSummary(viewModel.Localize("Assist.LoadingDocumentation"));
+        ShowAssistMessage(viewModel.Localize("Assist.LoadingDocumentation"));
         completionDescriptionTimer.Start();
     }
 
@@ -1730,15 +1732,16 @@ public partial class MainWindow : Window
                 var importNotice = candidate.RequiredNamespace is null
                     ? null
                     : viewModel.Localize("Assist.AutoImport", candidate.RequiredNamespace);
-                ShowAssistSummary(string.Join(
-                    Environment.NewLine + Environment.NewLine,
-                    new[] { importNotice, description }.Where(static text => !string.IsNullOrWhiteSpace(text))));
+                var documentation = string.IsNullOrWhiteSpace(description)
+                    ? viewModel.Localize("Assist.NoDocumentation")
+                    : description;
+                AssistDocumentation.ShowCompletion(candidate, documentation, importNotice);
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
         {
-            if (!cancellation.IsCancellationRequested) ShowAssistSummary(error.Message);
+            if (!cancellation.IsCancellationRequested) ShowAssistMessage(error.Message);
         }
         finally
         {
@@ -1755,11 +1758,11 @@ public partial class MainWindow : Window
         if (!viewModel.IsRunning) viewModel.SetLocalizedStatus("Status.Ready");
     }
 
-    private void ShowAssistSummary(string? text)
+    private void ShowAssistMessage(string? text)
     {
-        AssistSummary.Text = string.IsNullOrWhiteSpace(text)
+        AssistDocumentation.ShowMessage(string.IsNullOrWhiteSpace(text)
             ? viewModel.Localize("Assist.NoDocumentation")
-            : text;
+            : text);
     }
 
     private void ShowSignatureDocumentation(SignatureInformation signature)
@@ -1767,7 +1770,9 @@ public partial class MainWindow : Window
         if (signature.ActiveParameter < 0 || signature.ActiveParameter >= signature.Parameters.Count)
         {
             AssistHint.Text = viewModel.Localize("Assist.SignatureHintNoParameter", CompletionList.Items.Count);
-            ShowAssistSummary(signature.Summary);
+            AssistDocumentation.ShowSignature(
+                signature,
+                viewModel.Localize("Assist.NoParameterDocumentation"));
             return;
         }
 
@@ -1781,13 +1786,7 @@ public partial class MainWindow : Window
         var parameterDocumentation = string.IsNullOrWhiteSpace(parameter.Summary)
             ? viewModel.Localize("Assist.NoParameterDocumentation")
             : parameter.Summary;
-        var parts = new[]
-        {
-            signature.Summary,
-            viewModel.Localize("Assist.ActiveParameter", parameter.TypeName, parameter.Name),
-            parameterDocumentation
-        }.Where(static part => !string.IsNullOrWhiteSpace(part));
-        ShowAssistSummary(string.Join(Environment.NewLine + Environment.NewLine, parts));
+        AssistDocumentation.ShowSignature(signature, parameterDocumentation);
     }
 
     private static int FindCompletionStart(string text, int caretOffset)
@@ -1852,8 +1851,8 @@ public partial class MainWindow : Window
                 viewModel.ShowStatusNotification("Status.QuickInfoUnavailable");
                 return;
             }
-            QuickInfoText.Text = result.Text;
-            QuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth, 360, 620);
+            QuickInfoDocumentation.ShowQuickInfo(result.Text);
+            QuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth * 1.15, 480, 680);
             QuickInfoPopup.IsOpen = true;
             viewModel.ShowStatusNotification("Status.QuickInfoShown");
         }
@@ -1875,6 +1874,7 @@ public partial class MainWindow : Window
     private void ClosePinnedQuickInfo()
     {
         QuickInfoPopup.IsOpen = false;
+        QuickInfoDocumentation.Clear();
         pinnedQuickInfoCancellation?.Cancel();
     }
 
@@ -1911,8 +1911,8 @@ public partial class MainWindow : Window
                     CloseHoverQuickInfo();
                     return;
                 }
-                HoverQuickInfoText.Text = result.Text;
-                HoverQuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth, 300, 620);
+                HoverQuickInfoDocumentation.ShowQuickInfo(result.Text);
+                HoverQuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth * 1.15, 480, 680);
                 HoverQuickInfoPopup.IsOpen = true;
             }
         }
@@ -1947,7 +1947,7 @@ public partial class MainWindow : Window
     private void CloseHoverQuickInfo()
     {
         HoverQuickInfoPopup.IsOpen = false;
-        HoverQuickInfoText.Text = string.Empty;
+        HoverQuickInfoDocumentation.Clear();
     }
 
     private static void CancelAndDispose(ref CancellationTokenSource? source)

@@ -470,6 +470,22 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task DoesNotDuplicateRoslynAndXmlCompletionDocumentation()
+    {
+        const string code = "Enumerable.Em";
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+        var candidate = Assert.Single(items, static item => item.DisplayText == "Empty");
+
+        var description = await service.GetCompletionDescriptionAsync(
+            SessionContext.Empty, code, code.Length, candidate);
+
+        Assert.NotNull(description);
+        Assert.Equal(
+            1,
+            description.Split("Returns an empty", StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
     public async Task ReturnsQuickInfoAtTheCaretAfterPreviousSubmissions()
     {
         var context = new SessionContext(["var sessionText = \"hello\";"], SessionContext.DefaultImports, []);

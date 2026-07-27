@@ -33,9 +33,22 @@ public sealed record CompletionCandidate(
     public bool HasNamespaceHint => !string.IsNullOrWhiteSpace(NamespaceHint);
     public bool RequiresImport => !string.IsNullOrWhiteSpace(RequiredNamespace);
     public string NamespaceDisplayText => RequiresImport ? $"using {RequiredNamespace}" : NamespaceHint ?? string.Empty;
+    public string KindGlyph =>
+        HasTag("Method") || IsExtensionMethod ? "M" :
+        HasTag("Property") ? "P" :
+        HasTag("Field") || HasTag("Constant") ? "F" :
+        HasTag("Event") ? "E" :
+        HasTag("Class") || HasTag("Structure") || HasTag("Record") ? "C" :
+        HasTag("Interface") ? "I" :
+        HasTag("Enum") || HasTag("EnumMember") ? "E" :
+        HasTag("Namespace") ? "N" :
+        HasTag("Keyword") ? "K" :
+        "•";
     public string AccessibleDisplayText => HasNamespaceHint
         ? $"{DisplayText}, {NamespaceDisplayText}"
         : DisplayText;
+
+    private bool HasTag(string tag) => Tags.Contains(tag, StringComparer.OrdinalIgnoreCase);
 }
 public sealed record QuickInfoResult(string Text);
 public sealed record SignatureParameterInformation(string Name, string TypeName, string Summary);
@@ -296,7 +309,12 @@ public sealed class CSharpLanguageService
             : context with { Imports = [.. context.Imports, candidate.RequiredNamespace] };
         var summary = await GetSymbolDocumentationSummaryAsync(
             summaryContext, completedCode, symbolPosition, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(summary) && !completionText.Contains(summary, StringComparison.Ordinal))
+        var completionLines = completionText.ReplaceLineEndings("\n")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var hasRoslynDocumentation = completionLines.Length > 1;
+        if (!string.IsNullOrWhiteSpace(summary) &&
+            !hasRoslynDocumentation &&
+            !completionText.Contains(summary, StringComparison.Ordinal))
             return completionText.Length == 0 ? summary : completionText + Environment.NewLine + summary;
         return completionText.Length == 0 ? null : completionText;
     }

@@ -50,6 +50,22 @@ internal sealed class SnapshotTableModel
     public bool SourceRowsAreItems { get; }
     public bool HasSyntheticValueColumn { get; }
 
+    public bool TryGetCell(
+        SnapshotTableRow row,
+        int columnIndex,
+        out SnapshotTableCell cell)
+    {
+        if (columnIndex < 0 ||
+            columnIndex >= Columns.Count ||
+            columnIndex >= row.Cells.Count)
+        {
+            cell = SnapshotTableCell.Missing;
+            return false;
+        }
+        cell = row.Cells[columnIndex];
+        return true;
+    }
+
     public static bool CanCreate(ResultSnapshot snapshot) =>
         snapshot.Items is { Count: > 0 } ||
         snapshot.Properties is { Count: > 0 };

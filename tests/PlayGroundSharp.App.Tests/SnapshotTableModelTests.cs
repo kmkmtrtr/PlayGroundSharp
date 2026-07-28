@@ -127,6 +127,11 @@ public sealed class SnapshotTableModelTests
         Assert.True(scoresTable.HasSyntheticValueColumn);
         Assert.Equal(["Value"], scoresTable.Columns);
         Assert.Equal(["8", "13"], scoresTable.Rows.Select(static row => row.Cells[0].Display));
+        Assert.False(scoresTable.TryGetCell(
+            customerTable.Rows[0],
+            scoresColumn,
+            out var staleParentCell));
+        Assert.Same(SnapshotTableCell.Missing, staleParentCell);
     }
 
     private static ResultSnapshot Row(params (string Name, ResultSnapshot Value)[] properties) => new(

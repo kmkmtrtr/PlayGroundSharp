@@ -34,6 +34,7 @@ public partial class ResultInspectorWindow : Window
     private string appliedQuery = string.Empty;
     private bool copyInProgress;
     private bool isTableMode;
+    private bool isConfiguringTable;
     private HwndSource? windowSource;
 
     public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel)
@@ -399,8 +400,10 @@ public partial class ResultInspectorWindow : Window
     private void TableGrid_LoadingRow(object sender, DataGridRowEventArgs e) =>
         e.Row.Header = (e.Row.GetIndex() + 1).ToString("N0");
 
-    private void TableGrid_SelectedCellsChanged(object sender, SelectedCellsChangedEventArgs e) =>
-        UpdateOpenCellTableState();
+    private void TableGrid_SelectedCellsChanged(object sender, SelectedCellsChangedEventArgs e)
+    {
+        if (!isConfiguringTable) UpdateOpenCellTableState();
+    }
 
     private void TableGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
@@ -567,11 +570,9 @@ public partial class ResultInspectorWindow : Window
         if (!selectedCell.IsValid ||
             selectedCell.Item is not SnapshotTableRow row ||
             !tableColumnIndexes.TryGetValue(selectedCell.Column, out var columnIndex) ||
-            columnIndex < 0 ||
-            columnIndex >= row.Cells.Count)
+            !tableModel.TryGetCell(row, columnIndex, out cell))
             return false;
 
-        cell = row.Cells[columnIndex];
         var rowPath = tableModel.SourceRowsAreItems
             ? $"{tablePath}[{row.SourceIndex}]"
             : tablePath;
@@ -593,41 +594,51 @@ public partial class ResultInspectorWindow : Window
 
     private void ConfigureTable()
     {
-        TableGrid.ItemsSource = null;
-        TableGrid.Columns.Clear();
-        tableColumnIndexes.Clear();
-        TableGrid.UnselectAllCells();
-        OpenCellTableButton.IsEnabled = false;
-        TableBackButton.IsEnabled = tableHistory.Count > 0;
-        TableModeButton.IsEnabled = tableModel is not null;
-        if (tableModel is null) return;
-
-        for (var index = 0; index < tableModel.Columns.Count; index++)
+        isConfiguringTable = true;
+        try
         {
-            var columnIndex = index;
-            var elementStyle = new Style(typeof(TextBlock));
-            elementStyle.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
-            elementStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center));
-            elementStyle.Setters.Add(new Setter(ToolTipService.ToolTipProperty,
-                new Binding($"Cells[{columnIndex}].Display")));
-            var column = new DataGridTextColumn
+            TableGrid.ItemsSource = null;
+            TableGrid.UnselectAllCells();
+            TableGrid.CurrentCell = new();
+            TableGrid.Columns.Clear();
+            tableColumnIndexes.Clear();
+            OpenCellTableButton.IsEnabled = false;
+            TableBackButton.IsEnabled = tableHistory.Count > 0;
+            TableModeButton.IsEnabled = tableModel is not null;
+            if (tableModel is null) return;
+
+            for (var index = 0; index < tableModel.Columns.Count; index++)
             {
-                Header = tableModel.Columns[columnIndex],
-                Binding = new Binding($"Cells[{columnIndex}].Display") { Mode = BindingMode.OneWay },
-                ClipboardContentBinding = new Binding($"Cells[{columnIndex}].ExportValue") { Mode = BindingMode.OneWay },
-                ElementStyle = elementStyle,
-                MinWidth = 80,
-                MaxWidth = 420,
-                Width = new DataGridLength(140),
-                SortMemberPath = $"Cells[{columnIndex}].Display"
-            };
-            TableGrid.Columns.Add(column);
-            tableColumnIndexes.Add(column, columnIndex);
+                var columnIndex = index;
+                var elementStyle = new Style(typeof(TextBlock));
+                elementStyle.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+                elementStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center));
+                elementStyle.Setters.Add(new Setter(ToolTipService.ToolTipProperty,
+                    new Binding($"Cells[{columnIndex}].Display")));
+                var column = new DataGridTextColumn
+                {
+                    Header = tableModel.Columns[columnIndex],
+                    Binding = new Binding($"Cells[{columnIndex}].Display") { Mode = BindingMode.OneWay },
+                    ClipboardContentBinding = new Binding($"Cells[{columnIndex}].ExportValue") { Mode = BindingMode.OneWay },
+                    ElementStyle = elementStyle,
+                    MinWidth = 80,
+                    MaxWidth = 420,
+                    Width = new DataGridLength(140),
+                    SortMemberPath = $"Cells[{columnIndex}].Display"
+                };
+                TableGrid.Columns.Add(column);
+                tableColumnIndexes.Add(column, columnIndex);
+            }
+            // Attach the potentially large row source after all columns are ready. Adding
+            // columns to a live ItemsSource repeatedly invalidates the DataGrid layout.
+            TableGrid.ItemsSource = tableModel.Rows;
+            UpdateTableSummary();
         }
-        // Attach the potentially large row source after all columns are ready. Adding
-        // columns to a live ItemsSource repeatedly invalidates the DataGrid layout.
-        TableGrid.ItemsSource = tableModel.Rows;
-        UpdateTableSummary();
+        finally
+        {
+            isConfiguringTable = false;
+        }
+        UpdateOpenCellTableState();
     }
 
     private void SetTableMode(bool tableMode)

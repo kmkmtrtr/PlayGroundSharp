@@ -34,7 +34,7 @@ public sealed class ScrollWheelRouterTests
     }
 
     [Fact]
-    public void MouseWheelMovesAHorizontalOnlyViewer()
+    public void MouseWheelMovesAHorizontalOnlyViewerInTheExpectedDirections()
     {
         RunOnStaThread(() =>
         {
@@ -51,16 +51,28 @@ public sealed class ScrollWheelRouterTests
             viewer.Measure(new Size(200, 100));
             viewer.Arrange(new Rect(0, 0, 200, 100));
             viewer.UpdateLayout();
-            var wheel = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120)
+            var wheelUp = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, 120)
             {
                 RoutedEvent = UIElement.PreviewMouseWheelEvent
             };
 
-            content.RaiseEvent(wheel);
+            content.RaiseEvent(wheelUp);
             viewer.UpdateLayout();
 
-            Assert.True(wheel.Handled);
+            Assert.True(wheelUp.Handled);
             Assert.True(viewer.HorizontalOffset > 0);
+
+            var offsetAfterWheelUp = viewer.HorizontalOffset;
+            var wheelDown = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120)
+            {
+                RoutedEvent = UIElement.PreviewMouseWheelEvent
+            };
+
+            content.RaiseEvent(wheelDown);
+            viewer.UpdateLayout();
+
+            Assert.True(wheelDown.Handled);
+            Assert.True(viewer.HorizontalOffset < offsetAfterWheelUp);
         });
     }
 

@@ -420,7 +420,7 @@ public partial class ResultInspectorWindow : Window
         if (ScrollWheelRouter.TryRouteHorizontalWheel(
                 TableGrid,
                 e.OriginalSource as DependencyObject,
-                -e.Delta,
+                e.Delta,
                 Keyboard.Modifiers,
                 forceHorizontal))
             e.Handled = true;

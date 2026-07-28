@@ -76,7 +76,7 @@ internal static class ScrollWheelRouter
         if (TryRouteHorizontalWheel(
                 scrollViewer,
                 e.OriginalSource as DependencyObject,
-                -e.Delta,
+                e.Delta,
                 Keyboard.Modifiers))
             e.Handled = true;
     }

@@ -59,6 +59,7 @@ public partial class MainWindow : Window
         App.ApplyLanguage(viewModel.LanguageMode);
         InitializeComponent();
         DataContext = viewModel;
+        SynchronizeTargetFrameworkSelection();
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         UpdateEditorAccessibilityName();
         ApplySavedWindowLayout();
@@ -118,6 +119,11 @@ public partial class MainWindow : Window
                 Editor.Text = viewModel.InputText;
                 Editor.CaretOffset = Editor.Text.Length;
             }
+            return;
+        }
+        if (e.PropertyName == nameof(MainViewModel.TargetFramework))
+        {
+            SynchronizeTargetFrameworkSelection();
             return;
         }
         if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
@@ -1042,10 +1048,17 @@ public partial class MainWindow : Window
     private async void TargetFrameworkBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (targetFrameworkChangeInProgress ||
-            TargetFrameworkBox.SelectedItem is not DotNetFrameworkInfo selected ||
-            selected.TargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase))
+            TargetFrameworkBox.SelectedValue is not string selectedTargetFramework ||
+            selectedTargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase))
             return;
 
+        var selected = viewModel.TargetFrameworkOptions.FirstOrDefault(framework =>
+            framework.TargetFramework.Equals(selectedTargetFramework, StringComparison.OrdinalIgnoreCase));
+        if (selected is null)
+        {
+            SynchronizeTargetFrameworkSelection();
+            return;
+        }
         targetFrameworkChangeInProgress = true;
         try
         {
@@ -1057,20 +1070,47 @@ public partial class MainWindow : Window
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Warning) != MessageBoxResult.OK)
             {
-                TargetFrameworkBox.SelectedValue = viewModel.TargetFramework;
+                SynchronizeTargetFrameworkSelection();
                 return;
             }
 
-            await viewModel.ChangeTargetFrameworkAsync(selected.TargetFramework);
+            if (!await viewModel.ChangeTargetFrameworkAsync(selected.TargetFramework))
+                SynchronizeTargetFrameworkSelection();
         }
         catch (Exception error)
         {
-            TargetFrameworkBox.SelectedValue = viewModel.TargetFramework;
+            SynchronizeTargetFrameworkSelection();
             ShowError(error);
         }
         finally
         {
             targetFrameworkChangeInProgress = false;
+        }
+    }
+
+    private void SynchronizeTargetFrameworkSelection()
+    {
+        var target = viewModel.TargetFrameworkOptions.FirstOrDefault(framework =>
+            framework.TargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase));
+        if (target is null ||
+            TargetFrameworkBox.SelectedItem is DotNetFrameworkInfo selected &&
+            selected.TargetFramework.Equals(target.TargetFramework, StringComparison.OrdinalIgnoreCase) &&
+            TargetFrameworkBox.SelectedValue is string selectedValue &&
+            selectedValue.Equals(target.TargetFramework, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var wasChangeInProgress = targetFrameworkChangeInProgress;
+        targetFrameworkChangeInProgress = true;
+        try
+        {
+            TargetFrameworkBox.SelectedItem = target;
+            if (TargetFrameworkBox.SelectedValue is not string currentValue ||
+                !currentValue.Equals(target.TargetFramework, StringComparison.OrdinalIgnoreCase))
+                TargetFrameworkBox.SelectedValue = target.TargetFramework;
+        }
+        finally
+        {
+            targetFrameworkChangeInProgress = wasChangeInProgress;
         }
     }
 

@@ -869,7 +869,6 @@
                                           ItemsSource="{Binding TargetFrameworkOptions}"
                                           DisplayMemberPath="DisplayName"
                                           SelectedValuePath="TargetFramework"
-                                          SelectedValue="{Binding TargetFramework, Mode=OneWay}"
                                           SelectionChanged="TargetFrameworkBox_SelectionChanged"
                                           IsEnabled="{Binding CanChangeSession}"
                                           ToolTip="{DynamicResource Settings.TargetFrameworkHint}"

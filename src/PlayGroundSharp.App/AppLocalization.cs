@@ -17,6 +17,9 @@ internal static class AppLocalization
         ["Ui.CopyJson"] = "JSONとしてコピー",
         ["Ui.Save"] = "保存",
         ["Ui.ScrollToLatest"] = "最新の出力へ移動",
+        ["ConsoleTab.Title"] = "コンソール {0}",
+        ["ConsoleTab.Add"] = "コンソールを追加 (Ctrl+T)",
+        ["ConsoleTab.Close"] = "コンソールを閉じる (Ctrl+W)",
         ["Input.Editor"] = "C#入力欄",
         ["Tooltip.Types"] = "シンボル エクスプローラーを開閉します",
         ["Tooltip.Session"] = "変数・NuGet・ライブラリ・using・設定を開閉します",
@@ -315,6 +318,7 @@ internal static class AppLocalization
     private static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>
     {
         ["Ui.AppSubtitle"] = "C# interactive console", ["Ui.MainMenu"] = "Main menu", ["Ui.Types"] = "Types", ["Ui.Session"] = "Session",
+        ["ConsoleTab.Title"] = "Console {0}", ["ConsoleTab.Add"] = "Add console (Ctrl+T)", ["ConsoleTab.Close"] = "Close console (Ctrl+W)",
         ["Ui.Stop"] = "Stop", ["Ui.Restart"] = "Restart", ["Ui.Reset"] = "Reset", ["Ui.Clear"] = "Clear", ["Ui.Inspect"] = "Inspect", ["Ui.Copy"] = "Copy", ["Ui.CopyJson"] = "Copy as JSON", ["Ui.Save"] = "Save", ["Ui.ScrollToLatest"] = "Scroll to latest output",
         ["Input.Editor"] = "C# input editor",
         ["Tooltip.Types"] = "Toggle the Symbol Explorer",

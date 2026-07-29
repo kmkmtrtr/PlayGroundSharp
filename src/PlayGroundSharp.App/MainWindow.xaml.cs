@@ -1,5 +1,6 @@
-using System.ComponentModel;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -23,7 +24,10 @@ public partial class MainWindow : Window
     private const int WmMouseHorizontalWheel = 0x020E;
     private const int MaximumDroppedPathCount = 500;
     private const double DualPaneMinimumWidth = 1050;
-    private readonly MainViewModel viewModel = new();
+    private readonly ObservableCollection<ConsoleTabItem> consoleTabs = [];
+    private readonly HashSet<ConsoleTabItem> closingConsoleTabs = [];
+    private MainViewModel viewModel;
+    private int nextConsoleTabNumber;
     private IReadOnlyList<CompletionCandidate> allCompletionItems = [];
     private CancellationTokenSource? completionCancellation;
     private CancellationTokenSource? completionDescriptionCancellation;
@@ -57,26 +61,22 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        var initialTab = CreateConsoleTab();
+        consoleTabs.Add(initialTab);
+        viewModel = initialTab.ViewModel;
         App.ApplyLanguage(viewModel.LanguageMode);
         InitializeComponent();
         DataContext = viewModel;
+        ConsoleTabs.ItemsSource = consoleTabs;
+        ConsoleTabs.SelectedItem = initialTab;
         SynchronizeTargetFrameworkSelection();
-        viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        AttachViewModel();
         UpdateEditorAccessibilityName();
         ApplySavedWindowLayout();
         App.ApplyTheme(viewModel.ThemeMode);
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("C#");
         diagnosticUnderlineRenderer = new(Editor.Document);
         Editor.TextArea.TextView.BackgroundRenderers.Add(diagnosticUnderlineRenderer);
-        viewModel.Transcript.CollectionChanged += (_, args) =>
-        {
-            if (args.Action == NotifyCollectionChangedAction.Reset && viewModel.Transcript.Count == 0)
-                SetTranscriptAutoScroll(true);
-            Dispatcher.BeginInvoke(() =>
-            {
-                if (transcriptAutoScroll) TranscriptScroll.ScrollToEnd();
-            });
-        };
         Editor.TextArea.TextEntered += async (_, args) =>
         {
             if (args.Text == ":") await ShowCompletionAsync();
@@ -113,6 +113,43 @@ public partial class MainWindow : Window
         quickInfoChordTimer.Tick += (_, _) => CancelQuickInfoChord();
     }
 
+    private ConsoleTabItem CreateConsoleTab()
+    {
+        var session = new MainViewModel();
+        if (consoleTabs.Count > 0)
+        {
+            session.ExecutionKeyMode = viewModel.ExecutionKeyMode;
+            session.ThemeMode = viewModel.ThemeMode;
+            session.LanguageMode = viewModel.LanguageMode;
+            session.TargetFramework = viewModel.TargetFramework;
+            session.IsTypeExplorerOpen = viewModel.IsTypeExplorerOpen;
+            session.IsReferenceDrawerOpen = viewModel.IsReferenceDrawerOpen;
+        }
+        return new(++nextConsoleTabNumber, session.LanguageMode, session);
+    }
+
+    private void AttachViewModel()
+    {
+        viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        viewModel.Transcript.CollectionChanged += ViewModelTranscript_CollectionChanged;
+    }
+
+    private void DetachViewModel()
+    {
+        viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        viewModel.Transcript.CollectionChanged -= ViewModelTranscript_CollectionChanged;
+    }
+
+    private void ViewModelTranscript_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs args)
+    {
+        if (args.Action == NotifyCollectionChangedAction.Reset && viewModel.Transcript.Count == 0)
+            SetTranscriptAutoScroll(true);
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (transcriptAutoScroll) TranscriptScroll.ScrollToEnd();
+        });
+    }
+
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.InputText))
@@ -139,10 +176,26 @@ public partial class MainWindow : Window
         }
         if (e.PropertyName == nameof(MainViewModel.ThemeMode))
         {
+            foreach (var tab in consoleTabs)
+                if (!ReferenceEquals(tab.ViewModel, viewModel))
+                    tab.ViewModel.ThemeMode = viewModel.ThemeMode;
             diagnosticUnderlineRenderer?.Invalidate(Editor.TextArea.TextView);
             return;
         }
+        if (e.PropertyName == nameof(MainViewModel.ExecutionKeyMode))
+        {
+            foreach (var tab in consoleTabs)
+                if (!ReferenceEquals(tab.ViewModel, viewModel))
+                    tab.ViewModel.ExecutionKeyMode = viewModel.ExecutionKeyMode;
+            return;
+        }
         if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
+        foreach (var tab in consoleTabs)
+        {
+            if (!ReferenceEquals(tab.ViewModel, viewModel))
+                tab.ViewModel.LanguageMode = viewModel.LanguageMode;
+            tab.UpdateLanguage(viewModel.LanguageMode);
+        }
         UpdateEditorAccessibilityName();
         if (helpWindow is { IsVisible: true } help)
         {
@@ -187,15 +240,21 @@ public partial class MainWindow : Window
         CancelAndDispose(ref pinnedQuickInfoCancellation);
         try
         {
-            await viewModel.DisposeAsync();
-        }
-        catch (Exception error)
-        {
-            Debug.WriteLine($"Application shutdown cleanup failed: {error}");
+            foreach (var tab in consoleTabs.ToArray())
+            {
+                try
+                {
+                    await tab.DisposeAsync();
+                }
+                catch (Exception error)
+                {
+                    Debug.WriteLine($"Console {tab.Number} shutdown cleanup failed: {error}");
+                }
+            }
         }
         finally
         {
-            viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            DetachViewModel();
             closeCompleted = true;
             // DisposeAsync can complete synchronously when the window is closed before
             // Worker startup finishes. Calling Close again from inside the original
@@ -472,7 +531,26 @@ public partial class MainWindow : Window
 
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.F6 && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
+        if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            await AddConsoleTabAsync();
+        }
+        else if (e.Key == Key.W && Keyboard.Modifiers == ModifierKeys.Control &&
+                 ConsoleTabs.SelectedItem is ConsoleTabItem selectedTab)
+        {
+            e.Handled = true;
+            await CloseConsoleTabAsync(selectedTab);
+        }
+        else if (e.Key == Key.Tab &&
+                 Keyboard.Modifiers is ModifierKeys.Control or
+                     (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            SelectRelativeConsoleTab(
+                Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? -1 : 1);
+        }
+        else if (e.Key == Key.F6 && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
             e.Handled = true;
             MovePaneFocus(Keyboard.Modifiers == ModifierKeys.Shift ? -1 : 1);
@@ -1067,6 +1145,140 @@ public partial class MainWindow : Window
         e.Handled = true;
         TargetFrameworkBox.IsDropDownOpen = false;
         QueueTargetFrameworkSelection(selected);
+    }
+
+    private async void AddConsoleTab_Click(object sender, RoutedEventArgs e)
+    {
+        await AddConsoleTabAsync();
+    }
+
+    private async Task AddConsoleTabAsync()
+    {
+        if (closeInProgress) return;
+        var tab = CreateConsoleTab();
+        consoleTabs.Add(tab);
+        ConsoleTabs.SelectedItem = tab;
+        await tab.InitializeAsync();
+        if (!closeInProgress && ReferenceEquals(ConsoleTabs.SelectedItem, tab)) Editor.Focus();
+    }
+
+    private async void CloseConsoleTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (closeInProgress || sender is not FrameworkElement { DataContext: ConsoleTabItem tab }) return;
+        e.Handled = true;
+        await CloseConsoleTabAsync(tab);
+    }
+
+    private async Task CloseConsoleTabAsync(ConsoleTabItem tab)
+    {
+        if (closeInProgress || !consoleTabs.Contains(tab) || !closingConsoleTabs.Add(tab)) return;
+        ConsoleTabItem? replacement = null;
+        var replacementWasCreated = false;
+        try
+        {
+            if (consoleTabs.Count == 1)
+            {
+                replacement = CreateConsoleTab();
+                consoleTabs.Add(replacement);
+                replacementWasCreated = true;
+            }
+
+            if (ReferenceEquals(ConsoleTabs.SelectedItem, tab))
+            {
+                var index = consoleTabs.IndexOf(tab);
+                replacement ??= consoleTabs[index == consoleTabs.Count - 1 ? index - 1 : index + 1];
+                ConsoleTabs.SelectedItem = replacement;
+            }
+
+            consoleTabs.Remove(tab);
+            await tab.DisposeAsync();
+            if (replacementWasCreated)
+                await replacement!.InitializeAsync();
+            if (!closeInProgress) Editor.Focus();
+        }
+        finally
+        {
+            closingConsoleTabs.Remove(tab);
+        }
+    }
+
+    private async void ConsoleTabs_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle ||
+            FindAncestor<TabItem>(e.OriginalSource as DependencyObject)?.DataContext is not ConsoleTabItem tab)
+            return;
+        e.Handled = true;
+        await CloseConsoleTabAsync(tab);
+    }
+
+    private void ConsoleTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ConsoleTabs.SelectedItem is not ConsoleTabItem tab ||
+            ReferenceEquals(tab.ViewModel, viewModel)) return;
+
+        if (e.RemovedItems.OfType<ConsoleTabItem>().FirstOrDefault() is { } previousTab)
+            CaptureConsoleTabUiState(previousTab);
+        HideAssist();
+        CancelHoverQuickInfo();
+        ClosePinnedQuickInfo();
+        DetachViewModel();
+        viewModel = tab.ViewModel;
+        DataContext = viewModel;
+        AttachViewModel();
+        App.ApplyLanguage(viewModel.LanguageMode);
+        App.ApplyTheme(viewModel.ThemeMode);
+        SynchronizeTargetFrameworkSelection();
+        Editor.Text = viewModel.InputText;
+        RestoreConsoleTabEditorState(tab);
+        diagnosticUnderlineRenderer?.UpdateDiagnostics(
+            viewModel.CurrentDiagnostics,
+            Editor.TextArea.TextView);
+        UpdateEditorAccessibilityName();
+        RestoreConsoleTabTranscriptState(tab);
+    }
+
+    private void CaptureConsoleTabUiState(ConsoleTabItem tab)
+    {
+        tab.EditorCaretOffset = Editor.CaretOffset;
+        tab.EditorSelectionStart = Editor.SelectionStart;
+        tab.EditorSelectionLength = Editor.SelectionLength;
+        tab.TranscriptVerticalOffset = TranscriptScroll.VerticalOffset;
+        tab.TranscriptAutoScroll = transcriptAutoScroll;
+        tab.HasCapturedUiState = true;
+    }
+
+    private void RestoreConsoleTabEditorState(ConsoleTabItem tab)
+    {
+        if (!tab.HasCapturedUiState)
+        {
+            Editor.CaretOffset = Editor.Text.Length;
+            return;
+        }
+        var selectionStart = Math.Clamp(tab.EditorSelectionStart, 0, Editor.Text.Length);
+        var selectionLength = Math.Clamp(tab.EditorSelectionLength, 0, Editor.Text.Length - selectionStart);
+        Editor.Select(selectionStart, selectionLength);
+        Editor.CaretOffset = Math.Clamp(tab.EditorCaretOffset, selectionStart, selectionStart + selectionLength);
+    }
+
+    private void RestoreConsoleTabTranscriptState(ConsoleTabItem tab)
+    {
+        SetTranscriptAutoScroll(tab.TranscriptAutoScroll);
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (tab.TranscriptAutoScroll)
+                TranscriptScroll.ScrollToEnd();
+            else
+                TranscriptScroll.ScrollToVerticalOffset(
+                    Math.Clamp(tab.TranscriptVerticalOffset, 0, TranscriptScroll.ScrollableHeight));
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void SelectRelativeConsoleTab(int delta)
+    {
+        if (consoleTabs.Count < 2) return;
+        var current = Math.Max(0, ConsoleTabs.SelectedIndex);
+        ConsoleTabs.SelectedIndex = (current + delta + consoleTabs.Count) % consoleTabs.Count;
+        Editor.Focus();
     }
 
     private void TargetFrameworkBox_PreviewKeyDown(object sender, KeyEventArgs e)

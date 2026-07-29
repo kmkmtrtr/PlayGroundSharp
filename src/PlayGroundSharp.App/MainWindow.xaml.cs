@@ -53,12 +53,14 @@ public partial class MainWindow : Window
     private bool typeExplorerAutoCollapsed;
     private bool closeInProgress;
     private bool closeCompleted;
+    private bool targetFrameworkChangeInProgress;
 
     public MainWindow()
     {
         App.ApplyLanguage(viewModel.LanguageMode);
         InitializeComponent();
         DataContext = viewModel;
+        SynchronizeTargetFrameworkSelection();
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         UpdateEditorAccessibilityName();
         ApplySavedWindowLayout();
@@ -120,6 +122,12 @@ public partial class MainWindow : Window
                 Editor.Text = viewModel.InputText;
                 Editor.CaretOffset = Editor.Text.Length;
             }
+            return;
+        }
+        if (e.PropertyName == nameof(MainViewModel.TargetFramework))
+        {
+            if (!targetFrameworkChangeInProgress)
+                SynchronizeTargetFrameworkSelection();
             return;
         }
         if (e.PropertyName == nameof(MainViewModel.CurrentDiagnostics))
@@ -901,9 +909,11 @@ public partial class MainWindow : Window
     {
         if (sender is not FrameworkElement { DataContext: SymbolExplorerNode { DocumentationPath: { } path } }) return;
         var locale = viewModel.LanguageMode == AppLanguageMode.Japanese ? "ja-jp" : "en-us";
+        var documentationView = viewModel.TargetFramework.Replace("net", "net-", StringComparison.Ordinal);
         try
         {
-            Process.Start(new ProcessStartInfo($"https://learn.microsoft.com/{locale}/dotnet/api/{path}?view=net-10.0")
+            Process.Start(new ProcessStartInfo(
+                $"https://learn.microsoft.com/{locale}/dotnet/api/{path}?view={documentationView}")
             {
                 UseShellExecute = true
             });
@@ -1049,6 +1059,93 @@ public partial class MainWindow : Window
             ShowError(error);
         }
         FocusEditor();
+    }
+
+    private void TargetFrameworkItem_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: DotNetFrameworkInfo selected }) return;
+        e.Handled = true;
+        TargetFrameworkBox.IsDropDownOpen = false;
+        QueueTargetFrameworkSelection(selected);
+    }
+
+    private void TargetFrameworkBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!TargetFrameworkBox.IsDropDownOpen ||
+            e.Key is not (Key.Enter or Key.Space))
+            return;
+
+        var selected = (Keyboard.FocusedElement as FrameworkElement)?.DataContext as DotNetFrameworkInfo ??
+                       TargetFrameworkBox.SelectedItem as DotNetFrameworkInfo;
+        if (selected is null) return;
+        e.Handled = true;
+        TargetFrameworkBox.IsDropDownOpen = false;
+        QueueTargetFrameworkSelection(selected);
+    }
+
+    private void QueueTargetFrameworkSelection(DotNetFrameworkInfo selected)
+    {
+        if (targetFrameworkChangeInProgress ||
+            selected.TargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase))
+            return;
+        targetFrameworkChangeInProgress = true;
+        // Let WPF finish the mouse/keyboard activation before the worker restart
+        // disables the selector.
+        _ = Dispatcher.BeginInvoke(
+            () => _ = ApplyTargetFrameworkSelectionAsync(selected),
+            DispatcherPriority.Input);
+    }
+
+    private async Task ApplyTargetFrameworkSelectionAsync(DotNetFrameworkInfo selected)
+    {
+        try
+        {
+            if (!viewModel.CanChangeSession ||
+                viewModel.HasSessionState && MessageBox.Show(
+                    this,
+                    viewModel.Localize("Dialog.TargetFrameworkWarning", selected.DisplayName),
+                    viewModel.Localize("Dialog.TargetFrameworkTitle"),
+                    MessageBoxButton.OKCancel,
+                    MessageBoxImage.Warning) != MessageBoxResult.OK)
+            {
+                SynchronizeTargetFrameworkSelection();
+                return;
+            }
+
+            await viewModel.ChangeTargetFrameworkAsync(selected.TargetFramework);
+        }
+        catch (Exception error)
+        {
+            SynchronizeTargetFrameworkSelection();
+            ShowError(error);
+        }
+        finally
+        {
+            targetFrameworkChangeInProgress = false;
+        }
+    }
+
+    private void SynchronizeTargetFrameworkSelection()
+    {
+        var target = viewModel.TargetFrameworkOptions.FirstOrDefault(framework =>
+            framework.TargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase));
+        var targetIndex = target is null ? -1 : TargetFrameworkBox.Items.IndexOf(target);
+        if (targetIndex < 0 ||
+            TargetFrameworkBox.SelectedIndex == targetIndex &&
+            TargetFrameworkBox.SelectedItem is DotNetFrameworkInfo selected &&
+            selected.TargetFramework.Equals(target!.TargetFramework, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var wasChangeInProgress = targetFrameworkChangeInProgress;
+        targetFrameworkChangeInProgress = true;
+        try
+        {
+            TargetFrameworkBox.SelectedIndex = targetIndex;
+        }
+        finally
+        {
+            targetFrameworkChangeInProgress = wasChangeInProgress;
+        }
     }
 
     private async void RemoveUsing_Click(object sender, RoutedEventArgs e)

@@ -68,8 +68,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private const int MaximumExplorerSearchResults = 250;
     private const int MaximumTranscriptDiagnostics = 100;
+    private static readonly IReadOnlyList<DotNetFrameworkInfo> AvailableTargetFrameworks =
+        CreateAvailableTargetFrameworks();
     private static readonly AppSettings InitialSettings = SettingsStore.Load();
+    private static readonly TargetFrameworkStartupSelection InitialTargetFrameworkSelection =
+        TargetFrameworkStartupSelector.Select(
+            InitialSettings.TargetFramework,
+            AvailableTargetFrameworks,
+            Environment.Version.Major);
     private AppSettings settings = InitialSettings;
+    private string? unavailableInitialTargetFramework =
+        InitialTargetFrameworkSelection.UnavailableSavedTargetFramework;
     private static readonly string[] Commands =
     [
         ":help", ":clear", ":reset", ":using list", ":using add ", ":using remove ",
@@ -169,6 +178,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = InitialSettings.ExecutionKeyMode;
     [ObservableProperty] private AppThemeMode themeMode = InitialSettings.ThemeMode;
     [ObservableProperty] private AppLanguageMode languageMode = InitialSettings.LanguageMode;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TargetFrameworkDisplayName))]
+    private string targetFramework = InitialTargetFrameworkSelection.SelectedFramework.TargetFramework;
 
     public ObservableCollection<TranscriptLine> Transcript => transcript;
     public bool CanCancel => IsRunning || IsPackageSearchBusy || IsPreparingExecution;
@@ -204,6 +216,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         new(AppLanguageMode.Japanese, "日本語"),
         new(AppLanguageMode.English, "English")
     ];
+    public IReadOnlyList<DotNetFrameworkInfo> TargetFrameworkOptions => AvailableTargetFrameworks;
+    public string TargetFrameworkDisplayName => CurrentTargetFramework.DisplayName;
     public IAsyncRelayCommand ResetCommand { get; }
     public IAsyncRelayCommand RestartWorkerCommand { get; }
     public IRelayCommand ClearCommand { get; }
@@ -287,7 +301,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         [.. imports],
         [.. localReferences],
         packages.Select(static package => new WorkspacePackage(package.Id, package.Version)).ToArray(),
-        InputText);
+        InputText,
+        TargetFramework);
 
     public async Task LoadWorkspaceAsync(WorkspaceDocument document, CancellationToken cancellationToken = default)
     {
@@ -297,9 +312,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             if (IsRunning) await CancelAsync();
+            var workspaceFramework = ResolveTargetFramework(document.TargetFramework ?? TargetFramework)
+                ?? throw new InvalidDataException(
+                    Localize("Message.TargetFrameworkUnavailable", document.TargetFramework));
+            TargetFramework = workspaceFramework.TargetFramework;
             IsWorkerConnected = false;
-            await worker.RestartAsync(cancellationToken);
+            await worker.RestartAsync(workspaceFramework, cancellationToken);
             IsWorkerConnected = true;
+            SaveSettings();
             submissions.Clear();
             imports.Clear();
             imports.AddRange(document.Imports.Distinct(StringComparer.Ordinal));
@@ -461,9 +481,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task InitializeAsync()
     {
+        ApplyInitialTargetFrameworkFallback();
         try
         {
-            await worker.StartAsync();
+            await worker.StartAsync(CurrentTargetFramework);
             IsWorkerConnected = true;
             SetLocalizedStatus("Status.Ready");
             Transcript.Add(LocalizedSystemLine("Message.WorkerConnected"));
@@ -481,6 +502,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             IsSessionChanging = false;
         }
+    }
+
+    private void ApplyInitialTargetFrameworkFallback()
+    {
+        if (unavailableInitialTargetFramework is not { } unavailable) return;
+        unavailableInitialTargetFramework = null;
+        SaveSettings();
+        Transcript.Add(LocalizedSystemLine(
+            "Message.TargetFrameworkFallback",
+            unavailable,
+            TargetFrameworkDisplayName));
     }
 
     public async Task ExecuteAsync()
@@ -749,6 +781,73 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public bool HasSessionState => submissions.Count > 0;
 
+    public async Task<bool> ChangeTargetFrameworkAsync(string? requestedTargetFramework)
+    {
+        var selected = ResolveTargetFramework(requestedTargetFramework);
+        if (selected is null)
+            throw new InvalidOperationException(
+                Localize("Message.TargetFrameworkUnavailable", requestedTargetFramework));
+        if (selected.TargetFramework.Equals(TargetFramework, StringComparison.OrdinalIgnoreCase)) return true;
+        if (!CanChangeSession) return false;
+
+        var previous = CurrentTargetFramework;
+        var previousReferences = references.ToArray();
+        var previousReferenceItems = ReferenceItems.ToArray();
+        var previousLibraryItems = LibraryItems.ToArray();
+        var packagesToRestore = packages.ToArray();
+        IsSessionChanging = true;
+        try
+        {
+            TargetFramework = selected.TargetFramework;
+            SaveSettings();
+            SetLocalizedStatus("Status.StartingWorker");
+            ResetPackageReferencesForTargetChange();
+            await RestartAndRehydrateAsync();
+            foreach (var package in packagesToRestore)
+                await worker.AddPackageAsync(package.Id, package.Version);
+            submissions.Clear();
+            executingCode = null;
+            VariableItems.Clear();
+            IsRunning = false;
+            SignalExecutionFinished();
+            SetSessionStatus("Session.Restarted");
+            SetLocalizedStatus("Status.Ready");
+            Transcript.Add(LocalizedSystemLine("Message.TargetFrameworkChanged", selected.DisplayName));
+            ScheduleDiagnostics(InputText);
+            _ = RefreshTypeExplorerAsync();
+            return true;
+        }
+        catch
+        {
+            TargetFramework = previous.TargetFramework;
+            SaveSettings();
+            references.Clear();
+            references.AddRange(previousReferences);
+            ReferenceItems.Clear();
+            foreach (var reference in previousReferenceItems) ReferenceItems.Add(reference);
+            LibraryItems.Clear();
+            foreach (var library in previousLibraryItems) LibraryItems.Add(library);
+            try
+            {
+                IsWorkerConnected = false;
+                await worker.RestartAsync(previous);
+                IsWorkerConnected = true;
+                await ConfigureWorkerImportsAsync();
+                foreach (var reference in references)
+                    await worker.AddReferenceAsync(reference);
+            }
+            catch
+            {
+                IsWorkerConnected = false;
+            }
+            throw;
+        }
+        finally
+        {
+            IsSessionChanging = false;
+        }
+    }
+
     public async Task<bool> RemoveUsingAsync(string? @namespace)
     {
         var value = @namespace is null ? null : NormalizeUsingInput(@namespace);
@@ -998,12 +1097,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             ExecutionKeyMode = ExecutionKeyMode,
             ThemeMode = ThemeMode,
-            LanguageMode = LanguageMode
+            LanguageMode = LanguageMode,
+            TargetFramework = TargetFramework
         };
         SettingsStore.Save(settings);
     }
 
-    private SessionContext Context => new([.. submissions], [.. imports], [.. references]);
+    private SessionContext Context => new(
+        [.. submissions],
+        [.. imports],
+        [.. references],
+        CurrentTargetFramework.GetReferencePaths());
 
     private async Task UpdateDiagnosticsAfterDelayAsync(string code, CancellationTokenSource delay)
     {
@@ -1186,7 +1290,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                         ReferenceItems.Add(path);
                     }
                 ScheduleDiagnostics(InputText);
-                if (!IsWorkspaceBusy) _ = RefreshTypeExplorerAsync();
+                if (!IsWorkspaceBusy && !IsSessionChanging) _ = RefreshTypeExplorerAsync();
                 Transcript.Add(LocalizedSystemLine("Message.PackageAdded", package.PackageId, package.Version));
                 break;
             case MessageKinds.PackageSearchResults:
@@ -1310,11 +1414,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task RestartAndRehydrateAsync()
     {
         IsWorkerConnected = false;
-        await worker.RestartAsync();
+        await worker.RestartAsync(CurrentTargetFramework);
         IsWorkerConnected = true;
         await ConfigureWorkerImportsAsync();
         foreach (var reference in references)
             await worker.AddReferenceAsync(reference);
+    }
+
+    private void ResetPackageReferencesForTargetChange()
+    {
+        references.Clear();
+        references.AddRange(localReferences);
+        ReferenceItems.Clear();
+        foreach (var reference in localReferences) ReferenceItems.Add(reference);
+        for (var index = LibraryItems.Count - 1; index >= 0; index--)
+        {
+            var item = LibraryItems[index];
+            if (item.Kind == "Package" ||
+                item.Source.StartsWith("NuGet:", StringComparison.OrdinalIgnoreCase))
+                LibraryItems.RemoveAt(index);
+        }
     }
 
     private async Task ConfigureWorkerImportsAsync(CancellationToken cancellationToken = default)
@@ -1852,6 +1971,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private TranscriptLine LocalizedDiagnosticLine(string key, bool error, params object?[] arguments) =>
         TranscriptLine.LocalizedDiagnostic(LanguageMode, key, error, arguments);
+
+    private DotNetFrameworkInfo CurrentTargetFramework =>
+        ResolveTargetFramework(TargetFramework) ?? AvailableTargetFrameworks[0];
+
+    private static DotNetFrameworkInfo? ResolveTargetFramework(string? targetFramework) =>
+        AvailableTargetFrameworks.FirstOrDefault(framework =>
+            framework.TargetFramework.Equals(targetFramework, StringComparison.OrdinalIgnoreCase));
+
+    private static IReadOnlyList<DotNetFrameworkInfo> CreateAvailableTargetFrameworks()
+    {
+        var fallback = DotNetFrameworkLocator.CurrentRuntimeFallback();
+        var frameworks = DotNetFrameworkLocator.Discover()
+            .Where(framework =>
+                !framework.TargetFramework.Equals(fallback.TargetFramework, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        frameworks.Add(fallback);
+        return frameworks
+            .OrderByDescending(static framework => framework.Version)
+            .ToArray();
+    }
 
     private void SignalExecutionFinished()
     {

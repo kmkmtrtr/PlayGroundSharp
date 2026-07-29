@@ -9,8 +9,8 @@ internal static class Program
     {
         if (args.Length > 0 && args[0] == "--worker")
         {
-            if (args is not ["--worker", "--pipe", { Length: > 0 } pipeName]) return 2;
-            return WorkerEntryPoint.RunAsync(pipeName).GetAwaiter().GetResult();
+            if (!WorkerCommandLine.TryParse(args[1..], out var configuration)) return 2;
+            return WorkerEntryPoint.RunAsync(configuration!).GetAwaiter().GetResult();
         }
 
         var app = new App();

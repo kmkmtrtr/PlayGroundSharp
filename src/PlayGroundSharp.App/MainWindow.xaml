@@ -864,6 +864,29 @@
                                         <TextBlock Text="{Binding SessionStatus}" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0" />
                                     </StackPanel>
                                 </Border>
+                                <TextBlock Text="{DynamicResource Settings.TargetFramework}" Margin="0,14,0,4" FontWeight="SemiBold" />
+                                <ComboBox x:Name="TargetFrameworkBox"
+                                          ItemsSource="{Binding TargetFrameworkOptions}"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="TargetFramework"
+                                          IsEditable="True"
+                                          IsReadOnly="True"
+                                          Tag="{Binding TargetFrameworkDisplayName}"
+                                          PreviewKeyDown="TargetFrameworkBox_PreviewKeyDown"
+                                          IsEnabled="{Binding CanChangeSession}"
+                                          ToolTip="{DynamicResource Settings.TargetFrameworkHint}"
+                                          AutomationProperties.Name="{DynamicResource Settings.TargetFramework}"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBox.ItemContainerStyle>
+                                        <Style TargetType="ComboBoxItem"
+                                               BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                                            <EventSetter Event="PreviewMouseLeftButtonUp"
+                                                         Handler="TargetFrameworkItem_PreviewMouseLeftButtonUp" />
+                                        </Style>
+                                    </ComboBox.ItemContainerStyle>
+                                </ComboBox>
+                                <TextBlock Text="{DynamicResource Settings.TargetFrameworkHint}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" FontSize="11" />
                                 <TextBlock Text="{DynamicResource Settings.ExecutionKey}" Margin="0,14,0,4" FontWeight="SemiBold" />
                                 <ComboBox ItemsSource="{Binding ExecutionKeyOptions}" DisplayMemberPath="Label" SelectedValuePath="Value"
                                           AutomationProperties.Name="{DynamicResource Settings.ExecutionKey}"

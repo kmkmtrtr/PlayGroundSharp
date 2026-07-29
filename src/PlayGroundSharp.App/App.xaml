@@ -454,6 +454,11 @@
                                               Content="{TemplateBinding SelectionBoxItem}"
                                               ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
                                               ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" />
+                            <TextBlock x:Name="ReadOnlySelectionPresenter" Margin="8,4,34,4"
+                                       VerticalAlignment="Center" HorizontalAlignment="Left"
+                                       IsHitTestVisible="False" Foreground="{TemplateBinding Foreground}"
+                                       Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                       Visibility="Collapsed" />
                             <TextBox x:Name="PART_EditableTextBox" Style="{x:Null}" Visibility="Collapsed"
                                      Margin="8,2,34,2" Padding="0" VerticalContentAlignment="Center"
                                      Background="Transparent" Foreground="{TemplateBinding Foreground}"
@@ -488,6 +493,16 @@
                                 <Setter TargetName="DropDownToggle" Property="HorizontalAlignment" Value="Right" />
                                 <Setter TargetName="DropDownToggle" Property="Width" Value="32" />
                             </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsEditable" Value="True" />
+                                    <Condition Property="IsReadOnly" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Collapsed" />
+                                <Setter TargetName="ReadOnlySelectionPresenter" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="DropDownToggle" Property="HorizontalAlignment" Value="Stretch" />
+                                <Setter TargetName="DropDownToggle" Property="Width" Value="Auto" />
+                            </MultiTrigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.5" />
                             </Trigger>

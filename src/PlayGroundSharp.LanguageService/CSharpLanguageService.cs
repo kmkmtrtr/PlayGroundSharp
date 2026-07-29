@@ -133,6 +133,8 @@ public sealed class CSharpLanguageService
     private static readonly Lazy<IReadOnlyList<ReferencedType>> PlatformReferencedTypes = new(
         CreatePlatformReferencedTypes,
         LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly ConcurrentDictionary<string, IReadOnlyList<ReferencedType>> FrameworkReferencedTypeCache =
+        new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, IReadOnlyList<ReferencedType>> ReferencedTypeCache =
         new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, DocumentationInfo>> DocumentationFileCache =
@@ -830,9 +832,18 @@ public sealed class CSharpLanguageService
         var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
             usings: context.Imports, nullableContextOptions: NullableContextOptions.Enable);
         var dynamicReferencePaths = context.ReferencePaths.Where(File.Exists).Select(Path.GetFullPath).ToArray();
-        var references = PlatformReferences.Value
-            .Concat(PlatformReferenceResolver.ResolveRuntimeDependencies(dynamicReferencePaths)
-                .Select(CreateMetadataReference))
+        var frameworkReferencePaths = context.FrameworkReferencePaths?
+            .Where(File.Exists)
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
+        var platformReferences = frameworkReferencePaths.Length > 0
+            ? frameworkReferencePaths
+                .Select(CreateMetadataReference)
+            : PlatformReferences.Value.Concat(
+                PlatformReferenceResolver.ResolveRuntimeDependencies(dynamicReferencePaths)
+                    .Select(CreateMetadataReference));
+        var references = platformReferences
             .Concat(dynamicReferencePaths.Select(CreateMetadataReference))
             .GroupBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.First());
@@ -841,9 +852,12 @@ public sealed class CSharpLanguageService
             compilationOptions: compilationOptions, metadataReferences: references);
         workspace.AddProject(projectInfo);
         var usingDirectives = string.Join(Environment.NewLine, context.Imports.Select(static import => $"using {import};"));
-        const string globals = "dynamic Last = default!; dynamic Out = default!; " +
-            "var Data = new PlayGroundSharp.Core.LargeDataAccess(); " +
-            "System.Threading.CancellationToken ExecutionCancellation = default;";
+        var globals = frameworkReferencePaths.Length > 0
+            ? "dynamic Last = default!; dynamic Out = default!; dynamic Data = default!; " +
+              "System.Threading.CancellationToken ExecutionCancellation = default;"
+            : "dynamic Last = default!; dynamic Out = default!; " +
+              "var Data = new PlayGroundSharp.Core.LargeDataAccess(); " +
+              "System.Threading.CancellationToken ExecutionCancellation = default;";
         var prefix = usingDirectives + Environment.NewLine + Environment.NewLine + globals + Environment.NewLine + Environment.NewLine +
             string.Join(Environment.NewLine + Environment.NewLine, context.Submissions.Select(NormalizeHistoricalSubmission));
         if (prefix.Length > 0) prefix += Environment.NewLine + Environment.NewLine;
@@ -1068,7 +1082,7 @@ public sealed class CSharpLanguageService
         if (prefix.Length < 2 || start > 0 && currentCode[start - 1] == '.') return;
 
         var imported = context.Imports.ToHashSet(StringComparer.Ordinal);
-        var candidates = PlatformReferencedTypes.Value
+        var candidates = GetPlatformReferencedTypes(context)
             .Concat(context.ReferencePaths
                 .Where(File.Exists)
                 .SelectMany(path => ReferencedTypeCache.GetOrAdd(Path.GetFullPath(path), ReadReferencedTypes)))
@@ -1100,6 +1114,21 @@ public sealed class CSharpLanguageService
         .Where(static path => path is not null && File.Exists(path))
         .SelectMany(path => ReferencedTypeCache.GetOrAdd(Path.GetFullPath(path!), ReadReferencedTypes))
         .ToArray();
+
+    private static IReadOnlyList<ReferencedType> GetPlatformReferencedTypes(SessionContext context)
+    {
+        var paths = context.FrameworkReferencePaths?
+            .Where(File.Exists)
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
+        if (paths.Length == 0) return PlatformReferencedTypes.Value;
+        var key = string.Join(Path.PathSeparator, paths);
+        return FrameworkReferencedTypeCache.GetOrAdd(key, _ => paths
+            .SelectMany(path => ReferencedTypeCache.GetOrAdd(path, ReadReferencedTypes))
+            .ToArray());
+    }
 
     private static IReadOnlyList<ReferencedType> ReadReferencedTypes(string path)
     {

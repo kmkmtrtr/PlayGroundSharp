@@ -14,7 +14,8 @@ public sealed record WorkspaceDocument(
     IReadOnlyList<string> Imports,
     IReadOnlyList<string> References,
     IReadOnlyList<WorkspacePackage> Packages,
-    string InputText)
+    string InputText,
+    string? TargetFramework = null)
 {
     public const int CurrentVersion = 1;
 }
@@ -125,5 +126,8 @@ public static class WorkspaceFile
             document.References.Any(static value => string.IsNullOrWhiteSpace(value)) ||
             document.Packages.Any(static value => value is null || string.IsNullOrWhiteSpace(value.Id) || string.IsNullOrWhiteSpace(value.Version)))
             throw new InvalidDataException("Workspace contains invalid entries.");
+        if (document.TargetFramework is not null &&
+            !DotNetFrameworkLocator.IsValidTargetFramework(document.TargetFramework))
+            throw new InvalidDataException("Workspace contains an invalid target framework.");
     }
 }

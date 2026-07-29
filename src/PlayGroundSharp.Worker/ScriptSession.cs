@@ -26,27 +26,63 @@ public sealed class ScriptSession
     private const int MaximumVariableSnapshotTextCharacters = 256 * 1024;
     private const int MaximumVariableSnapshotTotalNodes = 50_000;
     private const int MaximumVariableSnapshotTotalTextCharacters = 10 * 1024 * 1024;
-    private readonly SessionGlobals globals = new();
+    private readonly object globals;
+    private readonly Type globalsType;
+    private readonly ResultHistory resultHistory;
     private readonly ResultSnapshotFactory snapshots = new();
     private readonly List<string> submissions = [];
     private readonly List<string> imports = [.. SessionContext.DefaultImports];
     private readonly List<string> references = [];
     private readonly Dictionary<string, (string Identity, string Path)> assemblyIdentities = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> resolvedAssemblyNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly bool requiresReferenceAssemblyBootstrap;
     private ScriptState<object?>? state;
     private ScriptOptions options;
 
-    public ScriptSession()
+    public ScriptSession(
+        IReadOnlyList<string>? platformReferencePaths = null,
+        string? targetFramework = null)
     {
-        options = ScriptOptions.Default
-            .WithImports(imports)
-            .AddReferences(
-                typeof(object).Assembly,
-                typeof(Enumerable).Assembly,
-                typeof(SessionGlobals).Assembly,
-                typeof(JsonElement).Assembly,
-                typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly,
-                typeof(System.Numerics.BigInteger).Assembly);
+        requiresReferenceAssemblyBootstrap = platformReferencePaths is { Count: > 0 };
+        if (platformReferencePaths is { Count: > 0 })
+        {
+            targetFramework ??= InferTargetFramework(platformReferencePaths);
+            var generated = TargetFrameworkGlobalsFactory.Create(targetFramework, platformReferencePaths);
+            globals = generated.Instance;
+            globalsType = generated.Type;
+            resultHistory = new();
+            SetGlobal(nameof(SessionGlobals.Out), resultHistory);
+            SetGlobal(nameof(SessionGlobals.Data), new LargeDataAccess());
+            var runtimeSystemReference = Path.Combine(
+                Path.GetDirectoryName(typeof(object).Assembly.Location)!,
+                "System.Runtime.dll");
+            options = ScriptOptions.Default
+                .WithImports(imports)
+                .WithReferences(platformReferencePaths
+                    .Where(path => File.Exists(path) &&
+                                   !Path.GetFileName(path).Equals(
+                                       "System.Runtime.dll",
+                                       StringComparison.OrdinalIgnoreCase))
+                    .Select(static path => MetadataReference.CreateFromFile(path))
+                    .Append(MetadataReference.CreateFromFile(runtimeSystemReference))
+                    .Append(MetadataReference.CreateFromFile(generated.AssemblyPath)));
+        }
+        else
+        {
+            var typedGlobals = new SessionGlobals();
+            globals = typedGlobals;
+            globalsType = typeof(SessionGlobals);
+            resultHistory = typedGlobals.Out;
+            options = ScriptOptions.Default
+                .WithImports(imports)
+                .AddReferences(
+                    typeof(object).Assembly,
+                    typeof(Enumerable).Assembly,
+                    typeof(SessionGlobals).Assembly,
+                    typeof(JsonElement).Assembly,
+                    typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly,
+                    typeof(System.Numerics.BigInteger).Assembly);
+        }
         foreach (var reference in options.MetadataReferences)
         {
             var display = reference.Display;
@@ -108,15 +144,23 @@ public sealed class ScriptSession
         using var errorWriter = new BoundedEventWriter(standardError);
         Console.SetOut(outputWriter);
         Console.SetError(errorWriter);
-        globals.ExecutionCancellation = cancellationToken;
+        SetGlobal(nameof(SessionGlobals.ExecutionCancellation), cancellationToken);
         try
         {
             var executableCode = PrepareSubmission(code);
             ScriptState<object?> candidate;
             try
             {
+                if (state is null && requiresReferenceAssemblyBootstrap)
+                {
+                    // Roslyn scripting needs one successfully loaded submission before a failed
+                    // compilation when reference assemblies target an older runtime. Keep this
+                    // bootstrap invisible to session history and variables.
+                    state = await CSharpScript.Create<object?>(string.Empty, options, globalsType)
+                        .RunAsync(globals, static _ => true, cancellationToken).ConfigureAwait(false);
+                }
                 candidate = state is null
-                    ? await CSharpScript.Create<object?>(executableCode, options, typeof(SessionGlobals))
+                    ? await CSharpScript.Create<object?>(executableCode, options, globalsType)
                         .RunAsync(globals, static _ => true, cancellationToken).ConfigureAwait(false)
                     : await state.ContinueWithAsync<object?>(executableCode, options, static _ => true, cancellationToken).ConfigureAwait(false);
             }
@@ -166,8 +210,8 @@ public sealed class ScriptSession
             submissions.Add(code);
             if (hasReturnValue)
             {
-                globals.Last = candidate.ReturnValue;
-                globals.Out.Set(submissionIndex, candidate.ReturnValue);
+                SetGlobal(nameof(SessionGlobals.Last), candidate.ReturnValue);
+                resultHistory.Set(submissionIndex, candidate.ReturnValue);
             }
 
             return new(true, hasReturnValue, candidate.ReturnValue, snapshot, [], null);
@@ -178,7 +222,7 @@ public sealed class ScriptSession
             errorWriter.Flush();
             Console.SetOut(originalOut);
             Console.SetError(originalError);
-            globals.ExecutionCancellation = default;
+            SetGlobal(nameof(SessionGlobals.ExecutionCancellation), default(CancellationToken));
         }
     }
 
@@ -201,10 +245,12 @@ public sealed class ScriptSession
         {
             throw new InvalidOperationException($"Assembly '{simpleName}' is already loaded from another path or version. Worker reconstruction is required.");
         }
-        var platformReferences = PlatformReferenceResolver.ResolveRuntimeDependencies([fullPath])
-            .Where(path => resolvedAssemblyNames.Add(Path.GetFileNameWithoutExtension(path)))
-            .Select(static path => MetadataReference.CreateFromFile(path))
-            .ToArray();
+        var platformReferences = requiresReferenceAssemblyBootstrap
+            ? []
+            : PlatformReferenceResolver.ResolveRuntimeDependencies([fullPath])
+                .Where(path => resolvedAssemblyNames.Add(Path.GetFileNameWithoutExtension(path)))
+                .Select(static path => MetadataReference.CreateFromFile(path))
+                .ToArray();
         if (platformReferences.Length > 0) options = options.AddReferences(platformReferences);
         options = options.AddReferences(MetadataReference.CreateFromFile(fullPath));
         resolvedAssemblyNames.Add(simpleName);
@@ -234,8 +280,26 @@ public sealed class ScriptSession
     {
         state = null;
         submissions.Clear();
-        globals.Last = null;
-        globals.Out.Clear();
+        SetGlobal(nameof(SessionGlobals.Last), null);
+        resultHistory.Clear();
+    }
+
+    private void SetGlobal(string name, object? value)
+    {
+        var property = globalsType.GetProperty(name)
+            ?? throw new MissingMemberException(globalsType.FullName, name);
+        property.SetValue(globals, value);
+    }
+
+    private static string InferTargetFramework(IReadOnlyList<string> referencePaths)
+    {
+        var systemRuntime = referencePaths.FirstOrDefault(path =>
+            Path.GetFileName(path).Equals("System.Runtime.dll", StringComparison.OrdinalIgnoreCase));
+        var major = systemRuntime is null
+            ? Environment.Version.Major
+            : System.Reflection.AssemblyName.GetAssemblyName(systemRuntime).Version?.Major ??
+              Environment.Version.Major;
+        return $"net{major}.0";
     }
 
     private ResultSnapshot CreateVariableSnapshot(

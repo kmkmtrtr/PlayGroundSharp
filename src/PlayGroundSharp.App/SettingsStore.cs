@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using PlayGroundSharp.Core;
 
 namespace PlayGroundSharp.App;
 
@@ -24,7 +25,8 @@ internal sealed record AppSettings(
     double CompletionListWidth = 390,
     double InspectorWidth = 760,
     double InspectorHeight = 560,
-    double InspectorTreeHeight = 280);
+    double InspectorTreeHeight = 280,
+    string? TargetFramework = null);
 
 internal static class SettingsStore
 {
@@ -64,7 +66,10 @@ internal static class SettingsStore
         CompletionListWidth = Normalize(settings.CompletionListWidth, 250, 525, 390),
         InspectorWidth = Normalize(settings.InspectorWidth, 480, 4_000, 760),
         InspectorHeight = Normalize(settings.InspectorHeight, 340, 3_000, 560),
-        InspectorTreeHeight = Normalize(settings.InspectorTreeHeight, 120, 2_000, 280)
+        InspectorTreeHeight = Normalize(settings.InspectorTreeHeight, 120, 2_000, 280),
+        TargetFramework = DotNetFrameworkLocator.IsValidTargetFramework(settings.TargetFramework)
+            ? settings.TargetFramework
+            : null
     };
 
     private static double Normalize(double value, double minimum, double maximum, double fallback) =>

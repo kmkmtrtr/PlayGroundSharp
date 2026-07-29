@@ -1,9 +1,10 @@
 using PlayGroundSharp.Worker;
 
-if (args.Length != 2 || args[0] != "--pipe" || string.IsNullOrWhiteSpace(args[1]))
+if (!WorkerCommandLine.TryParse(args, out var configuration))
 {
-    Console.Error.WriteLine("Usage: PlayGroundSharp.Worker --pipe <name>");
+    Console.Error.WriteLine(
+        "Usage: PlayGroundSharp.Worker --pipe <name> [--target-framework <tfm>] [--framework-reference-directory <path>]");
     return 2;
 }
 
-return await WorkerEntryPoint.RunAsync(args[1]);
+return await WorkerEntryPoint.RunAsync(configuration!);

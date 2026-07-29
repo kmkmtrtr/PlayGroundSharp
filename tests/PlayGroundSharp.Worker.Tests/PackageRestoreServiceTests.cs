@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using PlayGroundSharp.Core;
 using PlayGroundSharp.TestFixture;
 using PlayGroundSharp.Worker;
 
@@ -6,6 +7,13 @@ namespace PlayGroundSharp.Worker.Tests;
 
 public sealed class PackageRestoreServiceTests
 {
+    [Fact]
+    public void RejectsInvalidTargetFramework()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new PackageRestoreService(targetFramework: "../net10.0"));
+    }
+
     [Fact]
     public async Task RestoresPackageAndTransitiveDependencyFromLocalFeed()
     {
@@ -26,6 +34,25 @@ public sealed class PackageRestoreServiceTests
             var session = new ScriptSession();
             foreach (var path in result.AssemblyPaths) session.AddReference(path);
             Assert.Equal("hello from fixture", (await session.ExecuteAsync(1, "PlayGroundSharp.TestFixture.Greeter.Message")).Snapshot?.Display);
+
+            var olderFramework = DotNetFrameworkLocator.Discover()
+                .FirstOrDefault(static candidate => candidate.Version.Major == 9);
+            if (olderFramework is not null)
+            {
+                var olderResult = await new PackageRestoreService(
+                        Path.Combine(temporary, "cache-net9"),
+                        olderFramework.TargetFramework)
+                    .RestoreAsync("PlayGroundSharp.TestFixture", "1.0.0", feed);
+                var olderSession = new ScriptSession(
+                    olderFramework.GetReferencePaths(),
+                    olderFramework.TargetFramework);
+                foreach (var path in olderResult.AssemblyPaths) olderSession.AddReference(path);
+                Assert.Equal(
+                    "hello from fixture",
+                    (await olderSession.ExecuteAsync(
+                        1,
+                        "PlayGroundSharp.TestFixture.Greeter.Message")).Snapshot?.Display);
+            }
         }
         finally
         {

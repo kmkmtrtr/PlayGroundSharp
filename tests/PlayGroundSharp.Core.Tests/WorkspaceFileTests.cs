@@ -15,7 +15,8 @@ public sealed class WorkspaceFileTests
             [.. SessionContext.DefaultImports, "Humanizer"],
             [@"C:\Libraries\Example.dll"],
             [new("Humanizer.Core", "3.0.10")],
-            "answer + 1 // 日本語 <checked>");
+            "answer + 1 // 日本語 <checked>",
+            "net9.0");
         try
         {
             await WorkspaceFile.SaveAsync(path, expected);
@@ -30,6 +31,7 @@ public sealed class WorkspaceFileTests
             Assert.Equal(expected.References, actual.References);
             Assert.Equal(expected.Packages, actual.Packages);
             Assert.Equal(expected.InputText, actual.InputText);
+            Assert.Equal(expected.TargetFramework, actual.TargetFramework);
             Assert.Contains("answer + 1 // 日本語 <checked>", serialized, StringComparison.Ordinal);
             Assert.DoesNotContain("\\u002B", serialized, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("\\u65E5", serialized, StringComparison.OrdinalIgnoreCase);

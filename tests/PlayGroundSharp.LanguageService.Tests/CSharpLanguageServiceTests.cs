@@ -8,6 +8,26 @@ public sealed class CSharpLanguageServiceTests
 {
     private readonly CSharpLanguageService service = new();
 
+    [Fact]
+    public async Task SelectedFrameworkReferencePackControlsAvailableApis()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .FirstOrDefault(static candidate => candidate.Version.Major == 9);
+        if (framework is null) return;
+        const string code =
+            "new[] { 1 }.LeftJoin(new[] { 1 }, x => x, x => x, (left, right) => left)";
+        var context = SessionContext.Empty with
+        {
+            FrameworkReferencePaths = framework.GetReferencePaths()
+        };
+
+        var diagnostics = await service.GetDiagnosticsAsync(context, code);
+
+        Assert.Contains(diagnostics, static diagnostic =>
+            diagnostic.Level == DiagnosticLevel.Error &&
+            diagnostic.Message.Contains("LeftJoin", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("var value = 42", false)]
     [InlineData("Enumerable.Range(1, 10).Sum()", false)]

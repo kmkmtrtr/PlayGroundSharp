@@ -32,6 +32,13 @@ public sealed class WorkerClient : IAsyncDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
+        await StartAsync(DotNetFrameworkLocator.CurrentRuntimeFallback(), cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task StartAsync(
+        DotNetFrameworkInfo framework,
+        CancellationToken cancellationToken = default)
+    {
         await StopAsync().ConfigureAwait(false);
         var generation = Interlocked.Increment(ref connectionGeneration);
         Volatile.Write(ref disconnectionReported, 0);
@@ -48,6 +55,13 @@ public sealed class WorkerClient : IAsyncDisposable
         startInfo.ArgumentList.Add("--worker");
         startInfo.ArgumentList.Add("--pipe");
         startInfo.ArgumentList.Add(pipeName);
+        startInfo.ArgumentList.Add("--target-framework");
+        startInfo.ArgumentList.Add(framework.TargetFramework);
+        if (framework.ReferenceDirectory is not null)
+        {
+            startInfo.ArgumentList.Add("--framework-reference-directory");
+            startInfo.ArgumentList.Add(framework.ReferenceDirectory);
+        }
         process = Process.Start(startInfo) ?? throw new InvalidOperationException("Worker process could not be started.");
         try
         {
@@ -119,6 +133,14 @@ public sealed class WorkerClient : IAsyncDisposable
     {
         await StopAsync().ConfigureAwait(false);
         await StartAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RestartAsync(
+        DotNetFrameworkInfo framework,
+        CancellationToken cancellationToken = default)
+    {
+        await StopAsync().ConfigureAwait(false);
+        await StartAsync(framework, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task SendAndWaitAsync<T>(string kind, T payload, CancellationToken cancellationToken)

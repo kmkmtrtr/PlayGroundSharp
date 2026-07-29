@@ -5,12 +5,28 @@ using PlayGroundSharp.Core;
 namespace PlayGroundSharp.Worker;
 
 /// <summary>Serves one App connection and serializes access to a ScriptSession.</summary>
-public sealed class WorkerHost(string pipeName)
+public sealed class WorkerHost
 {
-    private readonly ScriptSession session = new();
-    private readonly PackageRestoreService packageRestore = new();
+    private readonly string pipeName;
+    private readonly ScriptSession session;
+    private readonly PackageRestoreService packageRestore;
     private readonly PackageSearchService packageSearch = new();
     private volatile CancellationTokenSource? operationCancellation;
+
+    public WorkerHost(string pipeName)
+        : this(new WorkerConfiguration(pipeName, $"net{Environment.Version.Major}.0", null))
+    {
+    }
+
+    public WorkerHost(WorkerConfiguration configuration)
+    {
+        pipeName = configuration.PipeName;
+        var frameworkReferences = configuration.FrameworkReferenceDirectory is { } directory
+            ? Directory.EnumerateFiles(directory, "*.dll").ToArray()
+            : null;
+        session = new ScriptSession(frameworkReferences, configuration.TargetFramework);
+        packageRestore = new PackageRestoreService(targetFramework: configuration.TargetFramework);
+    }
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {

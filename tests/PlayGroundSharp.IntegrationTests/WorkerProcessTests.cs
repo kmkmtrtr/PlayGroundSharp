@@ -8,6 +8,54 @@ namespace PlayGroundSharp.IntegrationTests;
 public sealed class WorkerProcessTests
 {
     [Fact]
+    public async Task WorkerProcessUsesSelectedFrameworkReferencePack()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .FirstOrDefault(static candidate => candidate.Version.Major == 9);
+        if (framework is null) return;
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-target-framework-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName, framework);
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var transport = new PipeTransport(pipe);
+
+            var unavailable = await ExecuteAsync(
+                transport,
+                1,
+                "new[] { 1 }.LeftJoin(new[] { 1 }, x => x, x => x, (left, right) => left)",
+                timeout.Token);
+            var diagnostics = unavailable
+                .Single(static envelope => envelope.Kind == MessageKinds.Diagnostics)
+                .ReadPayload<DiagnosticsEvent>()
+                .Diagnostics;
+
+            Assert.Contains(diagnostics, static diagnostic =>
+                diagnostic.Level == DiagnosticLevel.Error &&
+                diagnostic.Message.Contains("LeftJoin", StringComparison.Ordinal));
+            var available = await ExecuteAsync(transport, 1, "1 + 2", timeout.Token);
+            var result = available.SingleOrDefault(static envelope => envelope.Kind == MessageKinds.Result);
+            var failure = available.SingleOrDefault(static envelope => envelope.Kind == MessageKinds.Error);
+            var compilationFailure = available.SingleOrDefault(static envelope => envelope.Kind == MessageKinds.Diagnostics);
+            var failureMessage = failure?.ReadPayload<WorkerErrorEvent>().Message ??
+                (compilationFailure is null
+                    ? string.Join(", ", available.Select(static envelope => envelope.Kind))
+                    : string.Join(Environment.NewLine, compilationFailure.ReadPayload<DiagnosticsEvent>()
+                        .Diagnostics.Select(static diagnostic => diagnostic.Message)));
+            Assert.True(result is not null, failureMessage);
+            Assert.Equal("3", result.ReadPayload<ResultEvent>().Snapshot.Display);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public async Task WorkerProcessExecutesMultipleSubmissionsAndStreamsConsole()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -318,7 +366,7 @@ public sealed class WorkerProcessTests
         }
     }
 
-    private static Process StartWorker(string pipeName)
+    private static Process StartWorker(string pipeName, DotNetFrameworkInfo? framework = null)
     {
         var publishedHost = Environment.GetEnvironmentVariable("PLAYGROUNDSHARP_WORKER_HOST");
         if (!string.IsNullOrWhiteSpace(publishedHost))
@@ -332,16 +380,32 @@ public sealed class WorkerProcessTests
             startInfo.ArgumentList.Add("--worker");
             startInfo.ArgumentList.Add("--pipe");
             startInfo.ArgumentList.Add(pipeName);
+            AddFrameworkArguments(startInfo, framework);
             return Process.Start(startInfo) ?? throw new InvalidOperationException("Published Worker host failed to start.");
         }
 
         var workerDll = typeof(WorkerHost).Assembly.Location;
-        return Process.Start(new ProcessStartInfo("dotnet", $"\"{workerDll}\" --pipe {pipeName}")
+        var workerStartInfo = new ProcessStartInfo("dotnet")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             WorkingDirectory = Path.GetDirectoryName(workerDll)!
-        }) ?? throw new InvalidOperationException("Worker failed to start.");
+        };
+        workerStartInfo.ArgumentList.Add(workerDll);
+        workerStartInfo.ArgumentList.Add("--pipe");
+        workerStartInfo.ArgumentList.Add(pipeName);
+        AddFrameworkArguments(workerStartInfo, framework);
+        return Process.Start(workerStartInfo) ?? throw new InvalidOperationException("Worker failed to start.");
+    }
+
+    private static void AddFrameworkArguments(ProcessStartInfo startInfo, DotNetFrameworkInfo? framework)
+    {
+        if (framework is null) return;
+        startInfo.ArgumentList.Add("--target-framework");
+        startInfo.ArgumentList.Add(framework.TargetFramework);
+        if (framework.ReferenceDirectory is null) return;
+        startInfo.ArgumentList.Add("--framework-reference-directory");
+        startInfo.ArgumentList.Add(framework.ReferenceDirectory);
     }
 
     private static async Task<IReadOnlyList<PipeEnvelope>> ExecuteAsync(

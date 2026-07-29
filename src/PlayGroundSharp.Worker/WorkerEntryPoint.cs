@@ -7,9 +7,20 @@ public static class WorkerEntryPoint
 {
     public static async Task<int> RunAsync(string pipeName, CancellationToken cancellationToken = default)
     {
+        var configuration = new WorkerConfiguration(
+            pipeName,
+            $"net{Environment.Version.Major}.0",
+            null);
+        return await RunAsync(configuration, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<int> RunAsync(
+        WorkerConfiguration configuration,
+        CancellationToken cancellationToken = default)
+    {
         try
         {
-            await new WorkerHost(pipeName).RunAsync(cancellationToken).ConfigureAwait(false);
+            await new WorkerHost(configuration).RunAsync(cancellationToken).ConfigureAwait(false);
             return 0;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

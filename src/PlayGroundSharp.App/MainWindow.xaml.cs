@@ -52,6 +52,7 @@ public partial class MainWindow : Window
     private bool typeExplorerAutoCollapsed;
     private bool closeInProgress;
     private bool closeCompleted;
+    private bool targetFrameworkChangeInProgress;
 
     public MainWindow()
     {
@@ -886,9 +887,11 @@ public partial class MainWindow : Window
     {
         if (sender is not FrameworkElement { DataContext: SymbolExplorerNode { DocumentationPath: { } path } }) return;
         var locale = viewModel.LanguageMode == AppLanguageMode.Japanese ? "ja-jp" : "en-us";
+        var documentationView = viewModel.TargetFramework.Replace("net", "net-", StringComparison.Ordinal);
         try
         {
-            Process.Start(new ProcessStartInfo($"https://learn.microsoft.com/{locale}/dotnet/api/{path}?view=net-10.0")
+            Process.Start(new ProcessStartInfo(
+                $"https://learn.microsoft.com/{locale}/dotnet/api/{path}?view={documentationView}")
             {
                 UseShellExecute = true
             });
@@ -1034,6 +1037,41 @@ public partial class MainWindow : Window
             ShowError(error);
         }
         FocusEditor();
+    }
+
+    private async void TargetFrameworkBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (targetFrameworkChangeInProgress ||
+            TargetFrameworkBox.SelectedItem is not DotNetFrameworkInfo selected ||
+            selected.TargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        targetFrameworkChangeInProgress = true;
+        try
+        {
+            if (!viewModel.CanChangeSession ||
+                viewModel.HasSessionState && MessageBox.Show(
+                    this,
+                    viewModel.Localize("Dialog.TargetFrameworkWarning", selected.DisplayName),
+                    viewModel.Localize("Dialog.TargetFrameworkTitle"),
+                    MessageBoxButton.OKCancel,
+                    MessageBoxImage.Warning) != MessageBoxResult.OK)
+            {
+                TargetFrameworkBox.SelectedValue = viewModel.TargetFramework;
+                return;
+            }
+
+            await viewModel.ChangeTargetFrameworkAsync(selected.TargetFramework);
+        }
+        catch (Exception error)
+        {
+            TargetFrameworkBox.SelectedValue = viewModel.TargetFramework;
+            ShowError(error);
+        }
+        finally
+        {
+            targetFrameworkChangeInProgress = false;
+        }
     }
 
     private async void RemoveUsing_Click(object sender, RoutedEventArgs e)

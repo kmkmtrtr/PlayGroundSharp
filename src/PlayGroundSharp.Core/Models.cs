@@ -39,7 +39,8 @@ public sealed record ExceptionInfo(string TypeName, string Message, string? Stac
 public sealed record SessionContext(
     IReadOnlyList<string> Submissions,
     IReadOnlyList<string> Imports,
-    IReadOnlyList<string> ReferencePaths)
+    IReadOnlyList<string> ReferencePaths,
+    IReadOnlyList<string>? FrameworkReferencePaths = null)
 {
     public static IReadOnlyList<string> DefaultImports { get; } =
     [

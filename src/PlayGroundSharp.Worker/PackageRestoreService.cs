@@ -11,11 +11,16 @@ public sealed record PackageRestoreResult(string PackageId, string Version, IRea
 public sealed partial class PackageRestoreService
 {
     private readonly string packageCache;
+    private readonly string targetFramework;
 
-    public PackageRestoreService(string? packageCache = null)
+    public PackageRestoreService(string? packageCache = null, string? targetFramework = null)
     {
+        targetFramework ??= $"net{Environment.Version.Major}.0";
+        if (!PlayGroundSharp.Core.DotNetFrameworkLocator.IsValidTargetFramework(targetFramework))
+            throw new ArgumentException("Target framework is invalid.", nameof(targetFramework));
         this.packageCache = packageCache ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PlayGroundSharp", "packages");
+        this.targetFramework = targetFramework;
     }
 
     public async Task<PackageRestoreResult> RestoreAsync(
@@ -41,7 +46,10 @@ public sealed partial class PackageRestoreService
             var selectedVersion = version ?? "*";
             await File.WriteAllTextAsync(projectPath, $$"""
                 <Project Sdk="Microsoft.NET.Sdk">
-                  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+                  <PropertyGroup>
+                    <TargetFramework>{{targetFramework}}</TargetFramework>
+                    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+                  </PropertyGroup>
                   <ItemGroup><PackageReference Include="{{packageId}}" Version="{{selectedVersion}}" /></ItemGroup>
                 </Project>
                 """, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
@@ -91,9 +99,9 @@ public sealed partial class PackageRestoreService
             using var assets = await JsonDocument.ParseAsync(assetsStream, cancellationToken: cancellationToken).ConfigureAwait(false);
             var root = assets.RootElement;
             var target = root.GetProperty("targets").EnumerateObject()
-                .FirstOrDefault(static item => item.Name.StartsWith("net10.0", StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(item => item.Name.StartsWith(targetFramework, StringComparison.OrdinalIgnoreCase));
             if (target.Value.ValueKind == JsonValueKind.Undefined)
-                throw new InvalidOperationException("Restore produced no net10.0 target.");
+                throw new InvalidOperationException($"Restore produced no {targetFramework} target.");
             var packageFolders = root.GetProperty("packageFolders").EnumerateObject().Select(static item => item.Name).ToArray();
             var libraries = root.GetProperty("libraries");
             var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

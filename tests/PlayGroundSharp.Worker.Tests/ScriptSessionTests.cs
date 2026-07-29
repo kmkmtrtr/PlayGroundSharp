@@ -13,6 +13,38 @@ public sealed class ConsoleCollection;
 public sealed class ScriptSessionTests
 {
     [Fact]
+    public async Task CanExecuteWithAnOlderInstalledFrameworkReferencePack()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .FirstOrDefault(static candidate => candidate.Version.Major == 9);
+        if (framework is null) return;
+
+        var references = framework.GetReferencePaths();
+        var session = new ScriptSession(references, framework.TargetFramework);
+
+        var result = await session.ExecuteAsync(1, "1 + 2");
+
+        Assert.True(result.StateAccepted);
+        Assert.Equal(3, result.ReturnValue);
+        Assert.DoesNotContain(result.Diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.Equal(3, (await session.ExecuteAsync(2, "Out[1]")).ReturnValue);
+        Assert.Equal(
+            nameof(LargeDataAccess),
+            (await session.ExecuteAsync(3, "Data.GetType().Name")).ReturnValue);
+
+        var recoverySession = new ScriptSession(references, framework.TargetFramework);
+        var unavailableApi = await recoverySession.ExecuteAsync(
+            1,
+            "new[] { 1 }.LeftJoin(new[] { 1 }, x => x, x => x, (left, right) => left)");
+
+        Assert.False(unavailableApi.StateAccepted);
+        Assert.Contains(unavailableApi.Diagnostics, static diagnostic =>
+            diagnostic.Level == DiagnosticLevel.Error &&
+            diagnostic.Message.Contains("LeftJoin", StringComparison.Ordinal));
+        Assert.Equal(3, (await recoverySession.ExecuteAsync(1, "1 + 2")).ReturnValue);
+    }
+
+    [Fact]
     public void SharedDefaultReferenceListCoversWorkerFrameworkReferences()
     {
         var workerReferences = ScriptOptions.Default.MetadataReferences

@@ -71,7 +71,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private static readonly IReadOnlyList<DotNetFrameworkInfo> AvailableTargetFrameworks =
         CreateAvailableTargetFrameworks();
     private static readonly AppSettings InitialSettings = SettingsStore.Load();
+    private static readonly TargetFrameworkStartupSelection InitialTargetFrameworkSelection =
+        TargetFrameworkStartupSelector.Select(
+            InitialSettings.TargetFramework,
+            AvailableTargetFrameworks,
+            Environment.Version.Major);
     private AppSettings settings = InitialSettings;
+    private string? unavailableInitialTargetFramework =
+        InitialTargetFrameworkSelection.UnavailableSavedTargetFramework;
     private static readonly string[] Commands =
     [
         ":help", ":clear", ":reset", ":using list", ":using add ", ":using remove ",
@@ -173,7 +180,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private AppLanguageMode languageMode = InitialSettings.LanguageMode;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TargetFrameworkDisplayName))]
-    private string targetFramework = SelectInitialTargetFramework();
+    private string targetFramework = InitialTargetFrameworkSelection.SelectedFramework.TargetFramework;
 
     public ObservableCollection<TranscriptLine> Transcript => transcript;
     public bool CanCancel => IsRunning || IsPackageSearchBusy || IsPreparingExecution;
@@ -474,6 +481,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task InitializeAsync()
     {
+        ApplyInitialTargetFrameworkFallback();
         try
         {
             await worker.StartAsync(CurrentTargetFramework);
@@ -494,6 +502,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             IsSessionChanging = false;
         }
+    }
+
+    private void ApplyInitialTargetFrameworkFallback()
+    {
+        if (unavailableInitialTargetFramework is not { } unavailable) return;
+        unavailableInitialTargetFramework = null;
+        SaveSettings();
+        Transcript.Add(LocalizedSystemLine(
+            "Message.TargetFrameworkFallback",
+            unavailable,
+            TargetFrameworkDisplayName));
     }
 
     public async Task ExecuteAsync()
@@ -1959,14 +1978,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private static DotNetFrameworkInfo? ResolveTargetFramework(string? targetFramework) =>
         AvailableTargetFrameworks.FirstOrDefault(framework =>
             framework.TargetFramework.Equals(targetFramework, StringComparison.OrdinalIgnoreCase));
-
-    private static string SelectInitialTargetFramework()
-    {
-        var selected = ResolveTargetFramework(InitialSettings.TargetFramework);
-        if (selected is not null) return selected.TargetFramework;
-        var current = $"net{Environment.Version.Major}.0";
-        return ResolveTargetFramework(current)?.TargetFramework ?? AvailableTargetFrameworks[0].TargetFramework;
-    }
 
     private static IReadOnlyList<DotNetFrameworkInfo> CreateAvailableTargetFrameworks()
     {

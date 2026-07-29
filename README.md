@@ -32,10 +32,10 @@ Open `http://localhost:5188`. The preview supports stateful C# submissions, `Ent
 ## Publish
 
 ```powershell
-dotnet publish src/PlayGroundSharp.App/PlayGroundSharp.App.csproj -c Release
+dotnet publish
 ```
 
-Release publishing is configured in the App project for `win-x64`, framework-dependent, single-file output. The result is one `PlayGroundSharp.App.exe` under `bin/Release/net10.0-windows/win-x64/publish`. Roslyn requires physical metadata files, so .NET extracts the bundled managed content to its per-user single-file cache at startup; no separate Worker executable is distributed. Install the .NET 10 Desktop Runtime on the destination machine.
+Solution-level publishing excludes every project under `tests/`, including the multi-targeted fixture projects. Release publishing is configured in the App project for `win-x64`, framework-dependent, single-file output. The result is one `PlayGroundSharp.App.exe` under `src/PlayGroundSharp.App/bin/Release/net10.0-windows/win-x64/publish`. Roslyn requires physical metadata files, so .NET extracts the bundled managed content to its per-user single-file cache at startup; no separate Worker executable is distributed. Install the .NET 10 Desktop Runtime on the destination machine.
 
 ## Test
 

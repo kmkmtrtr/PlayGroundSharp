@@ -171,7 +171,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private ExecutionKeyMode executionKeyMode = InitialSettings.ExecutionKeyMode;
     [ObservableProperty] private AppThemeMode themeMode = InitialSettings.ThemeMode;
     [ObservableProperty] private AppLanguageMode languageMode = InitialSettings.LanguageMode;
-    [ObservableProperty] private string targetFramework = SelectInitialTargetFramework();
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TargetFrameworkDisplayName))]
+    private string targetFramework = SelectInitialTargetFramework();
 
     public ObservableCollection<TranscriptLine> Transcript => transcript;
     public bool CanCancel => IsRunning || IsPackageSearchBusy || IsPreparingExecution;
@@ -208,6 +210,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         new(AppLanguageMode.English, "English")
     ];
     public IReadOnlyList<DotNetFrameworkInfo> TargetFrameworkOptions => AvailableTargetFrameworks;
+    public string TargetFrameworkDisplayName => CurrentTargetFramework.DisplayName;
     public IAsyncRelayCommand ResetCommand { get; }
     public IAsyncRelayCommand RestartWorkerCommand { get; }
     public IRelayCommand ClearCommand { get; }

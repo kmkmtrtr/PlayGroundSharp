@@ -126,7 +126,8 @@ public partial class MainWindow : Window
         }
         if (e.PropertyName == nameof(MainViewModel.TargetFramework))
         {
-            SynchronizeTargetFrameworkSelection();
+            if (!targetFrameworkChangeInProgress)
+                SynchronizeTargetFrameworkSelection();
             return;
         }
         if (e.PropertyName == nameof(MainViewModel.CurrentDiagnostics))
@@ -1060,14 +1061,43 @@ public partial class MainWindow : Window
         FocusEditor();
     }
 
-    private async void TargetFrameworkBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void TargetFrameworkItem_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (targetFrameworkChangeInProgress ||
-            TargetFrameworkSelection.Resolve(e) is not { } selected ||
-            selected.TargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase))
+        if (sender is not FrameworkElement { DataContext: DotNetFrameworkInfo selected }) return;
+        e.Handled = true;
+        TargetFrameworkBox.IsDropDownOpen = false;
+        QueueTargetFrameworkSelection(selected);
+    }
+
+    private void TargetFrameworkBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!TargetFrameworkBox.IsDropDownOpen ||
+            e.Key is not (Key.Enter or Key.Space))
             return;
 
+        var selected = (Keyboard.FocusedElement as FrameworkElement)?.DataContext as DotNetFrameworkInfo ??
+                       TargetFrameworkBox.SelectedItem as DotNetFrameworkInfo;
+        if (selected is null) return;
+        e.Handled = true;
+        TargetFrameworkBox.IsDropDownOpen = false;
+        QueueTargetFrameworkSelection(selected);
+    }
+
+    private void QueueTargetFrameworkSelection(DotNetFrameworkInfo selected)
+    {
+        if (targetFrameworkChangeInProgress ||
+            selected.TargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase))
+            return;
         targetFrameworkChangeInProgress = true;
+        // Let WPF finish the mouse/keyboard activation before the worker restart
+        // disables the selector.
+        _ = Dispatcher.BeginInvoke(
+            () => _ = ApplyTargetFrameworkSelectionAsync(selected),
+            DispatcherPriority.Input);
+    }
+
+    private async Task ApplyTargetFrameworkSelectionAsync(DotNetFrameworkInfo selected)
+    {
         try
         {
             if (!viewModel.CanChangeSession ||
@@ -1082,8 +1112,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (!await viewModel.ChangeTargetFrameworkAsync(selected.TargetFramework))
-                SynchronizeTargetFrameworkSelection();
+            await viewModel.ChangeTargetFrameworkAsync(selected.TargetFramework);
         }
         catch (Exception error)
         {
@@ -1100,21 +1129,18 @@ public partial class MainWindow : Window
     {
         var target = viewModel.TargetFrameworkOptions.FirstOrDefault(framework =>
             framework.TargetFramework.Equals(viewModel.TargetFramework, StringComparison.OrdinalIgnoreCase));
-        if (target is null ||
+        var targetIndex = target is null ? -1 : TargetFrameworkBox.Items.IndexOf(target);
+        if (targetIndex < 0 ||
+            TargetFrameworkBox.SelectedIndex == targetIndex &&
             TargetFrameworkBox.SelectedItem is DotNetFrameworkInfo selected &&
-            selected.TargetFramework.Equals(target.TargetFramework, StringComparison.OrdinalIgnoreCase) &&
-            TargetFrameworkBox.SelectedValue is string selectedValue &&
-            selectedValue.Equals(target.TargetFramework, StringComparison.OrdinalIgnoreCase))
+            selected.TargetFramework.Equals(target!.TargetFramework, StringComparison.OrdinalIgnoreCase))
             return;
 
         var wasChangeInProgress = targetFrameworkChangeInProgress;
         targetFrameworkChangeInProgress = true;
         try
         {
-            TargetFrameworkBox.SelectedItem = target;
-            if (TargetFrameworkBox.SelectedValue is not string currentValue ||
-                !currentValue.Equals(target.TargetFramework, StringComparison.OrdinalIgnoreCase))
-                TargetFrameworkBox.SelectedValue = target.TargetFramework;
+            TargetFrameworkBox.SelectedIndex = targetIndex;
         }
         finally
         {

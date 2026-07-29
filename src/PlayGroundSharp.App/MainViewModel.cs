@@ -479,18 +479,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SessionStatus = Localize(key, arguments);
     }
 
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         ApplyInitialTargetFrameworkFallback();
         try
         {
-            await worker.StartAsync(CurrentTargetFramework);
+            await worker.StartAsync(CurrentTargetFramework, cancellationToken);
             IsWorkerConnected = true;
             SetLocalizedStatus("Status.Ready");
             Transcript.Add(LocalizedSystemLine("Message.WorkerConnected"));
             // Symbol/documentation discovery is comparatively expensive and is not
             // required to start typing or executing. It owns cancellation/error handling.
             _ = RefreshTypeExplorerAsync();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            IsWorkerConnected = false;
         }
         catch (Exception error)
         {

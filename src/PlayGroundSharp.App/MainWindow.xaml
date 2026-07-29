@@ -70,6 +70,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="54" />
+            <RowDefinition Height="38" />
             <RowDefinition Height="*" />
             <RowDefinition Height="30" />
         </Grid.RowDefinitions>
@@ -171,7 +172,51 @@
             </DockPanel>
         </Border>
 
-        <Grid Grid.Row="1" Background="{DynamicResource BackgroundBrush}">
+        <Border Grid.Row="1" Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right" Content="＋" Width="38" Margin="4,3,8,3"
+                        Style="{StaticResource IconToolbarButtonStyle}"
+                        ToolTip="{DynamicResource ConsoleTab.Add}"
+                        AutomationProperties.Name="{DynamicResource ConsoleTab.Add}"
+                        Click="AddConsoleTab_Click" />
+                <TabControl x:Name="ConsoleTabs" Margin="8,2,0,0" Padding="0"
+                            Background="Transparent" BorderThickness="0"
+                            SelectionChanged="ConsoleTabs_SelectionChanged"
+                            PreviewMouseDown="ConsoleTabs_PreviewMouseDown"
+                            AutomationProperties.Name="{DynamicResource Ui.AppSubtitle}">
+                    <TabControl.ItemContainerStyle>
+                        <Style TargetType="TabItem">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                        </Style>
+                    </TabControl.ItemContainerStyle>
+                    <TabControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type local:ConsoleTabItem}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="7" Height="7" Margin="3,0,2,0"
+                                         Fill="{DynamicResource WarningBrush}"
+                                         Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                         ToolTip="{Binding ViewModel.Status}" />
+                                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Margin="4,0,7,0" />
+                                <Button Content="×" Width="22" Height="22" Padding="0" Margin="0"
+                                        Background="Transparent" BorderThickness="0"
+                                        Foreground="{DynamicResource MutedBrush}"
+                                        ToolTip="{DynamicResource ConsoleTab.Close}"
+                                        AutomationProperties.Name="{DynamicResource ConsoleTab.Close}"
+                                        Click="CloseConsoleTab_Click" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </TabControl.ItemTemplate>
+                    <TabControl.ContentTemplate>
+                        <DataTemplate>
+                            <Border Height="0" />
+                        </DataTemplate>
+                    </TabControl.ContentTemplate>
+                </TabControl>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="2" Background="{DynamicResource BackgroundBrush}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="TypeExplorerColumn" Width="286" />
                 <ColumnDefinition x:Name="TypeExplorerSplitterColumn" Width="5" />
@@ -909,7 +954,7 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,0">
+        <Border Grid.Row="3" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>

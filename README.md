@@ -18,6 +18,7 @@ dotnet run --project src/PlayGroundSharp.App/PlayGroundSharp.App.csproj -c Debug
 ```
 
 The App starts the same executable in hidden `--worker` mode as a separate child process. User code always runs in that child process, not in WPF.
+Each console tab owns a separate child Worker, transcript and language-service context, so variables, methods, types, usings, references, packages, history and drafts stay isolated between tabs.
 
 ## WebAssembly preview
 
@@ -49,6 +50,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 
 ## Basic operation
 
+- Use **＋** or `Ctrl+T` to add an independent console tab. Use **×**, `Ctrl+W`, or middle-click to close one, and `Ctrl+Tab` / `Ctrl+Shift+Tab` to move between tabs. Work can continue in background tabs; an activity dot identifies busy tabs, and closing the last tab creates a fresh empty console. Each tab restores its own input selection and Transcript scroll position.
 - `Enter`: execute the current submission (default)
 - A trailing `;` may be omitted from declarations, expression-bodied methods, records and `using` directives
 - `Shift+Enter`: insert a newline

@@ -179,6 +179,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public bool CanOpenWorkspace => !IsPackageSearchBusy && !IsWorkspaceBusy &&
                                     !IsSessionChanging && !IsPreparingExecution;
     public bool CanSaveWorkspace => CanOpenWorkspace && !IsRunning;
+    public IReadOnlyList<DiagnosticInfo> CurrentDiagnostics => currentDiagnostics;
     public bool HasNavigableDiagnostics => currentDiagnostics.Count > 0;
     public ObservableCollection<string> PackageItems { get; } = [];
     public ObservableCollection<string> ReferenceItems { get; } = [];
@@ -1051,6 +1052,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         diagnosticWarningCount = currentDiagnostics.Count(static item => item.Level == DiagnosticLevel.Warning);
         DiagnosticStatus = Localize("Diagnostics.Count", diagnosticErrorCount, diagnosticWarningCount);
         DiagnosticDetails = BuildDiagnosticDetails(currentDiagnostics);
+        OnPropertyChanged(nameof(CurrentDiagnostics));
         OnPropertyChanged(nameof(HasNavigableDiagnostics));
         return true;
     }
@@ -1081,6 +1083,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         currentDiagnostics = [];
         diagnosticPosition = -1;
+        OnPropertyChanged(nameof(CurrentDiagnostics));
         OnPropertyChanged(nameof(HasNavigableDiagnostics));
     }
 

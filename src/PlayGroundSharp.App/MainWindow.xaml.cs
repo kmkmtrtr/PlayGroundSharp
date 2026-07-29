@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer completionDescriptionTimer = new() { Interval = TimeSpan.FromMilliseconds(140) };
     private readonly DispatcherTimer hoverQuickInfoTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly DispatcherTimer quickInfoChordTimer = new() { Interval = TimeSpan.FromSeconds(2.5) };
+    private DiagnosticUnderlineRenderer? diagnosticUnderlineRenderer;
     private AssistMode assistMode;
     private int completionFilterStart;
     private string? lastCompletionFilterPrefix;
@@ -63,6 +64,8 @@ public partial class MainWindow : Window
         ApplySavedWindowLayout();
         App.ApplyTheme(viewModel.ThemeMode);
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("C#");
+        diagnosticUnderlineRenderer = new(Editor.Document);
+        Editor.TextArea.TextView.BackgroundRenderers.Add(diagnosticUnderlineRenderer);
         viewModel.Transcript.CollectionChanged += (_, args) =>
         {
             if (args.Action == NotifyCollectionChangedAction.Reset && viewModel.Transcript.Count == 0)
@@ -117,6 +120,18 @@ public partial class MainWindow : Window
                 Editor.Text = viewModel.InputText;
                 Editor.CaretOffset = Editor.Text.Length;
             }
+            return;
+        }
+        if (e.PropertyName == nameof(MainViewModel.CurrentDiagnostics))
+        {
+            diagnosticUnderlineRenderer?.UpdateDiagnostics(
+                viewModel.CurrentDiagnostics,
+                Editor.TextArea.TextView);
+            return;
+        }
+        if (e.PropertyName == nameof(MainViewModel.ThemeMode))
+        {
+            diagnosticUnderlineRenderer?.Invalidate(Editor.TextArea.TextView);
             return;
         }
         if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
@@ -1923,6 +1938,20 @@ public partial class MainWindow : Window
         var position = Editor.GetPositionFromPoint(point);
         if (position is null) return;
         var offset = Editor.Document.GetOffset(position.Value.Location);
+        var diagnostics = diagnosticUnderlineRenderer?.GetDiagnosticsAtOffset(offset) ?? [];
+        if (diagnostics.Count > 0)
+        {
+            var currentPoint = Mouse.GetPosition(Editor);
+            if (Editor.IsMouseOver &&
+                Math.Abs(currentPoint.X - point.X) <= 4 &&
+                Math.Abs(currentPoint.Y - point.Y) <= 4)
+            {
+                HoverQuickInfoDocumentation.ShowDiagnostics(diagnostics);
+                HoverQuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth * 1.15, 380, 620);
+                HoverQuickInfoPopup.IsOpen = true;
+            }
+            return;
+        }
         CancelAndDispose(ref hoverQuickInfoCancellation);
         var cancellation = new CancellationTokenSource();
         hoverQuickInfoCancellation = cancellation;

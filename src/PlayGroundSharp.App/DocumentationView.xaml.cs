@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using PlayGroundSharp.Core;
 using PlayGroundSharp.LanguageService;
 
 namespace PlayGroundSharp.App;
@@ -37,6 +38,42 @@ public partial class DocumentationView : UserControl
 
     public void ShowQuickInfo(string text) =>
         Render(DocumentationPresentationParser.Parse(text), "C#");
+
+    public void ShowDiagnostics(IReadOnlyList<DiagnosticInfo> diagnostics)
+    {
+        if (diagnostics.Count == 0)
+        {
+            Clear();
+            return;
+        }
+
+        var ordered = diagnostics
+            .OrderByDescending(static diagnostic => diagnostic.Level)
+            .ThenBy(static diagnostic => diagnostic.Id, StringComparer.Ordinal)
+            .ToArray();
+        var primary = ordered[0];
+        var signature = ordered.Length == 1
+            ? primary.Id
+            : string.Join(", ", ordered.Select(static diagnostic => diagnostic.Id).Distinct());
+        var summary = string.Join(
+            Environment.NewLine + Environment.NewLine,
+            ordered.Select(diagnostic => ordered.Length == 1
+                ? diagnostic.Message
+                : $"{diagnostic.Id}: {diagnostic.Message}"));
+        var glyph = primary.Level switch
+        {
+            DiagnosticLevel.Error => "×",
+            DiagnosticLevel.Warning => "⚠",
+            _ => "i"
+        };
+        var brushKey = primary.Level switch
+        {
+            DiagnosticLevel.Error => "ErrorBrush",
+            DiagnosticLevel.Warning => "WarningBrush",
+            _ => "AccentBrush"
+        };
+        Render(new(signature, summary, [], string.Empty, string.Empty), glyph, brushKey);
+    }
 
     public void ShowSignature(SignatureInformation signature, string parameterFallback)
     {
@@ -77,9 +114,14 @@ public partial class DocumentationView : UserControl
         ReturnsText.Text = string.Empty;
     }
 
-    private void Render(DocumentationPresentation presentation, string glyph)
+    private void Render(
+        DocumentationPresentation presentation,
+        string glyph,
+        string glyphBrushKey = "AccentBrush")
     {
         Clear();
+        GlyphText.SetResourceReference(TextElement.ForegroundProperty, glyphBrushKey);
+        GlyphBorder.SetResourceReference(BorderBrushProperty, glyphBrushKey);
         if (!string.IsNullOrWhiteSpace(presentation.Signature))
         {
             GlyphText.Text = glyph;

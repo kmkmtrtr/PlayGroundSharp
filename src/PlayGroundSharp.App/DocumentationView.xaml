@@ -8,7 +8,7 @@
                 <ColumnDefinition Width="28" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <Border Width="22" Height="22" CornerRadius="3"
+            <Border x:Name="GlyphBorder" Width="22" Height="22" CornerRadius="3"
                     Background="{DynamicResource SelectionBrush}"
                     BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
                     VerticalAlignment="Top">

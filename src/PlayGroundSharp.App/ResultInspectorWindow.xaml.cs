@@ -39,6 +39,7 @@ public partial class ResultInspectorWindow : Window
     private bool copyInProgress;
     private bool isTableMode;
     private bool isConfiguringTable;
+    private ScrollViewer? tableScrollViewer;
     private HwndSource? windowSource;
 
     public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel)
@@ -50,6 +51,7 @@ public partial class ResultInspectorWindow : Window
         Roots = [SnapshotTreeNode.CreateRoot(snapshot, languageMode)];
         selectedNode = Roots[0];
         InitializeComponent();
+        TableGridPerformance.Configure(TableGrid);
         DataContext = this;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         var settings = viewModel.SavedSettings;
@@ -99,6 +101,7 @@ public partial class ResultInspectorWindow : Window
     {
         windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         windowSource?.AddHook(WindowMessageHook);
+        tableScrollViewer = ScrollWheelRouter.FindScrollViewer(TableGrid);
         Dispatcher.BeginInvoke(
             () =>
             {
@@ -449,12 +452,14 @@ public partial class ResultInspectorWindow : Window
 
     private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (e.Handled || !isTableMode || !TableGrid.IsMouseOver) return;
+        if (e.Handled || !isTableMode || !TableGrid.IsMouseOver ||
+            tableScrollViewer is null)
+            return;
         var forceHorizontal = ScrollWheelRouter.IsOverHorizontalScrollZone(
             TableGrid,
             e.GetPosition(TableGrid));
         if (ScrollWheelRouter.TryRouteHorizontalWheel(
-                TableGrid,
+                tableScrollViewer,
                 e.OriginalSource as DependencyObject,
                 e.Delta,
                 Keyboard.Modifiers,
@@ -469,7 +474,9 @@ public partial class ResultInspectorWindow : Window
         IntPtr longParameter,
         ref bool handled)
     {
-        if (message != WmMouseHorizontalWheel || !isTableMode) return IntPtr.Zero;
+        if (message != WmMouseHorizontalWheel || !isTableMode ||
+            tableScrollViewer is null)
+            return IntPtr.Zero;
 
         var delta = unchecked((short)((wordParameter.ToInt64() >> 16) & 0xffff));
         var screenX = unchecked((short)(longParameter.ToInt64() & 0xffff));
@@ -480,7 +487,7 @@ public partial class ResultInspectorWindow : Window
             return IntPtr.Zero;
 
         if (ScrollWheelRouter.TryRouteHorizontalWheel(
-                TableGrid,
+                tableScrollViewer,
                 null,
                 delta,
                 ModifierKeys.None,

@@ -67,6 +67,10 @@ internal static class ScrollWheelRouter
                position.X < verticalBarLeft;
     }
 
+    public static ScrollViewer? FindScrollViewer(DependencyObject scope) =>
+        scope as ScrollViewer ??
+        FindDescendant<ScrollViewer>(scope, static _ => true);
+
     private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (e.Handled || sender is not ScrollViewer { ScrollableWidth: > 0 } scrollViewer ||

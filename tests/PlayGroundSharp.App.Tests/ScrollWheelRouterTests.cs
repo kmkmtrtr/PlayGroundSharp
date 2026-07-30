@@ -9,6 +9,108 @@ namespace PlayGroundSharp.App.Tests;
 public sealed class ScrollWheelRouterTests
 {
     [Fact]
+    public void LargeTableUsesRecyclingWithAOnePageCache()
+    {
+        RunOnStaThread(() =>
+        {
+            var table = new DataGrid();
+
+            TableGridPerformance.Configure(table);
+
+            Assert.True(table.EnableRowVirtualization);
+            Assert.True(table.EnableColumnVirtualization);
+            Assert.True(ScrollViewer.GetCanContentScroll(table));
+            Assert.True(VirtualizingPanel.GetIsVirtualizing(table));
+            Assert.Equal(
+                VirtualizationMode.Recycling,
+                VirtualizingPanel.GetVirtualizationMode(table));
+            Assert.Equal(ScrollUnit.Item, VirtualizingPanel.GetScrollUnit(table));
+            Assert.Equal(
+                VirtualizationCacheLengthUnit.Page,
+                VirtualizingPanel.GetCacheLengthUnit(table));
+            var cacheLength = VirtualizingPanel.GetCacheLength(table);
+            Assert.Equal(1, cacheLength.CacheBeforeViewport);
+            Assert.Equal(1, cacheLength.CacheAfterViewport);
+            Assert.True(ScrollViewer.GetIsDeferredScrollingEnabled(table));
+        });
+    }
+
+    [Fact]
+    public void FindsTheTableScrollViewerAfterItsTemplateIsApplied()
+    {
+        RunOnStaThread(() =>
+        {
+            var table = new DataGrid { Width = 320, Height = 180 };
+            var window = new Window
+            {
+                Width = 400,
+                Height = 260,
+                Content = table,
+                ShowInTaskbar = false,
+                WindowStyle = WindowStyle.None
+            };
+            try
+            {
+                window.Show();
+                table.UpdateLayout();
+
+                var viewer = ScrollWheelRouter.FindScrollViewer(table);
+
+                Assert.NotNull(viewer);
+                Assert.Same(viewer, ScrollWheelRouter.FindScrollViewer(viewer!));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void LargeTableOnlyCreatesContainersForTheVisibleViewport()
+    {
+        RunOnStaThread(() =>
+        {
+            const int rowCount = 10_000;
+            var table = new DataGrid
+            {
+                AutoGenerateColumns = false,
+                ItemsSource = Enumerable.Range(0, rowCount).ToArray(),
+                RowHeight = 26
+            };
+            table.Columns.Add(new DataGridTextColumn
+            {
+                Header = "Value",
+                Binding = new System.Windows.Data.Binding()
+            });
+            TableGridPerformance.Configure(table);
+            var window = new Window
+            {
+                Width = 400,
+                Height = 260,
+                Content = table,
+                ShowActivated = false,
+                ShowInTaskbar = false,
+                WindowStyle = WindowStyle.None
+            };
+            try
+            {
+                window.Show();
+                table.UpdateLayout();
+
+                var realizedRows = Enumerable.Range(0, rowCount)
+                    .Count(index => table.ItemContainerGenerator.ContainerFromIndex(index) is not null);
+
+                Assert.InRange(realizedRows, 1, 100);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void ScrollHorizontallyMovesAHorizontalViewport()
     {
         RunOnStaThread(() =>

@@ -30,6 +30,10 @@ public partial class ResultInspectorWindow : Window
     private SnapshotTableModel? tableModel;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private readonly DispatcherTimer notificationTimer = new() { Interval = TimeSpan.FromSeconds(1.8) };
+    private readonly DispatcherTimer tableCacheWarmupTimer = new(DispatcherPriority.Background)
+    {
+        Interval = TimeSpan.FromMilliseconds(50)
+    };
     private SnapshotTreeNode? selectedNode;
     private CancellationTokenSource? searchCancellation;
     private string currentSearchStatus = string.Empty;
@@ -39,6 +43,8 @@ public partial class ResultInspectorWindow : Window
     private bool copyInProgress;
     private bool isTableMode;
     private bool isConfiguringTable;
+    private int currentTableCachedRowCount;
+    private int targetTableCachedRowCount;
     private ScrollViewer? tableScrollViewer;
     private HwndSource? windowSource;
 
@@ -68,6 +74,7 @@ public partial class ResultInspectorWindow : Window
             notificationTimer.Stop();
             RestoreStatusDisplays();
         };
+        tableCacheWarmupTimer.Tick += TableCacheWarmupTimer_Tick;
         Closed += (_, _) =>
         {
             windowSource?.RemoveHook(WindowMessageHook);
@@ -75,6 +82,7 @@ public partial class ResultInspectorWindow : Window
             viewModel.PropertyChanged -= ViewModel_PropertyChanged;
             searchTimer.Stop();
             notificationTimer.Stop();
+            tableCacheWarmupTimer.Stop();
             CancelAndDisposeSearch();
             var bounds = WindowState == WindowState.Normal
                 ? new Rect(Left, Top, ActualWidth, ActualHeight)
@@ -101,6 +109,7 @@ public partial class ResultInspectorWindow : Window
         windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         windowSource?.AddHook(WindowMessageHook);
         tableScrollViewer = ScrollWheelRouter.FindScrollViewer(TableGrid);
+        StartTableCacheWarmup();
         Dispatcher.BeginInvoke(
             () =>
             {
@@ -748,8 +757,17 @@ public partial class ResultInspectorWindow : Window
         isConfiguringTable = true;
         try
         {
+            tableCacheWarmupTimer.Stop();
             TableGrid.ItemsSource = null;
-            TableGridPerformance.Configure(TableGrid, tableModel?.Rows.Count ?? 0);
+            var rowCount = tableModel?.Rows.Count ?? 0;
+            targetTableCachedRowCount = TableGridPerformance.CalculateCachedRowCount(rowCount);
+            currentTableCachedRowCount = TableGridPerformance.CalculateCachedRowCount(
+                rowCount,
+                TableGridPerformance.InitialCachedRowCount);
+            TableGridPerformance.Configure(
+                TableGrid,
+                rowCount,
+                currentTableCachedRowCount);
             TableGrid.UnselectAllCells();
             TableGrid.CurrentCell = new();
             TableGrid.FrozenColumnCount = 0;
@@ -812,6 +830,7 @@ public partial class ResultInspectorWindow : Window
             // columns to a live ItemsSource repeatedly invalidates the DataGrid layout.
             TableGrid.ItemsSource = tableModel.Rows;
             UpdateTableSummary();
+            StartTableCacheWarmup();
         }
         finally
         {
@@ -915,6 +934,8 @@ public partial class ResultInspectorWindow : Window
         TreeSelectionPanel.Visibility = treeVisibility;
         DetailText.Visibility = treeVisibility;
         TablePanel.Visibility = tableMode ? Visibility.Visible : Visibility.Collapsed;
+        if (tableMode) StartTableCacheWarmup();
+        else tableCacheWarmupTimer.Stop();
         ExpandSelectedButton.Visibility = treeVisibility;
         CollapseSelectedButton.Visibility = treeVisibility;
         CopySelectedButton.Visibility = treeVisibility;
@@ -931,6 +952,31 @@ public partial class ResultInspectorWindow : Window
                 else FocusFirstResult();
             },
             DispatcherPriority.Input);
+    }
+
+    private void StartTableCacheWarmup()
+    {
+        if (!IsLoaded || !isTableMode ||
+            currentTableCachedRowCount >= targetTableCachedRowCount)
+            return;
+        tableCacheWarmupTimer.Start();
+    }
+
+    private void TableCacheWarmupTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!isTableMode || TableGrid.ItemsSource is null)
+        {
+            tableCacheWarmupTimer.Stop();
+            return;
+        }
+        if (TableGrid.IsMouseCaptureWithin) return;
+
+        currentTableCachedRowCount = TableGridPerformance.NextCachedRowCount(
+            currentTableCachedRowCount,
+            targetTableCachedRowCount);
+        TableGridPerformance.SetCachedRowCount(TableGrid, currentTableCachedRowCount);
+        if (currentTableCachedRowCount >= targetTableCachedRowCount)
+            tableCacheWarmupTimer.Stop();
     }
 
     private void UpdateViewModeButtons()

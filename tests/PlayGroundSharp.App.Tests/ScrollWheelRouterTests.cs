@@ -53,6 +53,18 @@ public sealed class ScrollWheelRouterTests
                 maximumCachedRowCount));
     }
 
+    [Theory]
+    [InlineData(20, 60, 40)]
+    [InlineData(40, 60, 60)]
+    [InlineData(60, 60, 60)]
+    [InlineData(480, 500, 500)]
+    public void RowCacheWarmsInSmallSteps(int current, int target, int expected)
+    {
+        Assert.Equal(
+            expected,
+            TableGridPerformance.NextCachedRowCount(current, target));
+    }
+
     [Fact]
     public void FindsTheTableScrollViewerAfterItsTemplateIsApplied()
     {
@@ -85,7 +97,7 @@ public sealed class ScrollWheelRouterTests
     }
 
     [Fact]
-    public void TwoHundredRowTableDoesNotRealizeEveryRowAtStartup()
+    public void TwoHundredRowTableStartsWithOnlyTheInitialCache()
     {
         RunOnStaThread(() =>
         {
@@ -101,7 +113,10 @@ public sealed class ScrollWheelRouterTests
                 Header = "Value",
                 Binding = new System.Windows.Data.Binding()
             });
-            TableGridPerformance.Configure(table, rowCount);
+            TableGridPerformance.Configure(
+                table,
+                rowCount,
+                TableGridPerformance.InitialCachedRowCount);
             var window = new Window
             {
                 Width = 400,
@@ -124,7 +139,7 @@ public sealed class ScrollWheelRouterTests
                 var realizedRows = Enumerable.Range(0, rowCount)
                     .Count(index => table.ItemContainerGenerator.ContainerFromIndex(index) is not null);
 
-                Assert.InRange(realizedRows, 50, 100);
+                Assert.InRange(realizedRows, 20, 60);
             }
             finally
             {

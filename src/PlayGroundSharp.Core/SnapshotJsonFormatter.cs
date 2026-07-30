@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace PlayGroundSharp.Core;
@@ -16,7 +15,7 @@ public static class SnapshotJsonFormatter
         var options = new JsonWriterOptions
         {
             Indented = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            Encoder = ReadableJsonEncoder.Instance
         };
         using (var writer = new Utf8JsonWriter(stream, options))
             WriteSnapshot(writer, snapshot);

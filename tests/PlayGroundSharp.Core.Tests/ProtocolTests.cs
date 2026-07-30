@@ -181,14 +181,14 @@ public sealed class ProtocolTests
             SnapshotKind.Object,
             "1 property",
             "Example",
-            Properties: [new("message", new(SnapshotKind.String, "日本語 <tag>", "System.String"))]);
+            Properties: [new("message", new(SnapshotKind.String, "日本語　<tag>", "System.String"))]);
 
         var json = SnapshotJsonFormatter.Format(snapshot);
         using var document = JsonDocument.Parse(json);
 
-        Assert.Contains("日本語 <tag>", json, StringComparison.Ordinal);
+        Assert.Contains("日本語　<tag>", json, StringComparison.Ordinal);
         Assert.DoesNotContain("\\u", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("日本語 <tag>", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal("日本語　<tag>", document.RootElement.GetProperty("message").GetString());
     }
 
     private sealed class BlockingWriteStream : Stream

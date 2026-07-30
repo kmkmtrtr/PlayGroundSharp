@@ -1,8 +1,9 @@
 using System.Collections;
 using System.Data;
-using System.Text.Json.Nodes;
 using System.Dynamic;
 using System.Numerics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using PlayGroundSharp.Core;
 using PlayGroundSharp.Worker;
 
@@ -362,6 +363,28 @@ public sealed class ResultSnapshotFactoryTests
         Assert.True(longString.IsTruncated);
         Assert.Equal(ResultSnapshotFactory.MaximumStringLength, longString.Display?.Length);
         Assert.True(ContainsKind(deep, SnapshotKind.MaxDepth));
+    }
+
+    [Fact]
+    public void PreservesJsonBeyondTheFormerTenLevelLimit()
+    {
+        const int depth = 24;
+        var json = "1";
+        for (var index = 0; index < depth; index++)
+            json = $$"""{"child":{{json}}}""";
+        using var document = JsonDocument.Parse(json);
+
+        var snapshot = factory.Create(document.RootElement);
+
+        var current = snapshot;
+        for (var index = 0; index < depth; index++)
+        {
+            Assert.Equal(SnapshotKind.Json, current.Kind);
+            current = Assert.Single(current.Properties!).Value;
+        }
+        Assert.Equal(SnapshotKind.Number, current.Kind);
+        Assert.Equal("1", current.Display);
+        Assert.False(ContainsKind(snapshot, SnapshotKind.MaxDepth));
     }
 
     private static bool ContainsKind(ResultSnapshot snapshot, SnapshotKind kind) =>

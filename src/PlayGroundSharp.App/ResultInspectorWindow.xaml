@@ -161,11 +161,17 @@
                       MouseDoubleClick="TableGrid_MouseDoubleClick"
                       PreviewKeyDown="TableGrid_PreviewKeyDown">
                 <DataGrid.Resources>
+                    <ContextMenu x:Key="TableColumnHeaderMenu" x:Shared="False">
+                        <MenuItem Header="{DynamicResource Inspector.FlattenColumn}"
+                                  Click="FlattenColumn_Click" />
+                    </ContextMenu>
                     <Style TargetType="DataGridColumnHeader">
                         <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
                         <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
                         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
                         <Setter Property="Padding" Value="7,5" />
+                        <Setter Property="ContextMenu" Value="{StaticResource TableColumnHeaderMenu}" />
+                        <EventSetter Event="ContextMenuOpening" Handler="TableColumnHeader_ContextMenuOpening" />
                     </Style>
                     <Style TargetType="DataGridRowHeader">
                         <Setter Property="Background" Value="{DynamicResource PanelBrush}" />

@@ -541,12 +541,8 @@ public partial class ResultInspectorWindow : Window
             tableModel is null)
             return false;
 
-        var flattenColumn = ShouldFlattenColumn(cell, columnIndex);
-        var nestedTable = flattenColumn
-            ? tableModel.TryCreateFlattenedColumn(columnIndex) ?? SnapshotTableModel.TryCreate(cell.Source)
-            : SnapshotTableModel.TryCreate(cell.Source);
+        var nestedTable = SnapshotTableModel.TryCreate(cell.Source);
         if (nestedTable is null) return false;
-        if (flattenColumn) path = GetFlattenedColumnPath(columnIndex);
 
         tableHistory.Push(new(tableModel, tablePath, sourceIndex, columnIndex));
         ShowTable(nestedTable, path);
@@ -560,6 +556,41 @@ public partial class ResultInspectorWindow : Window
         ShowTable(parent.Model, parent.Path);
         RestoreTableSelection(parent.SelectedSourceIndex, parent.SelectedColumnIndex);
         return true;
+    }
+
+    private void TableColumnHeader_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (sender is not DataGridColumnHeader { Column: { } column, ContextMenu: { } menu } ||
+            !tableColumnIndexes.TryGetValue(column, out var columnIndex) ||
+            menu.Items.OfType<MenuItem>().FirstOrDefault() is not { } flattenItem)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        flattenItem.Tag = columnIndex;
+        flattenItem.IsEnabled = tableModel?.CanFlattenColumn(columnIndex) == true;
+    }
+
+    private void FlattenColumn_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: int columnIndex } ||
+            tableModel is null ||
+            tableModel.TryCreateFlattenedColumn(columnIndex) is not { } flattenedTable)
+            return;
+
+        var selectedSourceIndex = tableModel.Rows.FirstOrDefault()?.SourceIndex ?? 0;
+        var selectedColumnIndex = columnIndex;
+        if (TryGetSelectedTableCell(out _, out _, out var currentColumnIndex, out var currentSourceIndex))
+        {
+            selectedSourceIndex = currentSourceIndex;
+            selectedColumnIndex = currentColumnIndex;
+        }
+
+        var path = GetFlattenedColumnPath(columnIndex);
+        tableHistory.Push(new(tableModel, tablePath, selectedSourceIndex, selectedColumnIndex));
+        ShowTable(flattenedTable, path);
+        Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
     }
 
     private void OriginalRow_Click(object sender, RoutedEventArgs e)
@@ -598,18 +629,10 @@ public partial class ResultInspectorWindow : Window
     private void UpdateOpenCellTableState()
     {
         OpenCellTableButton.IsEnabled =
-            TryGetSelectedTableCell(out var cell, out _, out var columnIndex, out _) &&
+            TryGetSelectedTableCell(out var cell, out _, out _, out _) &&
             cell.Source is not null &&
-            (ShouldFlattenColumn(cell, columnIndex)
-                ? tableModel?.CanFlattenColumn(columnIndex) == true
-                : SnapshotTableModel.CanCreate(cell.Source));
+            SnapshotTableModel.CanCreate(cell.Source);
     }
-
-    private bool ShouldFlattenColumn(SnapshotTableCell cell, int columnIndex) =>
-        tableModel is not null &&
-        cell.Source is { } source &&
-        (source.Items is not null || source.Properties is not null) &&
-        tableModel.GetColumnProfile(columnIndex).SequenceCount > 0;
 
     private bool TryGetSelectedTableCell(
         out SnapshotTableCell cell,
@@ -713,6 +736,7 @@ public partial class ResultInspectorWindow : Window
             {
                 var columnIndex = index;
                 var profile = tableModel.GetColumnProfile(columnIndex);
+                var canFlatten = tableModel.CanFlattenColumn(columnIndex);
                 var elementStyle = new Style(typeof(TextBlock));
                 elementStyle.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
                 elementStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center));
@@ -720,7 +744,7 @@ public partial class ResultInspectorWindow : Window
                     new Binding($"Cells[{columnIndex}].Display")));
                 var column = new DataGridTextColumn
                 {
-                    Header = CreateTableColumnHeader(tableModel.Columns[columnIndex], profile),
+                    Header = CreateTableColumnHeader(tableModel.Columns[columnIndex], profile, canFlatten),
                     Binding = new Binding($"Cells[{columnIndex}].Display") { Mode = BindingMode.OneWay },
                     ClipboardContentBinding = new Binding($"Cells[{columnIndex}].ExportValue") { Mode = BindingMode.OneWay },
                     ElementStyle = elementStyle,
@@ -744,19 +768,27 @@ public partial class ResultInspectorWindow : Window
         UpdateOpenCellTableState();
     }
 
-    private object CreateTableColumnHeader(string name, SnapshotTableColumnProfile profile)
+    private object CreateTableColumnHeader(
+        string name,
+        SnapshotTableColumnProfile profile,
+        bool canFlatten)
     {
-        if (!profile.IsMixed) return name;
-        return new TextBlock
-        {
-            Text = $"{name} ⚠",
-            ToolTip = AppLocalization.Text(
+        if (!profile.IsMixed && !canFlatten) return name;
+        var tooltipParts = new List<string>();
+        if (profile.IsMixed)
+            tooltipParts.Add(AppLocalization.Text(
                 languageMode,
                 "Inspector.MixedColumnTooltip",
                 profile.SequenceCount,
                 profile.ObjectCount,
                 profile.ScalarCount,
-                profile.NullCount)
+                profile.NullCount));
+        if (canFlatten)
+            tooltipParts.Add(AppLocalization.Text(languageMode, "Inspector.FlattenColumnTooltip"));
+        return new TextBlock
+        {
+            Text = profile.IsMixed ? $"{name} ⚠" : name,
+            ToolTip = string.Join(Environment.NewLine, tooltipParts)
         };
     }
 

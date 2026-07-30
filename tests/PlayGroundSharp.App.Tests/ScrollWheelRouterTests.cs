@@ -9,6 +9,146 @@ namespace PlayGroundSharp.App.Tests;
 public sealed class ScrollWheelRouterTests
 {
     [Fact]
+    public void LargeTableUsesPixelScrollingWithAFiveHundredRowCache()
+    {
+        RunOnStaThread(() =>
+        {
+            var table = new DataGrid();
+
+            TableGridPerformance.Configure(table, rowCount: 10_000);
+
+            Assert.True(table.EnableRowVirtualization);
+            Assert.True(table.EnableColumnVirtualization);
+            Assert.True(ScrollViewer.GetCanContentScroll(table));
+            Assert.True(VirtualizingPanel.GetIsVirtualizing(table));
+            Assert.Equal(
+                VirtualizationMode.Recycling,
+                VirtualizingPanel.GetVirtualizationMode(table));
+            Assert.Equal(ScrollUnit.Pixel, VirtualizingPanel.GetScrollUnit(table));
+            Assert.Equal(
+                VirtualizationCacheLengthUnit.Item,
+                VirtualizingPanel.GetCacheLengthUnit(table));
+            var cacheLength = VirtualizingPanel.GetCacheLength(table);
+            Assert.Equal(250, cacheLength.CacheBeforeViewport);
+            Assert.Equal(250, cacheLength.CacheAfterViewport);
+            Assert.False(ScrollViewer.GetIsDeferredScrollingEnabled(table));
+        });
+    }
+
+    [Theory]
+    [InlineData(0, 500, 0)]
+    [InlineData(30, 500, 30)]
+    [InlineData(200, 500, 60)]
+    [InlineData(10_000, 500, 500)]
+    [InlineData(10_000, 120, 120)]
+    public void RowCacheAdaptsToTableSize(
+        int rowCount,
+        int maximumCachedRowCount,
+        int expected)
+    {
+        Assert.Equal(
+            expected,
+            TableGridPerformance.CalculateCachedRowCount(
+                rowCount,
+                maximumCachedRowCount));
+    }
+
+    [Theory]
+    [InlineData(20, 60, 40)]
+    [InlineData(40, 60, 60)]
+    [InlineData(60, 60, 60)]
+    [InlineData(480, 500, 500)]
+    public void RowCacheWarmsInSmallSteps(int current, int target, int expected)
+    {
+        Assert.Equal(
+            expected,
+            TableGridPerformance.NextCachedRowCount(current, target));
+    }
+
+    [Fact]
+    public void FindsTheTableScrollViewerAfterItsTemplateIsApplied()
+    {
+        RunOnStaThread(() =>
+        {
+            var table = new DataGrid { Width = 320, Height = 180 };
+            var window = new Window
+            {
+                Width = 400,
+                Height = 260,
+                Content = table,
+                ShowInTaskbar = false,
+                WindowStyle = WindowStyle.None
+            };
+            try
+            {
+                window.Show();
+                table.UpdateLayout();
+
+                var viewer = ScrollWheelRouter.FindScrollViewer(table);
+
+                Assert.NotNull(viewer);
+                Assert.Same(viewer, ScrollWheelRouter.FindScrollViewer(viewer!));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void TwoHundredRowTableStartsWithOnlyTheInitialCache()
+    {
+        RunOnStaThread(() =>
+        {
+            const int rowCount = 200;
+            var table = new DataGrid
+            {
+                AutoGenerateColumns = false,
+                ItemsSource = Enumerable.Range(0, rowCount).ToArray(),
+                RowHeight = 26
+            };
+            table.Columns.Add(new DataGridTextColumn
+            {
+                Header = "Value",
+                Binding = new System.Windows.Data.Binding()
+            });
+            TableGridPerformance.Configure(
+                table,
+                rowCount,
+                TableGridPerformance.InitialCachedRowCount);
+            var window = new Window
+            {
+                Width = 400,
+                Height = 260,
+                Content = table,
+                ShowActivated = false,
+                ShowInTaskbar = false,
+                WindowStyle = WindowStyle.None
+            };
+            try
+            {
+                window.Show();
+                table.ScrollIntoView(table.Items[rowCount / 2]);
+                table.UpdateLayout();
+                table.Dispatcher.Invoke(
+                    static () => { },
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                table.UpdateLayout();
+
+                var realizedRows = Enumerable.Range(0, rowCount)
+                    .Count(index => table.ItemContainerGenerator.ContainerFromIndex(index) is not null);
+
+                Assert.InRange(realizedRows, 20, 60);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void ScrollHorizontallyMovesAHorizontalViewport()
     {
         RunOnStaThread(() =>

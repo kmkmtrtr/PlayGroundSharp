@@ -12,7 +12,7 @@ namespace PlayGroundSharp.Worker;
 /// <summary>Creates bounded snapshots without leaking live Worker objects across IPC.</summary>
 public sealed class ResultSnapshotFactory
 {
-    public const int MaximumDepth = 10;
+    public const int MaximumDepth = 64;
     public const int MaximumItems = 10_000;
     public const int MaximumNodes = 50_000;
     public const int MaximumStringLength = 10 * 1024 * 1024;

@@ -9,7 +9,7 @@ namespace PlayGroundSharp.App.Tests;
 public sealed class ScrollWheelRouterTests
 {
     [Fact]
-    public void LargeTableUsesRecyclingWithAOnePageCache()
+    public void LargeTableUsesPixelScrollingWithAnExpandedRowCache()
     {
         RunOnStaThread(() =>
         {
@@ -24,14 +24,14 @@ public sealed class ScrollWheelRouterTests
             Assert.Equal(
                 VirtualizationMode.Recycling,
                 VirtualizingPanel.GetVirtualizationMode(table));
-            Assert.Equal(ScrollUnit.Item, VirtualizingPanel.GetScrollUnit(table));
+            Assert.Equal(ScrollUnit.Pixel, VirtualizingPanel.GetScrollUnit(table));
             Assert.Equal(
-                VirtualizationCacheLengthUnit.Page,
+                VirtualizationCacheLengthUnit.Item,
                 VirtualizingPanel.GetCacheLengthUnit(table));
             var cacheLength = VirtualizingPanel.GetCacheLength(table);
-            Assert.Equal(1, cacheLength.CacheBeforeViewport);
-            Assert.Equal(1, cacheLength.CacheAfterViewport);
-            Assert.True(ScrollViewer.GetIsDeferredScrollingEnabled(table));
+            Assert.Equal(60, cacheLength.CacheBeforeViewport);
+            Assert.Equal(60, cacheLength.CacheAfterViewport);
+            Assert.False(ScrollViewer.GetIsDeferredScrollingEnabled(table));
         });
     }
 
@@ -67,7 +67,7 @@ public sealed class ScrollWheelRouterTests
     }
 
     [Fact]
-    public void LargeTableOnlyCreatesContainersForTheVisibleViewport()
+    public void LargeTableKeepsAnExpandedCacheWithoutRealizingEveryRow()
     {
         RunOnStaThread(() =>
         {
@@ -96,12 +96,17 @@ public sealed class ScrollWheelRouterTests
             try
             {
                 window.Show();
+                table.ScrollIntoView(table.Items[rowCount / 2]);
+                table.UpdateLayout();
+                table.Dispatcher.Invoke(
+                    static () => { },
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 table.UpdateLayout();
 
                 var realizedRows = Enumerable.Range(0, rowCount)
                     .Count(index => table.ItemContainerGenerator.ContainerFromIndex(index) is not null);
 
-                Assert.InRange(realizedRows, 1, 100);
+                Assert.InRange(realizedRows, 100, 160);
             }
             finally
             {

@@ -13,13 +13,13 @@ internal static class TableGridPerformance
         table.SetValue(
             VirtualizingPanel.VirtualizationModeProperty,
             VirtualizationMode.Recycling);
-        table.SetValue(VirtualizingPanel.ScrollUnitProperty, ScrollUnit.Item);
+        table.SetValue(VirtualizingPanel.ScrollUnitProperty, ScrollUnit.Pixel);
         table.SetValue(
             VirtualizingPanel.CacheLengthProperty,
-            new VirtualizationCacheLength(1, 1));
+            new VirtualizationCacheLength(60, 60));
         table.SetValue(
             VirtualizingPanel.CacheLengthUnitProperty,
-            VirtualizationCacheLengthUnit.Page);
-        table.SetValue(ScrollViewer.IsDeferredScrollingEnabledProperty, true);
+            VirtualizationCacheLengthUnit.Item);
+        table.SetValue(ScrollViewer.IsDeferredScrollingEnabledProperty, false);
     }
 }

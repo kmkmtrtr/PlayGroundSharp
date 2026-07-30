@@ -414,17 +414,19 @@ public partial class ResultInspectorWindow : Window
     private void TableGrid_Sorting(object sender, DataGridSortingEventArgs e)
     {
         e.Handled = true;
-        if (TableGrid.ItemsSource is null ||
-            !tableSortStates.TryGetValue(e.Column, out var currentState))
+        var model = tableModel;
+        if (model is null ||
+            TableGrid.ItemsSource is null ||
+            !tableSortStates.TryGetValue(e.Column, out var currentState) ||
+            !tableColumnIndexes.TryGetValue(e.Column, out var columnIndex) ||
+            CollectionViewSource.GetDefaultView(TableGrid.ItemsSource) is not ListCollectionView view)
             return;
 
         var nextState = TableSortCycle.Next(currentState);
-        var view = CollectionViewSource.GetDefaultView(TableGrid.ItemsSource);
-        if (!view.CanSort) return;
-
         using (view.DeferRefresh())
         {
             view.SortDescriptions.Clear();
+            view.CustomSort = null;
             foreach (var column in tableSortStates.Keys.ToArray())
             {
                 tableSortStates[column] = TableSortState.Original;
@@ -434,8 +436,12 @@ public partial class ResultInspectorWindow : Window
 
             if (TableSortCycle.ToListSortDirection(nextState) is { } direction)
             {
-                view.SortDescriptions.Add(new(e.Column.SortMemberPath, direction));
+                view.CustomSort = SnapshotTableRowComparer.Create(
+                    model.Rows,
+                    columnIndex,
+                    direction);
                 tableSortStates[e.Column] = nextState;
+                e.Column.SortDirection = direction;
                 UpdateTableSortHeader(e.Column);
             }
         }

@@ -4,7 +4,7 @@ namespace PlayGroundSharp.App;
 
 internal static class TableGridPerformance
 {
-    public const int DefaultCachedRowCount = 5_000;
+    public const int DefaultCachedRowCount = 500;
 
     public static void Configure(
         DataGrid table,

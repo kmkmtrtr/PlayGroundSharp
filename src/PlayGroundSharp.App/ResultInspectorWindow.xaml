@@ -7,6 +7,13 @@
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
         Loaded="Window_Loaded" PreviewKeyDown="Window_PreviewKeyDown"
         PreviewMouseWheel="Window_PreviewMouseWheel">
+    <Window.Resources>
+        <DataTemplate x:Key="OriginalRowCellTemplate">
+            <Button Content="{Binding Origin.Display}" Style="{StaticResource MiniButtonStyle}"
+                    Click="OriginalRow_Click" Loaded="OriginalRow_Loaded"
+                    HorizontalAlignment="Left" Padding="5,1" />
+        </DataTemplate>
+    </Window.Resources>
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -154,11 +161,17 @@
                       MouseDoubleClick="TableGrid_MouseDoubleClick"
                       PreviewKeyDown="TableGrid_PreviewKeyDown">
                 <DataGrid.Resources>
+                    <ContextMenu x:Key="TableColumnHeaderMenu" x:Shared="False">
+                        <MenuItem Header="{DynamicResource Inspector.FlattenColumn}"
+                                  Click="FlattenColumn_Click" />
+                    </ContextMenu>
                     <Style TargetType="DataGridColumnHeader">
                         <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
                         <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
                         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
                         <Setter Property="Padding" Value="7,5" />
+                        <Setter Property="ContextMenu" Value="{StaticResource TableColumnHeaderMenu}" />
+                        <EventSetter Event="ContextMenuOpening" Handler="TableColumnHeader_ContextMenuOpening" />
                     </Style>
                     <Style TargetType="DataGridRowHeader">
                         <Setter Property="Background" Value="{DynamicResource PanelBrush}" />

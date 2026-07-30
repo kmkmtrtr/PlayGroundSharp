@@ -532,12 +532,19 @@ public partial class ResultInspectorWindow : Window
 
     private bool OpenSelectedCellTable()
     {
-        if (!TryGetSelectedTableCell(out var cell, out var path) ||
+        if (!TryGetSelectedTableCell(
+                out var cell,
+                out var path,
+                out var columnIndex,
+                out var sourceIndex) ||
             cell.Source is null ||
-            SnapshotTableModel.TryCreate(cell.Source) is not { } nestedTable)
+            tableModel is null)
             return false;
 
-        if (tableModel is not null) tableHistory.Push(new(tableModel, tablePath));
+        var nestedTable = SnapshotTableModel.TryCreate(cell.Source);
+        if (nestedTable is null) return false;
+
+        tableHistory.Push(new(tableModel, tablePath, sourceIndex, columnIndex));
         ShowTable(nestedTable, path);
         Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
         return true;
@@ -547,32 +554,107 @@ public partial class ResultInspectorWindow : Window
     {
         if (!tableHistory.TryPop(out var parent)) return false;
         ShowTable(parent.Model, parent.Path);
-        Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
+        RestoreTableSelection(parent.SelectedSourceIndex, parent.SelectedColumnIndex);
         return true;
+    }
+
+    private void TableColumnHeader_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (sender is not DataGridColumnHeader { Column: { } column, ContextMenu: { } menu } ||
+            !tableColumnIndexes.TryGetValue(column, out var columnIndex) ||
+            menu.Items.OfType<MenuItem>().FirstOrDefault() is not { } flattenItem)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        flattenItem.Tag = columnIndex;
+        flattenItem.IsEnabled = tableModel?.CanFlattenColumn(columnIndex) == true;
+    }
+
+    private void FlattenColumn_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: int columnIndex } ||
+            tableModel is null ||
+            tableModel.TryCreateFlattenedColumn(columnIndex) is not { } flattenedTable)
+            return;
+
+        var selectedSourceIndex = tableModel.Rows.FirstOrDefault()?.SourceIndex ?? 0;
+        var selectedColumnIndex = columnIndex;
+        if (TryGetSelectedTableCell(out _, out _, out var currentColumnIndex, out var currentSourceIndex))
+        {
+            selectedSourceIndex = currentSourceIndex;
+            selectedColumnIndex = currentColumnIndex;
+        }
+
+        var path = GetFlattenedColumnPath(columnIndex);
+        tableHistory.Push(new(tableModel, tablePath, selectedSourceIndex, selectedColumnIndex));
+        ShowTable(flattenedTable, path);
+        Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
+    }
+
+    private void OriginalRow_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button
+            {
+                DataContext: SnapshotTableRow
+                {
+                    Origin: { } origin
+                }
+            } ||
+            !tableHistory.TryPop(out var parent))
+            return;
+
+        ShowTable(parent.Model, parent.Path);
+        RestoreTableSelection(origin.ParentSourceIndex, origin.ParentColumnIndex);
+    }
+
+    private void OriginalRow_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button
+            {
+                DataContext: SnapshotTableRow
+                {
+                    Origin: { } origin
+                }
+            } button)
+            return;
+
+        var path = GetOriginalRowPath(origin);
+        button.ToolTip = string.IsNullOrEmpty(path)
+            ? AppLocalization.Text(languageMode, "Inspector.OriginalRowTooltip")
+            : $"{AppLocalization.Text(languageMode, "Inspector.OriginalRowTooltip")}{Environment.NewLine}{path}";
     }
 
     private void UpdateOpenCellTableState()
     {
         OpenCellTableButton.IsEnabled =
-            TryGetSelectedTableCell(out var cell, out _) &&
+            TryGetSelectedTableCell(out var cell, out _, out _, out _) &&
             cell.Source is not null &&
             SnapshotTableModel.CanCreate(cell.Source);
     }
 
-    private bool TryGetSelectedTableCell(out SnapshotTableCell cell, out string path)
+    private bool TryGetSelectedTableCell(
+        out SnapshotTableCell cell,
+        out string path,
+        out int columnIndex,
+        out int sourceIndex)
     {
         cell = SnapshotTableCell.Missing;
         path = string.Empty;
+        columnIndex = -1;
+        sourceIndex = -1;
         if (tableModel is null) return false;
         var selectedCell = TableGrid.CurrentCell.IsValid
             ? TableGrid.CurrentCell
             : TableGrid.SelectedCells.FirstOrDefault();
         if (!selectedCell.IsValid ||
             selectedCell.Item is not SnapshotTableRow row ||
-            !tableColumnIndexes.TryGetValue(selectedCell.Column, out var columnIndex) ||
+            !tableColumnIndexes.TryGetValue(selectedCell.Column, out columnIndex) ||
             !tableModel.TryGetCell(row, columnIndex, out cell))
             return false;
 
+        sourceIndex = row.SourceIndex;
         var rowPath = tableModel.SourceRowsAreItems
             ? $"{tablePath}[{row.SourceIndex}]"
             : tablePath;
@@ -580,6 +662,33 @@ public partial class ResultInspectorWindow : Window
             ? rowPath
             : AppendPropertyPath(rowPath, tableModel.Columns[columnIndex]);
         return cell.Source is not null;
+    }
+
+    private string GetOriginalRowPath(SnapshotTableRowOrigin origin)
+    {
+        if (!tableHistory.TryPeek(out var parent) ||
+            origin.ParentColumnIndex < 0 ||
+            origin.ParentColumnIndex >= parent.Model.Columns.Count)
+            return string.Empty;
+
+        var rowPath = parent.Model.SourceRowsAreItems
+            ? $"{parent.Path}[{origin.ParentSourceIndex}]"
+            : parent.Path;
+        var cellPath = parent.Model.HasSyntheticValueColumn
+            ? rowPath
+            : AppendPropertyPath(rowPath, parent.Model.Columns[origin.ParentColumnIndex]);
+        return origin.ItemIndex is { } itemIndex ? $"{cellPath}[{itemIndex}]" : cellPath;
+    }
+
+    private string GetFlattenedColumnPath(int columnIndex)
+    {
+        if (tableModel is null || columnIndex < 0 || columnIndex >= tableModel.Columns.Count)
+            return tablePath;
+
+        var rowPath = tableModel.SourceRowsAreItems ? $"{tablePath}[*]" : tablePath;
+        return tableModel.HasSyntheticValueColumn
+            ? rowPath
+            : AppendPropertyPath(rowPath, tableModel.Columns[columnIndex]);
     }
 
     private static string AppendPropertyPath(string path, string propertyName) =>
@@ -600,6 +709,7 @@ public partial class ResultInspectorWindow : Window
             TableGrid.ItemsSource = null;
             TableGrid.UnselectAllCells();
             TableGrid.CurrentCell = new();
+            TableGrid.FrozenColumnCount = 0;
             TableGrid.Columns.Clear();
             tableColumnIndexes.Clear();
             OpenCellTableButton.IsEnabled = false;
@@ -607,9 +717,26 @@ public partial class ResultInspectorWindow : Window
             TableModeButton.IsEnabled = tableModel is not null;
             if (tableModel is null) return;
 
+            if (tableModel.HasRowOrigins)
+            {
+                var header = new TextBlock();
+                header.SetResourceReference(TextBlock.TextProperty, "Inspector.OriginalRow");
+                TableGrid.Columns.Add(new DataGridTemplateColumn
+                {
+                    Header = header,
+                    CellTemplate = (DataTemplate)FindResource("OriginalRowCellTemplate"),
+                    CanUserSort = false,
+                    MinWidth = 88,
+                    Width = DataGridLength.Auto
+                });
+                TableGrid.FrozenColumnCount = 1;
+            }
+
             for (var index = 0; index < tableModel.Columns.Count; index++)
             {
                 var columnIndex = index;
+                var profile = tableModel.GetColumnProfile(columnIndex);
+                var canFlatten = tableModel.CanFlattenColumn(columnIndex);
                 var elementStyle = new Style(typeof(TextBlock));
                 elementStyle.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
                 elementStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center));
@@ -617,7 +744,7 @@ public partial class ResultInspectorWindow : Window
                     new Binding($"Cells[{columnIndex}].Display")));
                 var column = new DataGridTextColumn
                 {
-                    Header = tableModel.Columns[columnIndex],
+                    Header = CreateTableColumnHeader(tableModel.Columns[columnIndex], profile, canFlatten),
                     Binding = new Binding($"Cells[{columnIndex}].Display") { Mode = BindingMode.OneWay },
                     ClipboardContentBinding = new Binding($"Cells[{columnIndex}].ExportValue") { Mode = BindingMode.OneWay },
                     ElementStyle = elementStyle,
@@ -639,6 +766,54 @@ public partial class ResultInspectorWindow : Window
             isConfiguringTable = false;
         }
         UpdateOpenCellTableState();
+    }
+
+    private object CreateTableColumnHeader(
+        string name,
+        SnapshotTableColumnProfile profile,
+        bool canFlatten)
+    {
+        if (!profile.IsMixed && !canFlatten) return name;
+        var tooltipParts = new List<string>();
+        if (profile.IsMixed)
+            tooltipParts.Add(AppLocalization.Text(
+                languageMode,
+                "Inspector.MixedColumnTooltip",
+                profile.SequenceCount,
+                profile.ObjectCount,
+                profile.ScalarCount,
+                profile.NullCount));
+        if (canFlatten)
+            tooltipParts.Add(AppLocalization.Text(languageMode, "Inspector.FlattenColumnTooltip"));
+        return new TextBlock
+        {
+            Text = profile.IsMixed ? $"{name} ⚠" : name,
+            ToolTip = string.Join(Environment.NewLine, tooltipParts)
+        };
+    }
+
+    private void RestoreTableSelection(int sourceIndex, int columnIndex)
+    {
+        Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (tableModel is null) return;
+                var row = tableModel.Rows.FirstOrDefault(candidate => candidate.SourceIndex == sourceIndex);
+                var column = tableColumnIndexes
+                    .FirstOrDefault(pair => pair.Value == columnIndex)
+                    .Key;
+                if (row is null || column is null)
+                {
+                    TableGrid.Focus();
+                    return;
+                }
+
+                TableGrid.SelectedItem = row;
+                TableGrid.CurrentCell = new(row, column);
+                TableGrid.ScrollIntoView(row, column);
+                TableGrid.Focus();
+            },
+            DispatcherPriority.Input);
     }
 
     private void SetTableMode(bool tableMode)
@@ -704,6 +879,19 @@ public partial class ResultInspectorWindow : Window
         if (tableModel.ColumnsTruncated)
             parts.Add(AppLocalization.Text(
                 languageMode, "Inspector.TableColumnsLimited", tableModel.Columns.Count));
+        if (tableModel.FlattenedColumnProfile is { } profile)
+        {
+            parts.Add(AppLocalization.Text(
+                languageMode,
+                "Inspector.FlattenedSummary",
+                profile.SequenceCount,
+                profile.ObjectCount));
+            if (profile.ExcludedCount > 0)
+                parts.Add(AppLocalization.Text(
+                    languageMode,
+                    "Inspector.FlattenedExcluded",
+                    profile.ExcludedCount));
+        }
         tableSummaryStatus = string.Join(" · ", parts);
         if (!notificationTimer.IsEnabled) TableStatus.Text = tableSummaryStatus;
     }
@@ -804,5 +992,9 @@ public partial class ResultInspectorWindow : Window
         return null;
     }
 
-    private sealed record TableNavigationState(SnapshotTableModel Model, string Path);
+    private sealed record TableNavigationState(
+        SnapshotTableModel Model,
+        string Path,
+        int SelectedSourceIndex,
+        int SelectedColumnIndex);
 }

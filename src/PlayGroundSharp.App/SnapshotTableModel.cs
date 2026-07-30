@@ -8,10 +8,39 @@ internal sealed record SnapshotTableCell(string Display, string ExportValue, Res
     public static SnapshotTableCell Missing { get; } = new(string.Empty, string.Empty, null);
 }
 
-internal sealed class SnapshotTableRow(int sourceIndex, IReadOnlyList<SnapshotTableCell> cells)
+internal sealed record SnapshotTableRowOrigin(
+    int ParentSourceIndex,
+    int ParentColumnIndex,
+    int? ItemIndex)
+{
+    public string Display => ItemIndex is { } itemIndex
+        ? $"↩ #{ParentSourceIndex + 1} [{itemIndex}]"
+        : $"↩ #{ParentSourceIndex + 1}";
+}
+
+internal sealed record SnapshotTableColumnProfile(
+    int SequenceCount,
+    int ObjectCount,
+    int ScalarCount,
+    int NullCount)
+{
+    public bool IsMixed =>
+        (SequenceCount > 0 ? 1 : 0) +
+        (ObjectCount > 0 ? 1 : 0) +
+        (ScalarCount > 0 ? 1 : 0) +
+        (NullCount > 0 ? 1 : 0) > 1;
+
+    public int ExcludedCount => ScalarCount + NullCount;
+}
+
+internal sealed class SnapshotTableRow(
+    int sourceIndex,
+    IReadOnlyList<SnapshotTableCell> cells,
+    SnapshotTableRowOrigin? origin = null)
 {
     public int SourceIndex { get; } = sourceIndex;
     public IReadOnlyList<SnapshotTableCell> Cells { get; } = cells;
+    public SnapshotTableRowOrigin? Origin { get; } = origin;
 }
 
 /// <summary>Projects captured row-shaped snapshots into a bounded, UI-friendly table.</summary>
@@ -29,7 +58,8 @@ internal sealed class SnapshotTableModel
         bool columnsTruncated,
         bool preferTableView,
         bool sourceRowsAreItems,
-        bool hasSyntheticValueColumn)
+        bool hasSyntheticValueColumn,
+        SnapshotTableColumnProfile? flattenedColumnProfile = null)
     {
         Columns = columns;
         Rows = rows;
@@ -39,6 +69,7 @@ internal sealed class SnapshotTableModel
         PreferTableView = preferTableView;
         SourceRowsAreItems = sourceRowsAreItems;
         HasSyntheticValueColumn = hasSyntheticValueColumn;
+        FlattenedColumnProfile = flattenedColumnProfile;
     }
 
     public IReadOnlyList<string> Columns { get; }
@@ -49,6 +80,8 @@ internal sealed class SnapshotTableModel
     public bool PreferTableView { get; }
     public bool SourceRowsAreItems { get; }
     public bool HasSyntheticValueColumn { get; }
+    public SnapshotTableColumnProfile? FlattenedColumnProfile { get; }
+    public bool HasRowOrigins => Rows.Any(static row => row.Origin is not null);
 
     public bool TryGetCell(
         SnapshotTableRow row,
@@ -154,6 +187,127 @@ internal sealed class SnapshotTableModel
             sourceRowsAreItems && rowsAreObjects,
             sourceRowsAreItems,
             hasSyntheticValueColumn);
+    }
+
+    public SnapshotTableColumnProfile GetColumnProfile(int columnIndex)
+    {
+        if (columnIndex < 0 || columnIndex >= Columns.Count)
+            return new(0, 0, 0, 0);
+
+        var sequenceCount = 0;
+        var objectCount = 0;
+        var scalarCount = 0;
+        var nullCount = 0;
+        foreach (var row in Rows)
+        {
+            if (!TryGetCell(row, columnIndex, out var cell) || cell.Source is not { } source)
+                continue;
+
+            if (source.Items is not null) sequenceCount++;
+            else if (source.Properties is not null) objectCount++;
+            else if (source.Kind == SnapshotKind.Null) nullCount++;
+            else scalarCount++;
+        }
+        return new(sequenceCount, objectCount, scalarCount, nullCount);
+    }
+
+    public SnapshotTableModel? TryCreateFlattenedColumn(int columnIndex)
+    {
+        var profile = GetColumnProfile(columnIndex);
+        if (profile.SequenceCount == 0) return null;
+
+        var flattenedItems = new List<ResultSnapshot>();
+        var origins = new List<SnapshotTableRowOrigin>();
+        var rowsTruncated = RowsTruncated;
+        long knownTotalCount = 0;
+        var totalCountIsKnown = !RowsTruncated;
+        foreach (var row in Rows)
+        {
+            if (!TryGetCell(row, columnIndex, out var cell) || cell.Source is not { } source)
+                continue;
+
+            if (source.Items is { } items)
+            {
+                var availableCapacity = MaximumRows - flattenedItems.Count;
+                var capturedCount = Math.Min(items.Count, Math.Max(availableCapacity, 0));
+                for (var itemIndex = 0; itemIndex < capturedCount; itemIndex++)
+                {
+                    flattenedItems.Add(items[itemIndex]);
+                    origins.Add(new(row.SourceIndex, columnIndex, itemIndex));
+                }
+                if (items.Count > availableCapacity) rowsTruncated = true;
+
+                if (source.TotalCount is { } sourceTotalCount)
+                {
+                    knownTotalCount += sourceTotalCount;
+                }
+                else if (!source.IsTruncated)
+                {
+                    knownTotalCount += items.Count;
+                }
+                else
+                {
+                    totalCountIsKnown = false;
+                }
+                rowsTruncated |= source.IsTruncated;
+            }
+            else if (source.Properties is not null)
+            {
+                knownTotalCount++;
+                if (flattenedItems.Count < MaximumRows)
+                {
+                    flattenedItems.Add(source);
+                    origins.Add(new(row.SourceIndex, columnIndex, ItemIndex: null));
+                }
+                else
+                {
+                    rowsTruncated = true;
+                }
+            }
+        }
+
+        if (flattenedItems.Count == 0) return null;
+
+        var totalCount = totalCountIsKnown && knownTotalCount <= int.MaxValue
+            ? (int?)knownTotalCount
+            : null;
+        rowsTruncated |= totalCount is { } total && total > flattenedItems.Count;
+        var flattenedSnapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            $"{flattenedItems.Count} items",
+            TypeName: null,
+            Items: flattenedItems,
+            IsTruncated: rowsTruncated,
+            TotalCount: totalCount);
+        var flattenedModel = TryCreate(flattenedSnapshot);
+        if (flattenedModel is null) return null;
+
+        var rows = flattenedModel.Rows
+            .Select((row, index) => new SnapshotTableRow(
+                row.SourceIndex,
+                row.Cells,
+                origins[index]))
+            .ToArray();
+        return new(
+            flattenedModel.Columns,
+            rows,
+            flattenedModel.TotalRowCount,
+            flattenedModel.RowsTruncated,
+            flattenedModel.ColumnsTruncated,
+            flattenedModel.PreferTableView,
+            flattenedModel.SourceRowsAreItems,
+            flattenedModel.HasSyntheticValueColumn,
+            profile);
+    }
+
+    public bool CanFlattenColumn(int columnIndex)
+    {
+        var profile = GetColumnProfile(columnIndex);
+        return profile.SequenceCount > 0 &&
+               Rows.Any(row =>
+                   TryGetCell(row, columnIndex, out var cell) &&
+                   (cell.Source?.Items is { Count: > 0 } ||
+                    cell.Source?.Properties is { Count: > 0 }));
     }
 
     public string FormatDelimited(char delimiter)

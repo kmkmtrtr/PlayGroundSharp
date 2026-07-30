@@ -158,6 +158,7 @@
                       SelectionMode="Extended" SelectionUnit="CellOrRowHeader"
                       ClipboardCopyMode="IncludeHeader" LoadingRow="TableGrid_LoadingRow"
                       SelectedCellsChanged="TableGrid_SelectedCellsChanged"
+                      Sorting="TableGrid_Sorting"
                       MouseDoubleClick="TableGrid_MouseDoubleClick"
                       PreviewKeyDown="TableGrid_PreviewKeyDown">
                 <DataGrid.Resources>

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Controls;
 
 namespace PlayGroundSharp.App;
@@ -34,7 +35,40 @@ internal static class TableSortCycle
     };
 }
 
-internal sealed class TableSortHeader(string exportName) : StackPanel
+internal sealed class TableSortHeader : Grid
 {
+    private readonly string exportName;
+
+    public TableSortHeader(string exportName, string displayName)
+    {
+        this.exportName = exportName;
+        HorizontalAlignment = HorizontalAlignment.Stretch;
+        ClipToBounds = true;
+        ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+
+        Label = new()
+        {
+            Text = displayName,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        SortGlyph = new()
+        {
+            Width = 12,
+            Margin = new(6, 0, 0, 0),
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        SetColumn(SortGlyph, 1);
+        Children.Add(Label);
+        Children.Add(SortGlyph);
+    }
+
+    public TextBlock Label { get; }
+    public TextBlock SortGlyph { get; }
+
     public override string ToString() => exportName;
 }

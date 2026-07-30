@@ -819,26 +819,12 @@ public partial class ResultInspectorWindow : Window
         SnapshotTableColumnProfile profile,
         bool canFlatten)
     {
-        var label = new TextBlock
-        {
-            Text = profile.IsMixed ? $"{name} ⚠" : name,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        var glyph = new TextBlock
-        {
-            Margin = new(6, 0, 0, 0),
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        glyph.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
-        var header = new TableSortHeader(name)
-        {
-            Orientation = Orientation.Horizontal,
-            Children = { label, glyph }
-        };
+        var header = new TableSortHeader(
+            name,
+            profile.IsMixed ? $"{name} ⚠" : name);
+        header.SortGlyph.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
         header.ToolTip = BuildTableColumnHeaderTooltip(profile, canFlatten);
-        tableSortGlyphs.Add(column, glyph);
+        tableSortGlyphs.Add(column, header.SortGlyph);
         tableSortHeaders.Add(column, header);
         return header;
     }

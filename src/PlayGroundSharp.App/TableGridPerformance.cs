@@ -4,13 +4,15 @@ namespace PlayGroundSharp.App;
 
 internal static class TableGridPerformance
 {
+    public const int MinimumCachedRowCount = 60;
     public const int DefaultCachedRowCount = 500;
 
     public static void Configure(
         DataGrid table,
-        int cachedRowCount = DefaultCachedRowCount)
+        int rowCount,
+        int maximumCachedRowCount = DefaultCachedRowCount)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(cachedRowCount);
+        var cachedRowCount = CalculateCachedRowCount(rowCount, maximumCachedRowCount);
         var cachedRowsBeforeViewport = cachedRowCount / 2;
         var cachedRowsAfterViewport = cachedRowCount - cachedRowsBeforeViewport;
 
@@ -31,5 +33,20 @@ internal static class TableGridPerformance
             VirtualizingPanel.CacheLengthUnitProperty,
             VirtualizationCacheLengthUnit.Item);
         table.SetValue(ScrollViewer.IsDeferredScrollingEnabledProperty, false);
+    }
+
+    public static int CalculateCachedRowCount(
+        int rowCount,
+        int maximumCachedRowCount = DefaultCachedRowCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(rowCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumCachedRowCount);
+        if (rowCount == 0 || maximumCachedRowCount == 0) return 0;
+
+        var minimumForTable = Math.Min(MinimumCachedRowCount, rowCount);
+        var proportionalCache = rowCount / 20;
+        return Math.Min(
+            maximumCachedRowCount,
+            Math.Max(minimumForTable, proportionalCache));
     }
 }

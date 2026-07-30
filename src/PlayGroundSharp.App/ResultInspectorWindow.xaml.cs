@@ -51,7 +51,6 @@ public partial class ResultInspectorWindow : Window
         Roots = [SnapshotTreeNode.CreateRoot(snapshot, languageMode)];
         selectedNode = Roots[0];
         InitializeComponent();
-        TableGridPerformance.Configure(TableGrid);
         DataContext = this;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         var settings = viewModel.SavedSettings;
@@ -750,6 +749,7 @@ public partial class ResultInspectorWindow : Window
         try
         {
             TableGrid.ItemsSource = null;
+            TableGridPerformance.Configure(TableGrid, tableModel?.Rows.Count ?? 0);
             TableGrid.UnselectAllCells();
             TableGrid.CurrentCell = new();
             TableGrid.FrozenColumnCount = 0;

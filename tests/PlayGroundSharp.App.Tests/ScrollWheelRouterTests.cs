@@ -15,7 +15,7 @@ public sealed class ScrollWheelRouterTests
         {
             var table = new DataGrid();
 
-            TableGridPerformance.Configure(table);
+            TableGridPerformance.Configure(table, rowCount: 10_000);
 
             Assert.True(table.EnableRowVirtualization);
             Assert.True(table.EnableColumnVirtualization);
@@ -33,6 +33,24 @@ public sealed class ScrollWheelRouterTests
             Assert.Equal(250, cacheLength.CacheAfterViewport);
             Assert.False(ScrollViewer.GetIsDeferredScrollingEnabled(table));
         });
+    }
+
+    [Theory]
+    [InlineData(0, 500, 0)]
+    [InlineData(30, 500, 30)]
+    [InlineData(200, 500, 60)]
+    [InlineData(10_000, 500, 500)]
+    [InlineData(10_000, 120, 120)]
+    public void RowCacheAdaptsToTableSize(
+        int rowCount,
+        int maximumCachedRowCount,
+        int expected)
+    {
+        Assert.Equal(
+            expected,
+            TableGridPerformance.CalculateCachedRowCount(
+                rowCount,
+                maximumCachedRowCount));
     }
 
     [Fact]
@@ -67,11 +85,11 @@ public sealed class ScrollWheelRouterTests
     }
 
     [Fact]
-    public void LargeTableKeepsAnExpandedCacheWithoutRealizingEveryRow()
+    public void TwoHundredRowTableDoesNotRealizeEveryRowAtStartup()
     {
         RunOnStaThread(() =>
         {
-            const int rowCount = 10_000;
+            const int rowCount = 200;
             var table = new DataGrid
             {
                 AutoGenerateColumns = false,
@@ -83,7 +101,7 @@ public sealed class ScrollWheelRouterTests
                 Header = "Value",
                 Binding = new System.Windows.Data.Binding()
             });
-            TableGridPerformance.Configure(table, cachedRowCount: 120);
+            TableGridPerformance.Configure(table, rowCount);
             var window = new Window
             {
                 Width = 400,
@@ -106,7 +124,7 @@ public sealed class ScrollWheelRouterTests
                 var realizedRows = Enumerable.Range(0, rowCount)
                     .Count(index => table.ItemContainerGenerator.ContainerFromIndex(index) is not null);
 
-                Assert.InRange(realizedRows, 100, 160);
+                Assert.InRange(realizedRows, 50, 100);
             }
             finally
             {

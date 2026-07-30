@@ -532,10 +532,16 @@ public partial class ResultInspectorWindow : Window
 
     private bool OpenSelectedCellTable()
     {
-        if (!TryGetSelectedTableCell(out var cell, out var path) ||
+        if (!TryGetSelectedTableCell(out var cell, out var path, out var columnIndex) ||
             cell.Source is null ||
-            SnapshotTableModel.TryCreate(cell.Source) is not { } nestedTable)
+            tableModel is null)
             return false;
+
+        var nestedTable = cell.Source.Items is not null
+            ? tableModel.TryCreateFlattenedColumn(columnIndex) ?? SnapshotTableModel.TryCreate(cell.Source)
+            : SnapshotTableModel.TryCreate(cell.Source);
+        if (nestedTable is null) return false;
+        if (cell.Source.Items is not null) path = GetFlattenedColumnPath(columnIndex);
 
         if (tableModel is not null) tableHistory.Push(new(tableModel, tablePath));
         ShowTable(nestedTable, path);
@@ -554,22 +560,28 @@ public partial class ResultInspectorWindow : Window
     private void UpdateOpenCellTableState()
     {
         OpenCellTableButton.IsEnabled =
-            TryGetSelectedTableCell(out var cell, out _) &&
+            TryGetSelectedTableCell(out var cell, out _, out var columnIndex) &&
             cell.Source is not null &&
-            SnapshotTableModel.CanCreate(cell.Source);
+            (cell.Source.Items is not null
+                ? tableModel?.CanFlattenColumn(columnIndex) == true
+                : SnapshotTableModel.CanCreate(cell.Source));
     }
 
-    private bool TryGetSelectedTableCell(out SnapshotTableCell cell, out string path)
+    private bool TryGetSelectedTableCell(
+        out SnapshotTableCell cell,
+        out string path,
+        out int columnIndex)
     {
         cell = SnapshotTableCell.Missing;
         path = string.Empty;
+        columnIndex = -1;
         if (tableModel is null) return false;
         var selectedCell = TableGrid.CurrentCell.IsValid
             ? TableGrid.CurrentCell
             : TableGrid.SelectedCells.FirstOrDefault();
         if (!selectedCell.IsValid ||
             selectedCell.Item is not SnapshotTableRow row ||
-            !tableColumnIndexes.TryGetValue(selectedCell.Column, out var columnIndex) ||
+            !tableColumnIndexes.TryGetValue(selectedCell.Column, out columnIndex) ||
             !tableModel.TryGetCell(row, columnIndex, out cell))
             return false;
 
@@ -580,6 +592,17 @@ public partial class ResultInspectorWindow : Window
             ? rowPath
             : AppendPropertyPath(rowPath, tableModel.Columns[columnIndex]);
         return cell.Source is not null;
+    }
+
+    private string GetFlattenedColumnPath(int columnIndex)
+    {
+        if (tableModel is null || columnIndex < 0 || columnIndex >= tableModel.Columns.Count)
+            return tablePath;
+
+        var rowPath = tableModel.SourceRowsAreItems ? $"{tablePath}[*]" : tablePath;
+        return tableModel.HasSyntheticValueColumn
+            ? rowPath
+            : AppendPropertyPath(rowPath, tableModel.Columns[columnIndex]);
     }
 
     private static string AppendPropertyPath(string path, string propertyName) =>

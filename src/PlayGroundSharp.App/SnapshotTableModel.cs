@@ -156,6 +156,65 @@ internal sealed class SnapshotTableModel
             hasSyntheticValueColumn);
     }
 
+    public SnapshotTableModel? TryCreateFlattenedColumn(int columnIndex)
+    {
+        if (columnIndex < 0 || columnIndex >= Columns.Count) return null;
+
+        var flattenedItems = new List<ResultSnapshot>();
+        var foundSequence = false;
+        var rowsTruncated = RowsTruncated;
+        long knownTotalCount = 0;
+        var totalCountIsKnown = !RowsTruncated;
+        foreach (var row in Rows)
+        {
+            if (!TryGetCell(row, columnIndex, out var cell) ||
+                cell.Source?.Items is not { } items)
+                continue;
+
+            foundSequence = true;
+            var availableCapacity = MaximumRows - flattenedItems.Count;
+            if (availableCapacity > 0)
+                flattenedItems.AddRange(items.Take(availableCapacity));
+            if (items.Count > availableCapacity) rowsTruncated = true;
+
+            if (cell.Source.TotalCount is { } sourceTotalCount)
+            {
+                knownTotalCount += sourceTotalCount;
+            }
+            else if (!cell.Source.IsTruncated)
+            {
+                knownTotalCount += items.Count;
+            }
+            else
+            {
+                totalCountIsKnown = false;
+            }
+            rowsTruncated |= cell.Source.IsTruncated;
+        }
+
+        if (!foundSequence || flattenedItems.Count == 0) return null;
+
+        var totalCount = totalCountIsKnown && knownTotalCount <= int.MaxValue
+            ? (int?)knownTotalCount
+            : null;
+        rowsTruncated |= totalCount is { } total && total > flattenedItems.Count;
+        var flattenedSnapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            $"{flattenedItems.Count} items",
+            TypeName: null,
+            Items: flattenedItems,
+            IsTruncated: rowsTruncated,
+            TotalCount: totalCount);
+        return TryCreate(flattenedSnapshot);
+    }
+
+    public bool CanFlattenColumn(int columnIndex) =>
+        columnIndex >= 0 &&
+        columnIndex < Columns.Count &&
+        Rows.Any(row =>
+            TryGetCell(row, columnIndex, out var cell) &&
+            cell.Source?.Items is { Count: > 0 });
+
     public string FormatDelimited(char delimiter)
     {
         var builder = new StringBuilder();

@@ -158,6 +158,7 @@
                       SelectionMode="Extended" SelectionUnit="CellOrRowHeader"
                       ClipboardCopyMode="IncludeHeader" LoadingRow="TableGrid_LoadingRow"
                       SelectedCellsChanged="TableGrid_SelectedCellsChanged"
+                      Sorting="TableGrid_Sorting"
                       MouseDoubleClick="TableGrid_MouseDoubleClick"
                       PreviewKeyDown="TableGrid_PreviewKeyDown">
                 <DataGrid.Resources>
@@ -170,6 +171,7 @@
                         <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
                         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
                         <Setter Property="Padding" Value="7,5" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                         <Setter Property="ContextMenu" Value="{StaticResource TableColumnHeaderMenu}" />
                         <EventSetter Event="ContextMenuOpening" Handler="TableColumnHeader_ContextMenuOpening" />
                     </Style>

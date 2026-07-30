@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
@@ -22,6 +23,9 @@ public partial class ResultInspectorWindow : Window
     private AppLanguageMode languageMode;
     private readonly ResultSnapshot snapshot;
     private readonly Dictionary<DataGridColumn, int> tableColumnIndexes = [];
+    private readonly Dictionary<DataGridColumn, TableSortState> tableSortStates = [];
+    private readonly Dictionary<DataGridColumn, TextBlock> tableSortGlyphs = [];
+    private readonly Dictionary<DataGridColumn, FrameworkElement> tableSortHeaders = [];
     private readonly Stack<TableNavigationState> tableHistory = [];
     private SnapshotTableModel? tableModel;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
@@ -85,6 +89,8 @@ public partial class ResultInspectorWindow : Window
         if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
         languageMode = viewModel.LanguageMode;
         UpdateTableSummary();
+        foreach (var column in tableSortStates.Keys)
+            UpdateTableSortHeader(column);
         searchTimer.Stop();
         _ = ApplySearchAsync();
     }
@@ -405,6 +411,36 @@ public partial class ResultInspectorWindow : Window
         if (!isConfiguringTable) UpdateOpenCellTableState();
     }
 
+    private void TableGrid_Sorting(object sender, DataGridSortingEventArgs e)
+    {
+        e.Handled = true;
+        if (TableGrid.ItemsSource is null ||
+            !tableSortStates.TryGetValue(e.Column, out var currentState))
+            return;
+
+        var nextState = TableSortCycle.Next(currentState);
+        var view = CollectionViewSource.GetDefaultView(TableGrid.ItemsSource);
+        if (!view.CanSort) return;
+
+        using (view.DeferRefresh())
+        {
+            view.SortDescriptions.Clear();
+            foreach (var column in tableSortStates.Keys.ToArray())
+            {
+                tableSortStates[column] = TableSortState.Original;
+                column.SortDirection = null;
+                UpdateTableSortHeader(column);
+            }
+
+            if (TableSortCycle.ToListSortDirection(nextState) is { } direction)
+            {
+                view.SortDescriptions.Add(new(e.Column.SortMemberPath, direction));
+                tableSortStates[e.Column] = nextState;
+                UpdateTableSortHeader(e.Column);
+            }
+        }
+    }
+
     private void TableGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (FindAncestor<DataGridCell>(e.OriginalSource as DependencyObject) is null) return;
@@ -712,6 +748,9 @@ public partial class ResultInspectorWindow : Window
             TableGrid.FrozenColumnCount = 0;
             TableGrid.Columns.Clear();
             tableColumnIndexes.Clear();
+            tableSortStates.Clear();
+            tableSortGlyphs.Clear();
+            tableSortHeaders.Clear();
             OpenCellTableButton.IsEnabled = false;
             TableBackButton.IsEnabled = tableHistory.Count > 0;
             TableModeButton.IsEnabled = tableModel is not null;
@@ -744,7 +783,6 @@ public partial class ResultInspectorWindow : Window
                     new Binding($"Cells[{columnIndex}].Display")));
                 var column = new DataGridTextColumn
                 {
-                    Header = CreateTableColumnHeader(tableModel.Columns[columnIndex], profile, canFlatten),
                     Binding = new Binding($"Cells[{columnIndex}].Display") { Mode = BindingMode.OneWay },
                     ClipboardContentBinding = new Binding($"Cells[{columnIndex}].ExportValue") { Mode = BindingMode.OneWay },
                     ElementStyle = elementStyle,
@@ -753,8 +791,15 @@ public partial class ResultInspectorWindow : Window
                     Width = new DataGridLength(140),
                     SortMemberPath = $"Cells[{columnIndex}].Display"
                 };
+                column.Header = CreateTableSortHeader(
+                    column,
+                    tableModel.Columns[columnIndex],
+                    profile,
+                    canFlatten);
                 TableGrid.Columns.Add(column);
                 tableColumnIndexes.Add(column, columnIndex);
+                tableSortStates.Add(column, TableSortState.Original);
+                UpdateTableSortHeader(column);
             }
             // Attach the potentially large row source after all columns are ready. Adding
             // columns to a live ItemsSource repeatedly invalidates the DataGrid layout.
@@ -768,15 +813,54 @@ public partial class ResultInspectorWindow : Window
         UpdateOpenCellTableState();
     }
 
-    private object CreateTableColumnHeader(
+    private FrameworkElement CreateTableSortHeader(
+        DataGridColumn column,
         string name,
         SnapshotTableColumnProfile profile,
         bool canFlatten)
     {
-        if (!profile.IsMixed && !canFlatten) return name;
-        var tooltipParts = new List<string>();
+        var header = new TableSortHeader(
+            name,
+            profile.IsMixed ? $"{name} ⚠" : name);
+        header.SortGlyph.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+        header.ToolTip = BuildTableColumnHeaderTooltip(profile, canFlatten);
+        tableSortGlyphs.Add(column, header.SortGlyph);
+        tableSortHeaders.Add(column, header);
+        return header;
+    }
+
+    private void UpdateTableSortHeader(DataGridColumn column)
+    {
+        if (!tableSortStates.TryGetValue(column, out var state) ||
+            !tableSortGlyphs.TryGetValue(column, out var glyph) ||
+            !tableSortHeaders.TryGetValue(column, out var header) ||
+            !tableColumnIndexes.TryGetValue(column, out var columnIndex) ||
+            tableModel is null)
+            return;
+
+        var profile = tableModel.GetColumnProfile(columnIndex);
+        glyph.Text = TableSortCycle.Glyph(state);
+        header.ToolTip = BuildTableColumnHeaderTooltip(
+            profile,
+            tableModel.CanFlattenColumn(columnIndex));
+        var stateKey = state switch
+        {
+            TableSortState.Ascending => "Inspector.SortAscending",
+            TableSortState.Descending => "Inspector.SortDescending",
+            _ => "Inspector.SortOriginal"
+        };
+        AutomationProperties.SetName(
+            header,
+            $"{tableModel.Columns[columnIndex]}, {AppLocalization.Text(languageMode, stateKey)}");
+    }
+
+    private string BuildTableColumnHeaderTooltip(
+        SnapshotTableColumnProfile profile,
+        bool canFlatten)
+    {
+        var parts = new List<string>();
         if (profile.IsMixed)
-            tooltipParts.Add(AppLocalization.Text(
+            parts.Add(AppLocalization.Text(
                 languageMode,
                 "Inspector.MixedColumnTooltip",
                 profile.SequenceCount,
@@ -784,12 +868,9 @@ public partial class ResultInspectorWindow : Window
                 profile.ScalarCount,
                 profile.NullCount));
         if (canFlatten)
-            tooltipParts.Add(AppLocalization.Text(languageMode, "Inspector.FlattenColumnTooltip"));
-        return new TextBlock
-        {
-            Text = profile.IsMixed ? $"{name} ⚠" : name,
-            ToolTip = string.Join(Environment.NewLine, tooltipParts)
-        };
+            parts.Add(AppLocalization.Text(languageMode, "Inspector.FlattenColumnTooltip"));
+        parts.Add(AppLocalization.Text(languageMode, "Inspector.SortColumnTooltip"));
+        return string.Join(Environment.NewLine, parts);
     }
 
     private void RestoreTableSelection(int sourceIndex, int columnIndex)

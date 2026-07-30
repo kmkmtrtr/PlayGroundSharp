@@ -166,6 +166,70 @@ public sealed class SnapshotTableModelTests
         Assert.Equal(["101", "102", "201"], ordersTable.Rows.Select(static row => row.Cells[0].Display));
         Assert.Equal(3, ordersTable.TotalRowCount);
         Assert.False(ordersTable.RowsTruncated);
+        Assert.True(ordersTable.HasRowOrigins);
+        Assert.Collection(
+            ordersTable.Rows.Select(static row => row.Origin),
+            origin => Assert.Equal(new(0, ordersColumn, 0), origin),
+            origin => Assert.Equal(new(0, ordersColumn, 1), origin),
+            origin => Assert.Equal(new(1, ordersColumn, 0), origin));
+        Assert.Equal(new(2, 0, 0, 0), ordersTable.FlattenedColumnProfile);
+    }
+
+    [Fact]
+    public void MixedArrayAndObjectColumnsPreserveOriginalRowsAndReportExcludedCells()
+    {
+        var customers = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "4 items",
+            "Customer[]",
+            Items:
+            [
+                Row(("Orders", Sequence(
+                    Row(("Id", Number("101"))),
+                    Row(("Id", Number("102")))))),
+                Row(("Orders", Row(("Id", Number("201"))))),
+                Row(("Orders", Text("pending"))),
+                Row(("Orders", Null()))
+            ],
+            TotalCount: 4);
+        var customerTable = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
+        var ordersColumn = customerTable.Columns.ToList().IndexOf("Orders");
+
+        var profile = customerTable.GetColumnProfile(ordersColumn);
+        var ordersTable = Assert.IsType<SnapshotTableModel>(
+            customerTable.TryCreateFlattenedColumn(ordersColumn));
+
+        Assert.True(profile.IsMixed);
+        Assert.Equal(new(1, 1, 1, 1), profile);
+        Assert.Equal(["101", "102", "201"], ordersTable.Rows.Select(static row => row.Cells[0].Display));
+        Assert.Collection(
+            ordersTable.Rows.Select(static row => row.Origin),
+            origin => Assert.Equal(new(0, ordersColumn, 0), origin),
+            origin => Assert.Equal(new(0, ordersColumn, 1), origin),
+            origin => Assert.Equal(new(1, ordersColumn, ItemIndex: null), origin));
+        var flattenedProfile = Assert.IsType<SnapshotTableColumnProfile>(ordersTable.FlattenedColumnProfile);
+        Assert.Equal(profile, flattenedProfile);
+        Assert.Equal(2, flattenedProfile.ExcludedCount);
+    }
+
+    [Fact]
+    public void ObjectOnlyColumnsAreNotFlattenedAcrossRows()
+    {
+        var customers = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "2 items",
+            "Customer[]",
+            Items:
+            [
+                Row(("Profile", Row(("Id", Number("101"))))),
+                Row(("Profile", Row(("Id", Number("201")))))
+            ],
+            TotalCount: 2);
+        var customerTable = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
+        var profileColumn = customerTable.Columns.ToList().IndexOf("Profile");
+
+        Assert.False(customerTable.CanFlattenColumn(profileColumn));
+        Assert.Null(customerTable.TryCreateFlattenedColumn(profileColumn));
     }
 
     [Fact]
@@ -253,6 +317,9 @@ public sealed class SnapshotTableModelTests
 
     private static ResultSnapshot Boolean(string value) =>
         new(SnapshotKind.Boolean, value, "System.Boolean");
+
+    private static ResultSnapshot Null() =>
+        new(SnapshotKind.Null, "null", TypeName: null);
 
     private static ResultSnapshot Sequence(params ResultSnapshot[] items) =>
         new(SnapshotKind.Sequence, $"{items.Length} items", "System.Object[]", Items: items, TotalCount: items.Length);

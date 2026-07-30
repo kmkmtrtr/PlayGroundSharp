@@ -9,7 +9,7 @@ namespace PlayGroundSharp.App.Tests;
 public sealed class ScrollWheelRouterTests
 {
     [Fact]
-    public void LargeTableUsesPixelScrollingWithAnExpandedRowCache()
+    public void LargeTableUsesPixelScrollingWithAFiveThousandRowCache()
     {
         RunOnStaThread(() =>
         {
@@ -29,8 +29,8 @@ public sealed class ScrollWheelRouterTests
                 VirtualizationCacheLengthUnit.Item,
                 VirtualizingPanel.GetCacheLengthUnit(table));
             var cacheLength = VirtualizingPanel.GetCacheLength(table);
-            Assert.Equal(60, cacheLength.CacheBeforeViewport);
-            Assert.Equal(60, cacheLength.CacheAfterViewport);
+            Assert.Equal(2_500, cacheLength.CacheBeforeViewport);
+            Assert.Equal(2_500, cacheLength.CacheAfterViewport);
             Assert.False(ScrollViewer.GetIsDeferredScrollingEnabled(table));
         });
     }
@@ -83,7 +83,7 @@ public sealed class ScrollWheelRouterTests
                 Header = "Value",
                 Binding = new System.Windows.Data.Binding()
             });
-            TableGridPerformance.Configure(table);
+            TableGridPerformance.Configure(table, cachedRowCount: 120);
             var window = new Window
             {
                 Width = 400,

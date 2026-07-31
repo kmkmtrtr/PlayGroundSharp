@@ -58,7 +58,7 @@ public partial class ResultInspectorWindow : Window
         tableExpression = rootExpression;
         tableModel = SnapshotTableModel.TryCreate(snapshot);
         languageMode = viewModel.LanguageMode;
-        Roots = [SnapshotTreeNode.CreateRoot(snapshot, languageMode)];
+        Roots = [SnapshotTreeNode.CreateRoot(snapshot, languageMode, rootExpression)];
         selectedNode = Roots[0];
         InitializeComponent();
         DataContext = this;
@@ -260,7 +260,8 @@ public partial class ResultInspectorWindow : Window
             (root, matches, displayedMatches) = await Task.Run(() =>
             {
                 var filteredRoot = SnapshotTreeNode.CreateFilteredRoot(
-                    snapshot, languageMode, query, out var matchCount, out var displayedMatchCount, cancellationToken);
+                    snapshot, languageMode, query, out var matchCount, out var displayedMatchCount,
+                    cancellationToken, rootExpression);
                 return (filteredRoot, matchCount, displayedMatchCount);
             }, cancellationToken);
         }
@@ -403,7 +404,7 @@ public partial class ResultInspectorWindow : Window
         var selectedTable = SnapshotTableModel.TryCreate(selectedNode.Snapshot);
         if (selectedTable is null) return;
         tableHistory.Clear();
-        ShowTable(selectedTable, selectedNode.Path, selectedNode.Path == "$" ? rootExpression : null);
+        ShowTable(selectedTable, selectedNode.Path, selectedNode.Expression);
         SetTableMode(true);
     }
 

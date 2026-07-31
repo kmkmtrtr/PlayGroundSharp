@@ -15,6 +15,16 @@ internal static class ResultExpressionBuilder
             columnIndex < 0 || columnIndex >= model.Columns.Count)
             return null;
 
+        if (RequiresShapeSafeAccess(tableExpression))
+        {
+            var shapeSafeRowExpression = model.SourceRowsAreItems
+                ? $"{ShapeSafeSequence(tableExpression)}.ElementAt({row.SourceIndex})"
+                : Parenthesize(tableExpression);
+            return model.HasSyntheticValueColumn
+                ? shapeSafeRowExpression
+                : ShapeSafeProperty(shapeSafeRowExpression, model.Columns[columnIndex]);
+        }
+
         var rowExpression = model.SourceRowsAreItems
             ? $"{AsSequence(tableExpression, model.SourceSnapshot)}.ElementAt({row.SourceIndex})"
             : tableExpression.Trim();
@@ -22,6 +32,33 @@ internal static class ResultExpressionBuilder
             ? Parenthesize(rowExpression)
             : AppendProperty(rowExpression, row.Source, model.Columns[columnIndex]);
     }
+
+    public static string? ForProperty(
+        string? sourceExpression,
+        ResultSnapshot source,
+        string propertyName) =>
+        string.IsNullOrWhiteSpace(sourceExpression)
+            ? null
+            : RequiresShapeSafeAccess(sourceExpression)
+                ? ShapeSafeProperty(sourceExpression, propertyName)
+                : AppendProperty(sourceExpression, source, propertyName);
+
+    public static string? ForItem(
+        string? sourceExpression,
+        ResultSnapshot source,
+        int index) =>
+        string.IsNullOrWhiteSpace(sourceExpression)
+            ? null
+            : $"{(RequiresShapeSafeAccess(sourceExpression) ? ShapeSafeSequence(sourceExpression) : AsSequence(sourceExpression, source))}.ElementAt({index})";
+
+    public static string? ForSlice(
+        string? sourceExpression,
+        ResultSnapshot source,
+        int offset,
+        int count) =>
+        string.IsNullOrWhiteSpace(sourceExpression)
+            ? null
+            : $"{(RequiresShapeSafeAccess(sourceExpression) ? ShapeSafeSequence(sourceExpression) : AsSequence(sourceExpression, source))}.Skip({offset}).Take({count})";
 
     public static string? ForFlattenedColumn(
         string? tableExpression,
@@ -33,12 +70,25 @@ internal static class ResultExpressionBuilder
             return null;
 
         var profile = model.GetColumnProfile(columnIndex);
-        if (profile.SequenceCount == 0 ||
-            profile.ObjectCount > 0 ||
-            profile.ScalarCount > 0 ||
-            profile.NullCount > 0 ||
-            model.SourceRowsAreItems && profile.SequenceCount != model.Rows.Count)
-            return null;
+        if (profile.SequenceCount == 0) return null;
+
+        if (RequiresShapeSafeAccess(tableExpression))
+        {
+            if (!model.SourceRowsAreItems)
+            {
+                var valueExpression = model.HasSyntheticValueColumn
+                    ? Parenthesize(tableExpression)
+                    : ShapeSafeProperty(tableExpression, model.Columns[columnIndex]);
+                return ShapeSafeSequence(valueExpression);
+            }
+
+            const string sourceItem = "item";
+            var itemValueExpression = model.HasSyntheticValueColumn
+                ? sourceItem
+                : ShapeSafeProperty(sourceItem, model.Columns[columnIndex]);
+            return $"{ShapeSafeSequence(tableExpression)}.SelectMany({sourceItem} => " +
+                   $"{ShapeSafeSequence(itemValueExpression)})";
+        }
 
         var sequenceRow = model.Rows.FirstOrDefault(row =>
             model.TryGetCell(row, columnIndex, out var cell) && cell.Source?.Items is not null);
@@ -56,6 +106,20 @@ internal static class ResultExpressionBuilder
         }
 
         const string item = "item";
+        var needsShapeSafeProjection =
+            profile.ObjectCount > 0 ||
+            profile.ScalarCount > 0 ||
+            profile.NullCount > 0 ||
+            profile.SequenceCount != model.Rows.Count;
+        if (needsShapeSafeProjection)
+        {
+            var valueExpression = model.HasSyntheticValueColumn
+                ? item
+                : $"PlayGroundSharp.Core.ResultQuery.Property({item}, {QuoteString(model.Columns[columnIndex])})";
+            return $"{AsSequence(tableExpression, model.SourceSnapshot)}.SelectMany({item} => " +
+                   $"PlayGroundSharp.Core.ResultQuery.Flatten({valueExpression}))";
+        }
+
         var selectedExpression = model.HasSyntheticValueColumn
             ? item
             : AppendProperty(item, sequenceRow.Source, model.Columns[columnIndex]);
@@ -82,6 +146,16 @@ internal static class ResultExpressionBuilder
         if (IsJsonNode(snapshot)) return $"{NullForgive(expression)}.AsArray()";
         return Parenthesize(expression);
     }
+
+    private static bool RequiresShapeSafeAccess(string expression) =>
+        expression.TrimStart().StartsWith("Out[", StringComparison.Ordinal) ||
+        expression.Contains("PlayGroundSharp.Core.ResultQuery.", StringComparison.Ordinal);
+
+    private static string ShapeSafeProperty(string expression, string propertyName) =>
+        $"PlayGroundSharp.Core.ResultQuery.Property((object?){Parenthesize(expression)}, {QuoteString(propertyName)})";
+
+    private static string ShapeSafeSequence(string expression) =>
+        $"PlayGroundSharp.Core.ResultQuery.Flatten((object?){Parenthesize(expression)})";
 
     private static bool IsJsonElement(ResultSnapshot snapshot) =>
         snapshot.Kind == SnapshotKind.Json &&

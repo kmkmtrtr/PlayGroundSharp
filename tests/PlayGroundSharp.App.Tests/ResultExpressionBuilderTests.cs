@@ -61,18 +61,35 @@ public sealed class ResultExpressionBuilderTests
     }
 
     [Fact]
-    public void MixedColumnDoesNotClaimAnEquivalentExpression()
+    public async Task MixedColumnUsesShapeSafeFlatteningExpression()
     {
         var customers = Sequence(
             Row(("Orders", Sequence(Row(("Id", Number("101")))))),
             Row(("Orders", Row(("Id", Number("201"))))));
         var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
 
-        Assert.Null(ResultExpressionBuilder.ForFlattenedColumn("customers", table, 0));
+        var expression = ResultExpressionBuilder.ForFlattenedColumn("customers", table, 0);
+        Assert.Equal(
+            "(customers).SelectMany(item => PlayGroundSharp.Core.ResultQuery.Flatten(" +
+            "PlayGroundSharp.Core.ResultQuery.Property(item, \"Orders\")))",
+            expression);
+        var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
+            SessionContext.Empty with
+            {
+                Submissions =
+                [
+                    "var customers = new[] { " +
+                    "new { Orders = (object?)new[] { new { Id = 1 } } }, " +
+                    "new { Orders = (object?)new { Id = 2 } }, " +
+                    "new { Orders = (object?)null } };"
+                ]
+            },
+            expression!);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 
     [Fact]
-    public void MissingCellsDoNotClaimAnEquivalentFlatteningExpression()
+    public void MissingCellsUseShapeSafeFlatteningExpression()
     {
         var customers = Sequence(
             Row(("Orders", Sequence(Row(("Id", Number("101")))))),
@@ -80,7 +97,10 @@ public sealed class ResultExpressionBuilderTests
         var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
         var ordersColumn = table.Columns.ToList().IndexOf("Orders");
 
-        Assert.Null(ResultExpressionBuilder.ForFlattenedColumn("customers", table, ordersColumn));
+        Assert.Equal(
+            "(customers).SelectMany(item => PlayGroundSharp.Core.ResultQuery.Flatten(" +
+            "PlayGroundSharp.Core.ResultQuery.Property(item, \"Orders\")))",
+            ResultExpressionBuilder.ForFlattenedColumn("customers", table, ordersColumn));
     }
 
     [Fact]
@@ -96,6 +116,29 @@ public sealed class ResultExpressionBuilderTests
         var expression = ResultExpressionBuilder.ForCell("values", table, table.Rows[0], 0);
 
         Assert.Equal("(values)[\"order-items\"]", expression);
+    }
+
+    [Fact]
+    public async Task ResultHistoryFallbackRemainsUsableForNavigationAndFlattening()
+    {
+        var customers = Sequence(
+            Row(("Orders", Sequence(Row(("Id", Number("101")))))),
+            Row(("Orders", Sequence(Row(("Id", Number("201")))))));
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
+
+        var cellExpression = ResultExpressionBuilder.ForCell("Out[1]", table, table.Rows[0], 0);
+        var flattenedExpression = ResultExpressionBuilder.ForFlattenedColumn("Out[1]", table, 0);
+
+        Assert.Contains("ResultQuery.Property", cellExpression, StringComparison.Ordinal);
+        Assert.Contains("ResultQuery.Flatten", flattenedExpression, StringComparison.Ordinal);
+        Assert.Contains("SelectMany", flattenedExpression, StringComparison.Ordinal);
+        var service = new CSharpLanguageService();
+        Assert.DoesNotContain(
+            await service.GetDiagnosticsAsync(SessionContext.Empty, cellExpression!),
+            static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.DoesNotContain(
+            await service.GetDiagnosticsAsync(SessionContext.Empty, flattenedExpression!),
+            static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 
     private static ResultSnapshot Row(params (string Name, ResultSnapshot Value)[] properties) => new(

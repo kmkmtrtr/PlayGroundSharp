@@ -20,6 +20,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         string path,
         ResultSnapshot snapshot,
         AppLanguageMode languageMode,
+        string? expression = null,
         bool isExpanded = false,
         bool isSearchMatch = false,
         IReadOnlyList<SnapshotTreeNode>? filteredChildren = null,
@@ -31,6 +32,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         children = filteredChildren;
         this.childrenFactory = childrenFactory;
         Path = path;
+        Expression = expression;
         IsSearchMatch = isSearchMatch;
         this.isExpanded = isExpanded;
         var compact = SnapshotTextFormatter.FormatCompact(snapshot).ReplaceLineEndings(" ");
@@ -42,6 +44,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
     public string Label { get; }
     public string Detail { get; }
     public string Path { get; }
+    internal string? Expression { get; }
     public bool IsSearchMatch { get; }
     [ObservableProperty] private bool isExpanded;
     [ObservableProperty] private bool isSelected;
@@ -49,8 +52,12 @@ public sealed partial class SnapshotTreeNode : ObservableObject
     public string CopyText => SnapshotTextFormatter.FormatFull(snapshot);
     public IReadOnlyList<SnapshotTreeNode> Children => children ??= childrenFactory?.Invoke() ?? CreateChildren();
 
-    public static SnapshotTreeNode CreateRoot(ResultSnapshot snapshot, AppLanguageMode languageMode) =>
-        new(snapshot.TypeName ?? snapshot.Kind.ToString(), "$", snapshot, languageMode, isExpanded: true);
+    public static SnapshotTreeNode CreateRoot(
+        ResultSnapshot snapshot,
+        AppLanguageMode languageMode,
+        string? sourceExpression = null) =>
+        new(snapshot.TypeName ?? snapshot.Kind.ToString(), "$", snapshot, languageMode,
+            sourceExpression, isExpanded: true);
 
     public static SnapshotTreeNode? CreateFilteredRoot(
         ResultSnapshot snapshot,
@@ -58,13 +65,14 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         string query,
         out int matchCount,
         out int displayedMatchCount,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? sourceExpression = null)
     {
         matchCount = 0;
         displayedMatchCount = 0;
-        if (string.IsNullOrWhiteSpace(query)) return CreateRoot(snapshot, languageMode);
+        if (string.IsNullOrWhiteSpace(query)) return CreateRoot(snapshot, languageMode, sourceExpression);
         return CreateFilteredNode(
-            snapshot.TypeName ?? snapshot.Kind.ToString(), "$", snapshot, languageMode,
+            snapshot.TypeName ?? snapshot.Kind.ToString(), "$", snapshot, languageMode, sourceExpression,
             query.Trim(), ref matchCount, ref displayedMatchCount, cancellationToken);
     }
 
@@ -73,6 +81,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         string path,
         ResultSnapshot snapshot,
         AppLanguageMode languageMode,
+        string? expression,
         string query,
         ref int matchCount,
         ref int displayedMatchCount,
@@ -98,7 +107,8 @@ public sealed partial class SnapshotTreeNode : ObservableObject
             foreach (var property in snapshot.Properties)
             {
                 var childPath = AppendPropertyPath(path, property.Name);
-                if (CreateFilteredNode(property.Name, childPath, property.Value, languageMode, query,
+                var childExpression = ResultExpressionBuilder.ForProperty(expression, snapshot, property.Name);
+                if (CreateFilteredNode(property.Name, childPath, property.Value, languageMode, childExpression, query,
                         ref matchCount, ref displayedMatchCount, cancellationToken) is { } child)
                     (matchingChildren ??= []).Add(child);
             }
@@ -108,7 +118,8 @@ public sealed partial class SnapshotTreeNode : ObservableObject
             for (var index = 0; index < snapshot.Items.Count; index++)
             {
                 var childName = $"[{index}]";
-                if (CreateFilteredNode(childName, path + childName, snapshot.Items[index], languageMode, query,
+                var childExpression = ResultExpressionBuilder.ForItem(expression, snapshot, index);
+                if (CreateFilteredNode(childName, path + childName, snapshot.Items[index], languageMode, childExpression, query,
                         ref matchCount, ref displayedMatchCount, cancellationToken) is { } child)
                     (matchingChildren ??= []).Add(child);
             }
@@ -120,6 +131,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
             path,
             snapshot,
             languageMode,
+            expression,
             isExpanded: true,
             isSearchMatch: includeSelf,
             filteredChildren: GroupFilteredChildren(matchingChildren ?? [], path, snapshot, languageMode));
@@ -153,14 +165,24 @@ public sealed partial class SnapshotTreeNode : ObservableObject
             if (snapshot.Properties.Count > DirectChildLimit)
                 return CreatePropertyGroups(snapshot.Properties);
             result.AddRange(snapshot.Properties.Select(property =>
-                new SnapshotTreeNode(property.Name, AppendPropertyPath(Path, property.Name), property.Value, languageMode)));
+                new SnapshotTreeNode(
+                    property.Name,
+                    AppendPropertyPath(Path, property.Name),
+                    property.Value,
+                    languageMode,
+                    ResultExpressionBuilder.ForProperty(Expression, snapshot, property.Name))));
         }
         if (snapshot.Items is not null)
         {
             if (snapshot.Items.Count > DirectChildLimit)
                 return CreateItemGroups(snapshot.Items);
             result.AddRange(snapshot.Items.Select((item, index) =>
-                new SnapshotTreeNode($"[{index}]", $"{Path}[{index}]", item, languageMode)));
+                new SnapshotTreeNode(
+                    $"[{index}]",
+                    $"{Path}[{index}]",
+                    item,
+                    languageMode,
+                    ResultExpressionBuilder.ForItem(Expression, snapshot, index))));
         }
         return result;
     }
@@ -187,7 +209,12 @@ public sealed partial class SnapshotTreeNode : ObservableObject
                 groupSnapshot,
                 languageMode,
                 childrenFactory: () => groupProperties.Select(property =>
-                    new SnapshotTreeNode(property.Name, AppendPropertyPath(Path, property.Name), property.Value, languageMode)).ToArray()));
+                    new SnapshotTreeNode(
+                        property.Name,
+                        AppendPropertyPath(Path, property.Name),
+                        property.Value,
+                        languageMode,
+                        ResultExpressionBuilder.ForProperty(Expression, snapshot, property.Name))).ToArray()));
         }
         return groups;
     }
@@ -213,8 +240,14 @@ public sealed partial class SnapshotTreeNode : ObservableObject
                 $"{Path}[{start}…{end}]",
                 groupSnapshot,
                 languageMode,
+                ResultExpressionBuilder.ForSlice(Expression, snapshot, start, groupItems.Length),
                 childrenFactory: () => groupItems.Select((item, index) =>
-                    new SnapshotTreeNode($"[{start + index}]", $"{Path}[{start + index}]", item, languageMode)).ToArray()));
+                    new SnapshotTreeNode(
+                        $"[{start + index}]",
+                        $"{Path}[{start + index}]",
+                        item,
+                        languageMode,
+                        ResultExpressionBuilder.ForItem(Expression, snapshot, start + index))).ToArray()));
         }
         return groups;
     }

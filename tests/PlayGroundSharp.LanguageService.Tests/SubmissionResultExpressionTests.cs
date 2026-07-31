@@ -18,4 +18,14 @@ public sealed class SubmissionResultExpressionTests
     [InlineData("customers.")]
     public void ReturnsNullWithoutAValidResultExpression(string? code) =>
         Assert.Null(SubmissionResultExpression.TryExtract(code));
+
+    [Theory]
+    [InlineData("customers", 3, "customers")]
+    [InlineData("var customers = GetCustomers();", 3, "Out[3]")]
+    [InlineData(null, 8, "Out[8]")]
+    public void ResultHistoryIsUsedWhenSourceExpressionIsUnavailable(
+        string? code,
+        int submissionIndex,
+        string expected) =>
+        Assert.Equal(expected, SubmissionResultExpression.ForResult(code, submissionIndex));
 }

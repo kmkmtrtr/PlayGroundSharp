@@ -7,6 +7,12 @@ namespace PlayGroundSharp.LanguageService;
 /// <summary>Finds the expression whose value is returned by a C# script submission.</summary>
 public static class SubmissionResultExpression
 {
+    public static string ForResult(string? code, int submissionIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(submissionIndex);
+        return TryExtract(code) ?? $"Out[{submissionIndex}]";
+    }
+
     public static string? TryExtract(string? code)
     {
         if (string.IsNullOrWhiteSpace(code)) return null;

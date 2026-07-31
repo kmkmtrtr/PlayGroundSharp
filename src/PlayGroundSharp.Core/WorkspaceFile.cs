@@ -1,4 +1,3 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace PlayGroundSharp.Core;
@@ -24,12 +23,7 @@ public sealed record WorkspaceDocument(
 public static class WorkspaceFile
 {
     public const long MaximumFileBytes = 16 * 1024 * 1024;
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
+    private static readonly JsonSerializerOptions Options = WorkspaceJsonFormat.CreateOptions();
 
     public static async Task SaveAsync(
         string path,

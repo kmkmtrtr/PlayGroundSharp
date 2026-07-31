@@ -12,7 +12,8 @@ namespace PlayGroundSharp.Web.Client.Pages;
 public partial class Home
 {
     private const long MaximumUploadBytes = 64L * 1024 * 1024;
-    private static readonly JsonSerializerOptions WorkspaceJson = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly JsonSerializerOptions WorkspaceJson =
+        WorkspaceJsonFormat.CreateOptions(JsonSerializerDefaults.Web);
     private readonly List<SubmissionView> history = [];
     private readonly List<string> acceptedSubmissions = [];
     private readonly List<WorkspacePackage> installedPackages = [];

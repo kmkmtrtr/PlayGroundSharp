@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using PlayGroundSharp.Core;
 
@@ -19,7 +18,7 @@ internal static class SnapshotTextFormatter
     private const int CompactMaximumLength = 500;
     private static readonly JsonSerializerOptions DisplayJsonOptions = new()
     {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = ReadableJsonEncoder.Instance
     };
 
     public static SnapshotFormatResult FormatPreview(ResultSnapshot snapshot) =>

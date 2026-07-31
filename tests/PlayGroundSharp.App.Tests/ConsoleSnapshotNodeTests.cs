@@ -97,4 +97,23 @@ public sealed class ConsoleSnapshotNodeTests
             "{id: 42, name: \"Ada\", profile: {active: true, role: \"admin\"}, scores: (3) [10, 20, 30]}",
             root.Preview);
     }
+
+    [Fact]
+    public void JsonTextKeepsFullWidthSpacesReadable()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Object,
+            "1 property",
+            "Example",
+            Properties:
+            [
+                new("full　width", new(SnapshotKind.String, "left　right", "System.String"))
+            ]);
+
+        var root = ConsoleSnapshotNode.CreateRoot(snapshot);
+
+        Assert.Contains("\"full　width\": \"left　right\"", root.Preview, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\u3000", root.Preview, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\\u3000", root.CopyText, StringComparison.OrdinalIgnoreCase);
+    }
 }

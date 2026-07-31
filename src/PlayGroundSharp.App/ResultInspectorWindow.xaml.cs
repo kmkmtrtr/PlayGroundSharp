@@ -20,6 +20,7 @@ public partial class ResultInspectorWindow : Window
 {
     private const int WmMouseHorizontalWheel = 0x020E;
     private readonly MainViewModel viewModel;
+    private readonly string? rootExpression;
     private AppLanguageMode languageMode;
     private readonly ResultSnapshot snapshot;
     private readonly Dictionary<DataGridColumn, int> tableColumnIndexes = [];
@@ -39,6 +40,7 @@ public partial class ResultInspectorWindow : Window
     private string currentSearchStatus = string.Empty;
     private string tableSummaryStatus = string.Empty;
     private string tablePath = "$";
+    private string? tableExpression;
     private string appliedQuery = string.Empty;
     private bool copyInProgress;
     private bool isTableMode;
@@ -48,10 +50,12 @@ public partial class ResultInspectorWindow : Window
     private ScrollViewer? tableScrollViewer;
     private HwndSource? windowSource;
 
-    public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel)
+    public ResultInspectorWindow(ResultSnapshot snapshot, MainViewModel viewModel, string? sourceExpression = null)
     {
         this.viewModel = viewModel;
         this.snapshot = snapshot;
+        rootExpression = string.IsNullOrWhiteSpace(sourceExpression) ? null : sourceExpression.Trim();
+        tableExpression = rootExpression;
         tableModel = SnapshotTableModel.TryCreate(snapshot);
         languageMode = viewModel.LanguageMode;
         Roots = [SnapshotTreeNode.CreateRoot(snapshot, languageMode)];
@@ -98,6 +102,7 @@ public partial class ResultInspectorWindow : Window
         if (e.PropertyName != nameof(MainViewModel.LanguageMode)) return;
         languageMode = viewModel.LanguageMode;
         UpdateTableSummary();
+        UpdateTableExpression();
         foreach (var column in tableSortStates.Keys)
             UpdateTableSortHeader(column);
         searchTimer.Stop();
@@ -398,7 +403,7 @@ public partial class ResultInspectorWindow : Window
         var selectedTable = SnapshotTableModel.TryCreate(selectedNode.Snapshot);
         if (selectedTable is null) return;
         tableHistory.Clear();
-        ShowTable(selectedTable, selectedNode.Path);
+        ShowTable(selectedTable, selectedNode.Path, selectedNode.Path == "$" ? rootExpression : null);
         SetTableMode(true);
     }
 
@@ -410,6 +415,12 @@ public partial class ResultInspectorWindow : Window
     {
         if (tableModel is not null)
             await CopyToClipboardAsync(() => tableModel.FormatDelimited('\t'));
+    }
+
+    private async void CopyTableExpression_Click(object sender, RoutedEventArgs e)
+    {
+        if (tableExpression is { } expression)
+            await CopyToClipboardAsync(() => expression);
     }
 
     private async void SaveTable_Click(object sender, RoutedEventArgs e) => await SaveTableAsync();
@@ -580,10 +591,11 @@ public partial class ResultInspectorWindow : Window
         }
     }
 
-    private void ShowTable(SnapshotTableModel model, string path)
+    private void ShowTable(SnapshotTableModel model, string path, string? expression)
     {
         tableModel = model;
         tablePath = path;
+        tableExpression = expression;
         ConfigureTable();
     }
 
@@ -601,8 +613,9 @@ public partial class ResultInspectorWindow : Window
         var nestedTable = SnapshotTableModel.TryCreate(cell.Source);
         if (nestedTable is null) return false;
 
-        tableHistory.Push(new(tableModel, tablePath, sourceIndex, columnIndex));
-        ShowTable(nestedTable, path);
+        var expression = GetSelectedCellExpression(columnIndex);
+        tableHistory.Push(new(tableModel, tablePath, tableExpression, sourceIndex, columnIndex));
+        ShowTable(nestedTable, path, expression);
         Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
         return true;
     }
@@ -610,7 +623,7 @@ public partial class ResultInspectorWindow : Window
     private bool NavigateToParentTable()
     {
         if (!tableHistory.TryPop(out var parent)) return false;
-        ShowTable(parent.Model, parent.Path);
+        ShowTable(parent.Model, parent.Path, parent.Expression);
         RestoreTableSelection(parent.SelectedSourceIndex, parent.SelectedColumnIndex);
         return true;
     }
@@ -645,8 +658,9 @@ public partial class ResultInspectorWindow : Window
         }
 
         var path = GetFlattenedColumnPath(columnIndex);
-        tableHistory.Push(new(tableModel, tablePath, selectedSourceIndex, selectedColumnIndex));
-        ShowTable(flattenedTable, path);
+        var expression = ResultExpressionBuilder.ForFlattenedColumn(tableExpression, tableModel, columnIndex);
+        tableHistory.Push(new(tableModel, tablePath, tableExpression, selectedSourceIndex, selectedColumnIndex));
+        ShowTable(flattenedTable, path, expression);
         Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
     }
 
@@ -662,7 +676,7 @@ public partial class ResultInspectorWindow : Window
             !tableHistory.TryPop(out var parent))
             return;
 
-        ShowTable(parent.Model, parent.Path);
+        ShowTable(parent.Model, parent.Path, parent.Expression);
         RestoreTableSelection(origin.ParentSourceIndex, origin.ParentColumnIndex);
     }
 
@@ -689,6 +703,16 @@ public partial class ResultInspectorWindow : Window
             TryGetSelectedTableCell(out var cell, out _, out _, out _) &&
             cell.Source is not null &&
             SnapshotTableModel.CanCreate(cell.Source);
+    }
+
+    private string? GetSelectedCellExpression(int columnIndex)
+    {
+        var selectedCell = TableGrid.CurrentCell.IsValid
+            ? TableGrid.CurrentCell
+            : TableGrid.SelectedCells.FirstOrDefault();
+        return tableModel is not null && selectedCell.Item is SnapshotTableRow row
+            ? ResultExpressionBuilder.ForCell(tableExpression, tableModel, row, columnIndex)
+            : null;
     }
 
     private bool TryGetSelectedTableCell(
@@ -785,6 +809,7 @@ public partial class ResultInspectorWindow : Window
             OpenCellTableButton.IsEnabled = false;
             TableBackButton.IsEnabled = tableHistory.Count > 0;
             TableModeButton.IsEnabled = tableModel is not null;
+            UpdateTableExpression();
             if (tableModel is null) return;
 
             if (tableModel.HasRowOrigins)
@@ -884,6 +909,14 @@ public partial class ResultInspectorWindow : Window
         AutomationProperties.SetName(
             header,
             $"{tableModel.Columns[columnIndex]}, {AppLocalization.Text(languageMode, stateKey)}");
+    }
+
+    private void UpdateTableExpression()
+    {
+        CopyTableExpressionButton.IsEnabled = tableExpression is not null;
+        TableExpressionText.Text = tableExpression ??
+            AppLocalization.Text(languageMode, "Inspector.ExpressionUnavailable");
+        TableExpressionText.ToolTip = TableExpressionText.Text;
     }
 
     private string BuildTableColumnHeaderTooltip(
@@ -1135,6 +1168,7 @@ public partial class ResultInspectorWindow : Window
     private sealed record TableNavigationState(
         SnapshotTableModel Model,
         string Path,
+        string? Expression,
         int SelectedSourceIndex,
         int SelectedColumnIndex);
 }

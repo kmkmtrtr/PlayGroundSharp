@@ -35,6 +35,19 @@ public sealed class TranscriptLineTests
     }
 
     [Fact]
+    public void OutputKeepsItsResultExpressionForInspection()
+    {
+        var snapshot = new PlayGroundSharp.Core.ResultSnapshot(
+            PlayGroundSharp.Core.SnapshotKind.Number,
+            "3",
+            "System.Int32");
+
+        var line = TranscriptLine.Output(1, "3", snapshot, "values.Sum()");
+
+        Assert.Equal("values.Sum()", line.ResultExpression);
+    }
+
+    [Fact]
     public void LocalizedSystemRowsCanBeRelocalizedWithoutChangingRawRows()
     {
         var localized = TranscriptLine.LocalizedSystem(

@@ -35,10 +35,25 @@ internal sealed record SnapshotTableColumnProfile(
 
 internal sealed class SnapshotTableRow(
     int sourceIndex,
+    ResultSnapshot source,
     IReadOnlyList<SnapshotTableCell> cells,
     SnapshotTableRowOrigin? origin = null)
 {
+    public SnapshotTableRow(
+        int sourceIndex,
+        IReadOnlyList<SnapshotTableCell> cells,
+        SnapshotTableRowOrigin? origin = null)
+        : this(
+            sourceIndex,
+            cells.FirstOrDefault(static cell => cell.Source is not null)?.Source ??
+            new ResultSnapshot(SnapshotKind.Null, "null", TypeName: null),
+            cells,
+            origin)
+    {
+    }
+
     public int SourceIndex { get; } = sourceIndex;
+    public ResultSnapshot Source { get; } = source;
     public IReadOnlyList<SnapshotTableCell> Cells { get; } = cells;
     public SnapshotTableRowOrigin? Origin { get; } = origin;
 }
@@ -51,6 +66,7 @@ internal sealed class SnapshotTableModel
     private const int MaximumCellPreviewLength = 240;
 
     private SnapshotTableModel(
+        ResultSnapshot sourceSnapshot,
         IReadOnlyList<string> columns,
         IReadOnlyList<SnapshotTableRow> rows,
         int? totalRowCount,
@@ -61,6 +77,7 @@ internal sealed class SnapshotTableModel
         bool hasSyntheticValueColumn,
         SnapshotTableColumnProfile? flattenedColumnProfile = null)
     {
+        SourceSnapshot = sourceSnapshot;
         Columns = columns;
         Rows = rows;
         TotalRowCount = totalRowCount;
@@ -72,6 +89,7 @@ internal sealed class SnapshotTableModel
         FlattenedColumnProfile = flattenedColumnProfile;
     }
 
+    public ResultSnapshot SourceSnapshot { get; }
     public IReadOnlyList<string> Columns { get; }
     public IReadOnlyList<SnapshotTableRow> Rows { get; }
     public int? TotalRowCount { get; }
@@ -159,7 +177,7 @@ internal sealed class SnapshotTableModel
             var sourceRow = displayedRows[sourceIndex];
             if (hasSyntheticValueColumn)
             {
-                rows.Add(new(sourceIndex, [CreateCell(sourceRow)]));
+                rows.Add(new(sourceIndex, sourceRow, [CreateCell(sourceRow)]));
                 continue;
             }
 
@@ -169,7 +187,7 @@ internal sealed class SnapshotTableModel
                 if (!columnIndexes.TryGetValue(property.Name, out var columnIndex)) continue;
                 cells[columnIndex] = CreateCell(property.Value);
             }
-            rows.Add(new(sourceIndex, cells));
+            rows.Add(new(sourceIndex, sourceRow, cells));
         }
 
         var totalRowCount = snapshot.Items is null
@@ -179,6 +197,7 @@ internal sealed class SnapshotTableModel
                             (snapshot.IsTruncated || displayedRows.Length < sourceRows.Count ||
                              totalRowCount is { } total && displayedRows.Length < total);
         return new(
+            snapshot,
             columns,
             rows,
             totalRowCount,
@@ -285,10 +304,12 @@ internal sealed class SnapshotTableModel
         var rows = flattenedModel.Rows
             .Select((row, index) => new SnapshotTableRow(
                 row.SourceIndex,
+                row.Source,
                 row.Cells,
                 origins[index]))
             .ToArray();
         return new(
+            flattenedSnapshot,
             flattenedModel.Columns,
             rows,
             flattenedModel.TotalRowCount,

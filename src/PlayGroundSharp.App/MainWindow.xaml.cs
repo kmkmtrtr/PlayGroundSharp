@@ -592,10 +592,10 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None &&
                  FindAncestor<TreeView>(Keyboard.FocusedElement as DependencyObject) is
-                 { DataContext: TranscriptLine { Snapshot: { } snapshot } })
+                 { DataContext: TranscriptLine { Snapshot: not null } line })
         {
             e.Handled = true;
-            OpenResultInspector(snapshot);
+            OpenResultInspector(line);
         }
         else if (e.Key == Key.Escape && SymbolDetailPopup.IsOpen)
         {
@@ -1571,7 +1571,7 @@ public partial class MainWindow : Window
     private void InspectVariable_Click(object sender, RoutedEventArgs e)
     {
         if (VariableList.SelectedItem is VariableItem item)
-            new ResultInspectorWindow(item.Snapshot, viewModel) { Owner = this }.Show();
+            new ResultInspectorWindow(item.Snapshot, viewModel, item.Name) { Owner = this }.Show();
     }
 
     private async void CopyTranscript_Click(object sender, RoutedEventArgs e) => await CopyTranscriptAsync();
@@ -2364,8 +2364,8 @@ public partial class MainWindow : Window
 
     private void InspectResult_Click(object sender, RoutedEventArgs e)
     {
-        if (GetTranscriptLine(sender)?.Snapshot is { } snapshot)
-            OpenResultInspector(snapshot);
+        if (GetTranscriptLine(sender) is { Snapshot: not null } line)
+            OpenResultInspector(line);
     }
 
     private async void CopyTranscriptLine_Click(object sender, RoutedEventArgs e)
@@ -2383,10 +2383,10 @@ public partial class MainWindow : Window
     private async void TranscriptTree_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None &&
-            sender is TreeView { DataContext: TranscriptLine { Snapshot: { } snapshot } })
+            sender is TreeView { DataContext: TranscriptLine { Snapshot: not null } line })
         {
             e.Handled = true;
-            OpenResultInspector(snapshot);
+            OpenResultInspector(line);
             return;
         }
         if (e.Key != Key.C || Keyboard.Modifiers != ModifierKeys.Control ||
@@ -2398,13 +2398,13 @@ public partial class MainWindow : Window
     private void TranscriptTree_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left ||
-            sender is not TreeView { DataContext: TranscriptLine { Snapshot: { } snapshot } }) return;
+            sender is not TreeView { DataContext: TranscriptLine { Snapshot: not null } line }) return;
         e.Handled = true;
-        OpenResultInspector(snapshot);
+        OpenResultInspector(line);
     }
 
-    private void OpenResultInspector(ResultSnapshot snapshot) =>
-        new ResultInspectorWindow(snapshot, viewModel) { Owner = this }.Show();
+    private void OpenResultInspector(TranscriptLine line) =>
+        new ResultInspectorWindow(line.Snapshot!, viewModel, line.ResultExpression) { Owner = this }.Show();
 
     private void TranscriptTree_ExpansionChanged(object sender, RoutedEventArgs e)
     {

@@ -1,14 +1,107 @@
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace PlayGroundSharp.App;
 
 public partial class App : Application
 {
-    public App() => ScrollWheelRouter.Register();
+    private static int currentLanguageMode = (int)AppLanguageMode.Japanese;
+    private int errorDialogVisible;
+    private int fatalErrorReported;
+
+    internal bool HasReportedFatalError => Volatile.Read(ref fatalErrorReported) != 0;
+
+    public App()
+    {
+        ScrollWheelRouter.Register();
+        DispatcherUnhandledException += App_DispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
+        Exit += App_Exit;
+    }
+
+    private void App_DispatcherUnhandledException(
+        object sender,
+        DispatcherUnhandledExceptionEventArgs e)
+    {
+        var canContinue = AppErrorPolicy.CanContinue(e.Exception);
+        var log = AppErrorLogger.Default.Write(
+            "UI Dispatcher",
+            e.Exception,
+            isTerminating: !canContinue);
+        if (!canContinue) Volatile.Write(ref fatalErrorReported, 1);
+        e.Handled = canContinue;
+        ShowErrorSafely(e.Exception, log, canContinue);
+    }
+
+    private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        var error = e.ExceptionObject as Exception ?? new InvalidOperationException(
+            $"Unhandled non-exception object: {e.ExceptionObject}");
+        var log = AppErrorLogger.Default.Write("AppDomain", error, e.IsTerminating);
+        if (e.IsTerminating) Volatile.Write(ref fatalErrorReported, 1);
+        ShowErrorSafely(error, log, canContinue: !e.IsTerminating);
+    }
+
+    private void TaskScheduler_UnobservedTaskException(
+        object? sender,
+        UnobservedTaskExceptionEventArgs e)
+    {
+        var log = AppErrorLogger.Default.Write(
+            "Unobserved task",
+            e.Exception,
+            isTerminating: false);
+        e.SetObserved();
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        try
+        {
+            _ = Dispatcher.BeginInvoke(
+                () => ShowErrorSafely(e.Exception, log, canContinue: true),
+                DispatcherPriority.Background);
+        }
+        catch (InvalidOperationException)
+        {
+            // The dispatcher completed shutdown after the state check.
+        }
+    }
+
+    private void ShowErrorSafely(
+        Exception error,
+        AppErrorLogResult log,
+        bool canContinue)
+    {
+        if (Interlocked.Exchange(ref errorDialogVisible, 1) != 0) return;
+        try
+        {
+            var owner = Dispatcher.CheckAccess() ? MainWindow : null;
+            AppErrorDialog.Show(ResolveLanguageMode(), error, log, canContinue, owner);
+        }
+        catch (Exception dialogError)
+        {
+            _ = AppErrorLogger.Default.Write(
+                "Error dialog",
+                dialogError,
+                isTerminating: false);
+        }
+        finally
+        {
+            Volatile.Write(ref errorDialogVisible, 0);
+        }
+    }
+
+    private static AppLanguageMode ResolveLanguageMode() =>
+        (AppLanguageMode)Volatile.Read(ref currentLanguageMode);
+
+    private void App_Exit(object sender, ExitEventArgs e)
+    {
+        AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
+    }
 
     public static void ApplyLanguage(AppLanguageMode mode)
     {
+        Volatile.Write(ref currentLanguageMode, (int)mode);
         if (Current is null) return;
         foreach (var (key, value) in AppLocalization.Resources(mode)) Current.Resources[key] = value;
     }

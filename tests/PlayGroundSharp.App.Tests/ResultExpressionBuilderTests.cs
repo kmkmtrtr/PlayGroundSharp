@@ -6,6 +6,39 @@ namespace PlayGroundSharp.App.Tests;
 public sealed class ResultExpressionBuilderTests
 {
     [Fact]
+    public async Task ColumnLayoutGeneratesAReusableProjection()
+    {
+        var customers = Sequence(
+            Row(("Id", Number("1")), ("Name", Text("Ada")), ("Active", Text("true"))));
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
+
+        var expression = ResultExpressionBuilder.ForColumns("customers", table, [1, 0]);
+
+        Assert.Equal(
+            "customers.Select(item => PlayGroundSharp.Core.ResultQuery.Project(item, \"Name\", \"Id\"))",
+            expression);
+        var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
+            SessionContext.Empty with
+            {
+                Submissions =
+                [
+                    "var customers = new[] { new { Id = 1, Name = \"Ada\", Active = true } };"
+                ]
+            },
+            expression!);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public void UnchangedColumnLayoutKeepsTheOriginalExpression()
+    {
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(
+            Sequence(Row(("Id", Number("1")), ("Name", Text("Ada"))))));
+
+        Assert.Equal("customers", ResultExpressionBuilder.ForColumns(" customers ", table, [0, 1]));
+    }
+
+    [Fact]
     public async Task CellAndFlattenOperationsFollowTheOriginalResult()
     {
         var customers = Sequence(

@@ -29,6 +29,7 @@ public partial class ResultInspectorWindow : Window
     private readonly Dictionary<DataGridColumn, FrameworkElement> tableSortHeaders = [];
     private readonly Stack<TableNavigationState> tableHistory = [];
     private SnapshotTableModel? tableModel;
+    private TableColumnLayout? tableColumnLayout;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private readonly DispatcherTimer notificationTimer = new() { Interval = TimeSpan.FromSeconds(1.8) };
     private readonly DispatcherTimer tableCacheWarmupTimer = new(DispatcherPriority.Background)
@@ -41,6 +42,7 @@ public partial class ResultInspectorWindow : Window
     private string tableSummaryStatus = string.Empty;
     private string tablePath = "$";
     private string? tableExpression;
+    private string? tableBaseExpression;
     private string appliedQuery = string.Empty;
     private bool copyInProgress;
     private bool isTableMode;
@@ -55,8 +57,10 @@ public partial class ResultInspectorWindow : Window
         this.viewModel = viewModel;
         this.snapshot = snapshot;
         rootExpression = string.IsNullOrWhiteSpace(sourceExpression) ? null : sourceExpression.Trim();
+        tableBaseExpression = rootExpression;
         tableExpression = rootExpression;
         tableModel = SnapshotTableModel.TryCreate(snapshot);
+        tableColumnLayout = tableModel is null ? null : new(tableModel.Columns.Count);
         languageMode = viewModel.LanguageMode;
         Roots = [SnapshotTreeNode.CreateRoot(snapshot, languageMode, rootExpression)];
         selectedNode = Roots[0];
@@ -414,8 +418,9 @@ public partial class ResultInspectorWindow : Window
 
     private async void CopyTable_Click(object sender, RoutedEventArgs e)
     {
-        if (tableModel is not null)
-            await CopyToClipboardAsync(() => tableModel.FormatDelimited('\t'));
+        if (CaptureTableExport() is { } export)
+            await CopyToClipboardAsync(() => export.Model.FormatDelimited(
+                '\t', export.ColumnIndexes, export.Rows));
     }
 
     private async void CopyTableExpression_Click(object sender, RoutedEventArgs e)
@@ -432,6 +437,15 @@ public partial class ResultInspectorWindow : Window
     private void TableGrid_SelectedCellsChanged(object sender, SelectedCellsChangedEventArgs e)
     {
         if (!isConfiguringTable) UpdateOpenCellTableState();
+    }
+
+    private void TableGrid_ColumnReordered(object sender, DataGridColumnEventArgs e)
+    {
+        if (isConfiguringTable || tableColumnLayout is null) return;
+        tableColumnLayout.SetOrder(tableColumnIndexes
+            .OrderBy(static pair => pair.Key.DisplayIndex)
+            .Select(static pair => pair.Value));
+        RefreshTableColumnState();
     }
 
     private void TableGrid_Sorting(object sender, DataGridSortingEventArgs e)
@@ -580,8 +594,11 @@ public partial class ResultInspectorWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         try
         {
+            var export = CaptureTableExport();
+            if (export is null) return;
             SetSearchStatus(AppLocalization.Text(languageMode, "Status.SavingResult"));
-            var text = await Task.Run(() => tableModel.FormatDelimited(','));
+            var text = await Task.Run(() => export.Model.FormatDelimited(
+                ',', export.ColumnIndexes, export.Rows));
             await File.WriteAllTextAsync(dialog.FileName, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
             ShowNotification("Status.Saved", Path.GetFileName(dialog.FileName));
         }
@@ -592,11 +609,17 @@ public partial class ResultInspectorWindow : Window
         }
     }
 
-    private void ShowTable(SnapshotTableModel model, string path, string? expression)
+    private void ShowTable(
+        SnapshotTableModel model,
+        string path,
+        string? expression,
+        TableColumnLayout? columnLayout = null)
     {
         tableModel = model;
         tablePath = path;
-        tableExpression = expression;
+        tableBaseExpression = expression;
+        tableColumnLayout = columnLayout?.Clone() ?? new(model.Columns.Count);
+        UpdateProjectedTableExpression();
         ConfigureTable();
     }
 
@@ -615,7 +638,13 @@ public partial class ResultInspectorWindow : Window
         if (nestedTable is null) return false;
 
         var expression = GetSelectedCellExpression(columnIndex);
-        tableHistory.Push(new(tableModel, tablePath, tableExpression, sourceIndex, columnIndex));
+        tableHistory.Push(new(
+            tableModel,
+            tablePath,
+            tableBaseExpression,
+            tableColumnLayout?.Clone() ?? new(tableModel.Columns.Count),
+            sourceIndex,
+            columnIndex));
         ShowTable(nestedTable, path, expression);
         Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
         return true;
@@ -624,7 +653,7 @@ public partial class ResultInspectorWindow : Window
     private bool NavigateToParentTable()
     {
         if (!tableHistory.TryPop(out var parent)) return false;
-        ShowTable(parent.Model, parent.Path, parent.Expression);
+        ShowTable(parent.Model, parent.Path, parent.BaseExpression, parent.ColumnLayout);
         RestoreTableSelection(parent.SelectedSourceIndex, parent.SelectedColumnIndex);
         return true;
     }
@@ -633,19 +662,124 @@ public partial class ResultInspectorWindow : Window
     {
         if (sender is not DataGridColumnHeader { Column: { } column, ContextMenu: { } menu } ||
             !tableColumnIndexes.TryGetValue(column, out var columnIndex) ||
-            menu.Items.OfType<MenuItem>().FirstOrDefault() is not { } flattenItem)
+            tableModel is null ||
+            tableColumnLayout is null)
         {
             e.Handled = true;
             return;
         }
 
-        flattenItem.Tag = columnIndex;
-        flattenItem.IsEnabled = tableModel?.CanFlattenColumn(columnIndex) == true;
+        var visibleColumns = tableColumnLayout.VisibleColumnIndexes;
+        var visiblePosition = visibleColumns.ToList().IndexOf(columnIndex);
+        ConfigureColumnMenuItem(menu, "HideColumn", columnIndex, tableColumnLayout.VisibleCount > 1);
+        ConfigureColumnMenuItem(menu, "MoveColumnLeft", columnIndex, visiblePosition > 0);
+        ConfigureColumnMenuItem(
+            menu,
+            "MoveColumnRight",
+            columnIndex,
+            visiblePosition >= 0 && visiblePosition < visibleColumns.Count - 1);
+        ConfigureColumnMenuItem(
+            menu,
+            "ShowAllColumns",
+            columnIndex,
+            tableColumnLayout.HiddenColumnIndexes.Count > 0);
+        ConfigureColumnMenuItem(
+            menu,
+            "ResetColumnLayout",
+            columnIndex,
+            !tableColumnLayout.IsDefault);
+        ConfigureColumnMenuItem(
+            menu,
+            "FlattenColumn",
+            columnIndex,
+            tableModel.CanFlattenColumn(columnIndex));
+
+        var showColumnItem = FindColumnMenuItem(menu, "ShowColumn");
+        if (showColumnItem is null) return;
+        showColumnItem.Items.Clear();
+        foreach (var hiddenColumnIndex in tableColumnLayout.HiddenColumnIndexes)
+        {
+            var item = new MenuItem
+            {
+                Header = tableModel.Columns[hiddenColumnIndex],
+                CommandParameter = hiddenColumnIndex
+            };
+            item.Click += ShowColumn_Click;
+            showColumnItem.Items.Add(item);
+        }
+        showColumnItem.IsEnabled = showColumnItem.Items.Count > 0;
+    }
+
+    private static MenuItem? FindColumnMenuItem(ContextMenu menu, string tag) =>
+        menu.Items.OfType<MenuItem>().FirstOrDefault(item => Equals(item.Tag, tag));
+
+    private static void ConfigureColumnMenuItem(
+        ContextMenu menu,
+        string tag,
+        int columnIndex,
+        bool isEnabled)
+    {
+        if (FindColumnMenuItem(menu, tag) is not { } item) return;
+        item.CommandParameter = columnIndex;
+        item.IsEnabled = isEnabled;
+    }
+
+    private void HideColumn_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryGetMenuColumnIndex(sender, out var columnIndex) &&
+            tableColumnLayout?.Hide(columnIndex) == true)
+            ApplyTableColumnLayout();
+    }
+
+    private void MoveColumnLeft_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryGetMenuColumnIndex(sender, out var columnIndex) &&
+            tableColumnLayout?.MoveLeft(columnIndex) == true)
+            ApplyTableColumnLayout();
+    }
+
+    private void MoveColumnRight_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryGetMenuColumnIndex(sender, out var columnIndex) &&
+            tableColumnLayout?.MoveRight(columnIndex) == true)
+            ApplyTableColumnLayout();
+    }
+
+    private void ShowColumn_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryGetMenuColumnIndex(sender, out var columnIndex) &&
+            tableColumnLayout?.Show(columnIndex) == true)
+            ApplyTableColumnLayout();
+    }
+
+    private void ShowAllColumns_Click(object sender, RoutedEventArgs e)
+    {
+        if (tableColumnLayout is null || tableColumnLayout.HiddenColumnIndexes.Count == 0) return;
+        tableColumnLayout.ShowAll();
+        ApplyTableColumnLayout();
+    }
+
+    private void ResetColumnLayout_Click(object sender, RoutedEventArgs e)
+    {
+        if (tableColumnLayout is null || tableColumnLayout.IsDefault) return;
+        tableColumnLayout.Reset();
+        ApplyTableColumnLayout();
+    }
+
+    private static bool TryGetMenuColumnIndex(object sender, out int columnIndex)
+    {
+        if (sender is MenuItem { CommandParameter: int index })
+        {
+            columnIndex = index;
+            return true;
+        }
+        columnIndex = -1;
+        return false;
     }
 
     private void FlattenColumn_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem { Tag: int columnIndex } ||
+        if (!TryGetMenuColumnIndex(sender, out var columnIndex) ||
             tableModel is null ||
             tableModel.TryCreateFlattenedColumn(columnIndex) is not { } flattenedTable)
             return;
@@ -660,7 +794,13 @@ public partial class ResultInspectorWindow : Window
 
         var path = GetFlattenedColumnPath(columnIndex);
         var expression = ResultExpressionBuilder.ForFlattenedColumn(tableExpression, tableModel, columnIndex);
-        tableHistory.Push(new(tableModel, tablePath, tableExpression, selectedSourceIndex, selectedColumnIndex));
+        tableHistory.Push(new(
+            tableModel,
+            tablePath,
+            tableBaseExpression,
+            tableColumnLayout?.Clone() ?? new(tableModel.Columns.Count),
+            selectedSourceIndex,
+            selectedColumnIndex));
         ShowTable(flattenedTable, path, expression);
         Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
     }
@@ -677,7 +817,7 @@ public partial class ResultInspectorWindow : Window
             !tableHistory.TryPop(out var parent))
             return;
 
-        ShowTable(parent.Model, parent.Path, parent.Expression);
+        ShowTable(parent.Model, parent.Path, parent.BaseExpression, parent.ColumnLayout);
         RestoreTableSelection(origin.ParentSourceIndex, origin.ParentColumnIndex);
     }
 
@@ -828,9 +968,9 @@ public partial class ResultInspectorWindow : Window
                 TableGrid.FrozenColumnCount = 1;
             }
 
-            for (var index = 0; index < tableModel.Columns.Count; index++)
+            tableColumnLayout ??= new(tableModel.Columns.Count);
+            foreach (var columnIndex in tableColumnLayout.Order)
             {
-                var columnIndex = index;
                 var profile = tableModel.GetColumnProfile(columnIndex);
                 var canFlatten = tableModel.CanFlattenColumn(columnIndex);
                 var elementStyle = new Style(typeof(TextBlock));
@@ -846,7 +986,10 @@ public partial class ResultInspectorWindow : Window
                     MinWidth = 80,
                     MaxWidth = 420,
                     Width = new DataGridLength(140),
-                    SortMemberPath = $"Cells[{columnIndex}].Display"
+                    SortMemberPath = $"Cells[{columnIndex}].Display",
+                    Visibility = tableColumnLayout.IsHidden(columnIndex)
+                        ? Visibility.Collapsed
+                        : Visibility.Visible
                 };
                 column.Header = CreateTableSortHeader(
                     column,
@@ -918,6 +1061,47 @@ public partial class ResultInspectorWindow : Window
         TableExpressionText.Text = tableExpression ??
             AppLocalization.Text(languageMode, "Inspector.ExpressionUnavailable");
         TableExpressionText.ToolTip = TableExpressionText.Text;
+    }
+
+    private void ApplyTableColumnLayout()
+    {
+        if (tableColumnLayout is null) return;
+        isConfiguringTable = true;
+        try
+        {
+            var displayIndex = tableModel?.HasRowOrigins == true ? 1 : 0;
+            foreach (var columnIndex in tableColumnLayout.Order)
+            {
+                var column = tableColumnIndexes.First(pair => pair.Value == columnIndex).Key;
+                column.Visibility = tableColumnLayout.IsHidden(columnIndex)
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+                column.DisplayIndex = displayIndex++;
+            }
+        }
+        finally
+        {
+            isConfiguringTable = false;
+        }
+        RefreshTableColumnState();
+    }
+
+    private void RefreshTableColumnState()
+    {
+        UpdateProjectedTableExpression();
+        UpdateTableExpression();
+        UpdateTableSummary();
+        UpdateOpenCellTableState();
+    }
+
+    private void UpdateProjectedTableExpression()
+    {
+        tableExpression = tableModel is null || tableColumnLayout is null
+            ? tableBaseExpression
+            : ResultExpressionBuilder.ForColumns(
+                tableBaseExpression,
+                tableModel,
+                tableColumnLayout.VisibleColumnIndexes);
     }
 
     private string BuildTableColumnHeaderTooltip(
@@ -1042,8 +1226,17 @@ public partial class ResultInspectorWindow : Window
         var parts = new List<string>
         {
             tablePath,
-            AppLocalization.Text(languageMode, "Inspector.TableSummary", tableModel.Rows.Count, tableModel.Columns.Count)
+            AppLocalization.Text(
+                languageMode,
+                "Inspector.TableSummary",
+                tableModel.Rows.Count,
+                tableColumnLayout?.VisibleCount ?? tableModel.Columns.Count)
         };
+        if (tableColumnLayout is { } layout && layout.VisibleCount < tableModel.Columns.Count)
+            parts.Add(AppLocalization.Text(
+                languageMode,
+                "Inspector.HiddenColumns",
+                tableModel.Columns.Count - layout.VisibleCount));
         if (tableModel.TotalRowCount is { } total && total > tableModel.Rows.Count)
             parts.Add(AppLocalization.Text(
                 languageMode, "Inspector.TableRowsLimited", total, tableModel.Rows.Count));
@@ -1156,6 +1349,17 @@ public partial class ResultInspectorWindow : Window
         TableStatus.Text = tableSummaryStatus;
     }
 
+    private TableExportSnapshot? CaptureTableExport()
+    {
+        if (tableModel is null || tableColumnLayout is null || TableGrid.ItemsSource is null)
+            return null;
+        var rows = CollectionViewSource.GetDefaultView(TableGrid.ItemsSource)
+            .Cast<object>()
+            .OfType<SnapshotTableRow>()
+            .ToArray();
+        return new(tableModel, tableColumnLayout.VisibleColumnIndexes, rows);
+    }
+
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
     {
         while (current is not null)
@@ -1169,7 +1373,13 @@ public partial class ResultInspectorWindow : Window
     private sealed record TableNavigationState(
         SnapshotTableModel Model,
         string Path,
-        string? Expression,
+        string? BaseExpression,
+        TableColumnLayout ColumnLayout,
         int SelectedSourceIndex,
         int SelectedColumnIndex);
+
+    private sealed record TableExportSnapshot(
+        SnapshotTableModel Model,
+        IReadOnlyList<int> ColumnIndexes,
+        IReadOnlyList<SnapshotTableRow> Rows);
 }

@@ -332,13 +332,24 @@ internal sealed class SnapshotTableModel
     }
 
     public string FormatDelimited(char delimiter)
+        => FormatDelimited(delimiter, Enumerable.Range(0, Columns.Count).ToArray(), Rows);
+
+    public string FormatDelimited(
+        char delimiter,
+        IReadOnlyList<int> columnIndexes,
+        IEnumerable<SnapshotTableRow> rows)
     {
+        ArgumentNullException.ThrowIfNull(columnIndexes);
+        ArgumentNullException.ThrowIfNull(rows);
+        if (columnIndexes.Any(index => index < 0 || index >= Columns.Count))
+            throw new ArgumentOutOfRangeException(nameof(columnIndexes));
+
         var builder = new StringBuilder();
-        AppendDelimitedRow(builder, Columns, delimiter);
-        foreach (var row in Rows)
+        AppendDelimitedRow(builder, columnIndexes.Select(index => Columns[index]), delimiter);
+        foreach (var row in rows)
         {
             builder.AppendLine();
-            AppendDelimitedRow(builder, row.Cells.Select(static cell => cell.ExportValue), delimiter);
+            AppendDelimitedRow(builder, columnIndexes.Select(index => row.Cells[index].ExportValue), delimiter);
         }
         return builder.ToString();
     }

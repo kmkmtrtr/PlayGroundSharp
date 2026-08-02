@@ -10,6 +10,18 @@ namespace PlayGroundSharp.Core;
 /// <summary>Helpers used by expressions generated from captured result views.</summary>
 public static class ResultQuery
 {
+    public static IReadOnlyDictionary<string, object?> Project(object? source, params string[] names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+        var result = new Dictionary<string, object?>(names.Length, StringComparer.Ordinal);
+        foreach (var name in names)
+        {
+            ArgumentNullException.ThrowIfNull(name);
+            result[name] = Property(source, name);
+        }
+        return result;
+    }
+
     public static object? Property(object? source, string name)
     {
         if (source is null) return null;

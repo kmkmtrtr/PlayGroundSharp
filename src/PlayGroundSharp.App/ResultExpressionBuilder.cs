@@ -6,6 +6,30 @@ namespace PlayGroundSharp.App;
 
 internal static class ResultExpressionBuilder
 {
+    public static string? ForColumns(
+        string? tableExpression,
+        SnapshotTableModel model,
+        IReadOnlyList<int> columnIndexes)
+    {
+        if (string.IsNullOrWhiteSpace(tableExpression) ||
+            columnIndexes.Count == 0 ||
+            columnIndexes.Any(index => index < 0 || index >= model.Columns.Count))
+            return null;
+
+        if (columnIndexes.SequenceEqual(Enumerable.Range(0, model.Columns.Count)))
+            return tableExpression.Trim();
+        if (model.HasSyntheticValueColumn)
+            return tableExpression.Trim();
+
+        var names = columnIndexes.Select(index => model.Columns[index]).ToArray();
+        var namesExpression = string.Join(", ", names.Select(QuoteString));
+        if (!model.SourceRowsAreItems)
+            return $"PlayGroundSharp.Core.ResultQuery.Project((object?){CSharpExpressionText.CastOperand(tableExpression)}, {namesExpression})";
+
+        return $"{(RequiresShapeSafeAccess(tableExpression) ? ShapeSafeSequence(tableExpression) : AsSequence(tableExpression, model.SourceSnapshot))}" +
+               $".Select(item => PlayGroundSharp.Core.ResultQuery.Project(item, {namesExpression}))";
+    }
+
     public static string? ForCell(
         string? tableExpression,
         SnapshotTableModel model,

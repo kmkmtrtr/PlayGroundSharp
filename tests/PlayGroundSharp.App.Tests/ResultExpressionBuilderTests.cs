@@ -88,6 +88,43 @@ public sealed class ResultExpressionBuilderTests
     }
 
     [Fact]
+    public async Task JsonCellNavigationUsesTheSourceInsteadOfTheAnonymousProjection()
+    {
+        var jsonObject = new ResultSnapshot(
+            SnapshotKind.Json,
+            "3 properties",
+            "System.Text.Json.Nodes.JsonObject",
+            Properties:
+            [
+                new("k", Number("1")),
+                new("a", Number("2")),
+                new("ix", Number("3"))
+            ]);
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(jsonObject));
+        const string sourceExpression = "json![\"s\"]";
+
+        var projection = ResultExpressionBuilder.ForColumns(sourceExpression, table, [0, 1]);
+        var cell = ResultExpressionBuilder.ForCell(sourceExpression, table, table.Rows[0], 0);
+
+        Assert.Equal(
+            "new { k = json![\"s\"]![\"k\"], a = json![\"s\"]![\"a\"] }",
+            projection);
+        Assert.Equal("json![\"s\"]![\"k\"]", cell);
+        Assert.DoesNotContain("new {", cell, StringComparison.Ordinal);
+        var service = new CSharpLanguageService();
+        var context = SessionContext.Empty with
+        {
+            Submissions = ["JsonNode json = JsonNode.Parse(\"{\\\"s\\\":{\\\"k\\\":1,\\\"a\\\":2,\\\"ix\\\":3}}\")!;"]
+        };
+        Assert.DoesNotContain(
+            await service.GetDiagnosticsAsync(context, projection!),
+            static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.DoesNotContain(
+            await service.GetDiagnosticsAsync(context, cell!),
+            static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public async Task CellAndFlattenOperationsFollowTheOriginalResult()
     {
         var customers = Sequence(

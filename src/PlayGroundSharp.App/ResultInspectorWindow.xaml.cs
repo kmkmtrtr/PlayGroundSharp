@@ -793,7 +793,7 @@ public partial class ResultInspectorWindow : Window
         }
 
         var path = GetFlattenedColumnPath(columnIndex);
-        var expression = ResultExpressionBuilder.ForFlattenedColumn(tableExpression, tableModel, columnIndex);
+        var expression = ResultExpressionBuilder.ForFlattenedColumn(tableBaseExpression, tableModel, columnIndex);
         tableHistory.Push(new(
             tableModel,
             tablePath,
@@ -852,7 +852,7 @@ public partial class ResultInspectorWindow : Window
             ? TableGrid.CurrentCell
             : TableGrid.SelectedCells.FirstOrDefault();
         return tableModel is not null && selectedCell.Item is SnapshotTableRow row
-            ? ResultExpressionBuilder.ForCell(tableExpression, tableModel, row, columnIndex)
+            ? ResultExpressionBuilder.ForCell(tableBaseExpression, tableModel, row, columnIndex)
             : null;
     }
 

@@ -5,7 +5,7 @@ namespace PlayGroundSharp.Core;
 /// <summary>Defines compatibility information for the named-pipe protocol.</summary>
 public static class ProtocolConstants
 {
-    public const int Version = 1;
+    public const int Version = 2;
 }
 
 /// <summary>A serialized, versioned message exchanged between App and Worker.</summary>
@@ -31,6 +31,7 @@ public static class ProtocolJson
 public static class MessageKinds
 {
     public const string Execute = "execute";
+    public const string InspectExpression = "expression.inspect";
     public const string Cancel = "cancel";
     public const string Reset = "reset";
     public const string AddReference = "reference.add";
@@ -43,6 +44,7 @@ public static class MessageKinds
     public const string ConsoleError = "console.error";
     public const string Diagnostics = "diagnostics";
     public const string Result = "result";
+    public const string InspectionResult = "expression.inspection.result";
     public const string RuntimeError = "runtime.error";
     public const string Variables = "session.variables";
     public const string Completed = "execution.completed";
@@ -55,6 +57,7 @@ public static class MessageKinds
 }
 
 public sealed record ExecuteRequest(int SubmissionIndex, string Code);
+public sealed record InspectExpressionRequest(string Code);
 public sealed record CancelRequest(Guid ExecutionId);
 public sealed record ResetRequest;
 public sealed record AddReferenceRequest(string Path);
@@ -66,6 +69,11 @@ public sealed record ExecutionStartedEvent(int SubmissionIndex);
 public sealed record ConsoleEvent(string Text);
 public sealed record DiagnosticsEvent(IReadOnlyList<DiagnosticInfo> Diagnostics, int? TotalCount = null);
 public sealed record ResultEvent(int SubmissionIndex, ResultSnapshot Snapshot);
+public sealed record InspectionResultEvent(
+    ResultSnapshot? Snapshot,
+    IReadOnlyList<DiagnosticInfo> Diagnostics,
+    ExceptionInfo? Exception,
+    int TotalDiagnosticCount = 0);
 public sealed record RuntimeErrorEvent(ExceptionInfo Exception);
 public sealed record VariablesEvent(IReadOnlyList<VariableInfo> Variables);
 public sealed record ExecutionCompletedEvent(int SubmissionIndex, bool StateAccepted, long WorkerMemoryBytes);

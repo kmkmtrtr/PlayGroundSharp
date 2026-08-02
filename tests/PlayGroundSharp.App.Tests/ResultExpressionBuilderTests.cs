@@ -31,6 +31,100 @@ public sealed class ResultExpressionBuilderTests
     }
 
     [Fact]
+    public async Task CalculatedColumnUsesAStandardSelectProjection()
+    {
+        var products = Sequence(
+            Row(("Name", Text("Pen")), ("Price", Number("10")), ("Quantity", Number("2"))));
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(products));
+
+        var expression = ResultExpressionBuilder.ForCalculatedColumn(
+            "products",
+            table,
+            [0, 1, 2],
+            "Total",
+            "row.Price * row.Quantity",
+            2);
+
+        Assert.Equal(
+            "products.Select(row => new { Name = row.Name, Price = row.Price, " +
+            "Total = row.Price * row.Quantity, Quantity = row.Quantity })",
+            expression);
+        Assert.DoesNotContain("PlayGroundSharp", expression, StringComparison.Ordinal);
+        var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
+            SessionContext.Empty with
+            {
+                Submissions =
+                [
+                    "var products = new[] { new { Name = \"Pen\", Price = 10, Quantity = 2 } };"
+                ]
+            },
+            expression!);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public async Task SingleJsonObjectUsesAStandardSingleItemLinqProjection()
+    {
+        var jsonObject = new ResultSnapshot(
+            SnapshotKind.Json,
+            "2 properties",
+            "System.Text.Json.Nodes.JsonObject",
+            Properties: [new("price", Number("10")), new("quantity", Number("2"))]);
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(jsonObject));
+
+        var expression = ResultExpressionBuilder.ForCalculatedColumn(
+            "json![\"product\"]",
+            table,
+            [0, 1],
+            "total",
+            "row![\"price\"]!.GetValue<int>() * row![\"quantity\"]!.GetValue<int>()",
+            2);
+
+        Assert.Equal(
+            "new[] { json![\"product\"] }.Select(row => new { " +
+            "price = row![\"price\"], quantity = row![\"quantity\"], " +
+            "total = row![\"price\"]!.GetValue<int>() * row![\"quantity\"]!.GetValue<int>() }).Single()",
+            expression);
+        var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
+            SessionContext.Empty with
+            {
+                Submissions =
+                [
+                    "JsonNode json = JsonNode.Parse(\"{\\\"product\\\":{\\\"price\\\":10,\\\"quantity\\\":2}}\")!;"
+                ]
+            },
+            expression!);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public void CalculatedColumnRejectsDuplicateOrNonPortableInputs()
+    {
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(
+            Sequence(Row(("Id", Number("1")), ("Value", Number("2"))))));
+
+        Assert.Null(ResultExpressionBuilder.ForCalculatedColumn(
+            "values", table, [0, 1], "Value", "row.Value * 2", 2));
+        Assert.Null(ResultExpressionBuilder.ForCalculatedColumn(
+            "values", table, [0, 1], "invalid-name", "row.Value * 2", 2));
+        Assert.Null(ResultExpressionBuilder.ForCalculatedColumn(
+            "Out[1]", table, [0, 1], "Total", "row.Value * 2", 2));
+    }
+
+    [Fact]
+    public void ScalarSequenceUsesTheRowAsItsValue()
+    {
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(
+            Sequence(Number("1"), Number("2"))));
+
+        Assert.Equal("row", ResultExpressionBuilder.ForCalculatedColumnFormula(table, 0));
+        Assert.Equal(
+            "new[] { 1, 2 }.Select(row => new { Value = row, Double = row * 2 })",
+            ResultExpressionBuilder.ForCalculatedColumn(
+                "new[] { 1, 2 }", table, [0], "Double", "row * 2", 1));
+    }
+
+    [Fact]
     public void UnchangedColumnLayoutKeepsTheOriginalExpression()
     {
         var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(

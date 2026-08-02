@@ -1057,6 +1057,24 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     internal AppSettings SavedSettings => settings;
 
+    internal async Task<InspectionResultEvent> InspectExpressionAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanChangeSession)
+            throw new InvalidOperationException(Localize("Inspector.CalculatedColumnWorkerBusy"));
+
+        IsPreparingExecution = true;
+        try
+        {
+            return await worker.InspectExpressionAsync(expression, cancellationToken);
+        }
+        finally
+        {
+            IsPreparingExecution = false;
+        }
+    }
+
     internal void SaveWindowLayout(
         Rect bounds,
         bool isMaximized,

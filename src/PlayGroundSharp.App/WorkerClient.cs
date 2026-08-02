@@ -15,6 +15,7 @@ public sealed class WorkerClient : IAsyncDisposable
 {
     private const int MaximumCapturedErrorCharacters = 16 * 1024;
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource> pending = new();
+    private readonly ConcurrentDictionary<Guid, TaskCompletionSource<InspectionResultEvent>> pendingInspections = new();
     private readonly object errorOutputGate = new();
     private readonly StringBuilder errorOutput = new();
     private Process? process;
@@ -104,6 +105,45 @@ public sealed class WorkerClient : IAsyncDisposable
     public Task ExecuteAsync(int index, string code, CancellationToken cancellationToken = default) =>
         SendAndWaitAsync(MessageKinds.Execute, new ExecuteRequest(index, code), cancellationToken);
 
+    public async Task<InspectionResultEvent> InspectExpressionAsync(
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureConnected();
+        var correlationId = Guid.NewGuid();
+        var completion = new TaskCompletionSource<InspectionResultEvent>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        pendingInspections[correlationId] = completion;
+        CancellationTokenRegistration registration = default;
+        try
+        {
+            await transport!.WriteAsync(PipeEnvelope.Create(
+                MessageKinds.InspectExpression,
+                correlationId,
+                new InspectExpressionRequest(code)), cancellationToken).ConfigureAwait(false);
+            registration = cancellationToken.Register(() =>
+                _ = TryCancelCurrentOperationAsync());
+            return await completion.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            registration.Dispose();
+            pendingInspections.TryRemove(correlationId, out _);
+        }
+    }
+
+    private async Task TryCancelCurrentOperationAsync()
+    {
+        try
+        {
+            await CancelAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Disconnection completes the pending inspection with the transport error.
+        }
+    }
+
     public Task ResetAsync(CancellationToken cancellationToken = default) =>
         SendAndWaitAsync(MessageKinds.Reset, new ResetRequest(), cancellationToken);
 
@@ -174,6 +214,22 @@ public sealed class WorkerClient : IAsyncDisposable
                         ReportDisconnected(generation, new(WorkerDisconnectionKind.PipeClosed));
                     break;
                 }
+                if (envelope.Kind == MessageKinds.InspectionResult &&
+                    pendingInspections.TryGetValue(envelope.CorrelationId, out var inspection))
+                {
+                    inspection.TrySetResult(envelope.ReadPayload<InspectionResultEvent>());
+                    continue;
+                }
+                if ((envelope.Kind is MessageKinds.Cancelled or MessageKinds.Error) &&
+                    pendingInspections.TryGetValue(envelope.CorrelationId, out var failedInspection))
+                {
+                    if (envelope.Kind == MessageKinds.Error)
+                        failedInspection.TrySetException(new InvalidOperationException(
+                            envelope.ReadPayload<WorkerErrorEvent>().Message));
+                    else
+                        failedInspection.TrySetCanceled();
+                    continue;
+                }
                 EventReceived?.Invoke(envelope);
                 if (envelope.Kind is MessageKinds.Completed or MessageKinds.Cancelled or MessageKinds.SessionChanged or
                     MessageKinds.PackageSearchResults or MessageKinds.Error)
@@ -198,6 +254,8 @@ public sealed class WorkerClient : IAsyncDisposable
         finally
         {
             foreach (var completion in pending.Values)
+                completion.TrySetException(new IOException("Worker disconnected."));
+            foreach (var completion in pendingInspections.Values)
                 completion.TrySetException(new IOException("Worker disconnected."));
         }
     }

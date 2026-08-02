@@ -671,6 +671,17 @@ public partial class ResultInspectorWindow : Window
 
         var visibleColumns = tableColumnLayout.VisibleColumnIndexes;
         var visiblePosition = visibleColumns.ToList().IndexOf(columnIndex);
+        var initialCalculatedFormula = ResultExpressionBuilder.ForCalculatedColumnFormula(
+            tableModel,
+            columnIndex);
+        var canAddCalculatedColumn = initialCalculatedFormula is not null &&
+            ResultExpressionBuilder.ForCalculatedColumn(
+                tableBaseExpression,
+                tableModel,
+                visibleColumns,
+                CreateCalculatedColumnName(tableModel),
+                initialCalculatedFormula,
+                visiblePosition + 1) is not null;
         ConfigureColumnMenuItem(menu, "HideColumn", columnIndex, tableColumnLayout.VisibleCount > 1);
         ConfigureColumnMenuItem(menu, "MoveColumnLeft", columnIndex, visiblePosition > 0);
         ConfigureColumnMenuItem(
@@ -678,6 +689,11 @@ public partial class ResultInspectorWindow : Window
             "MoveColumnRight",
             columnIndex,
             visiblePosition >= 0 && visiblePosition < visibleColumns.Count - 1);
+        ConfigureColumnMenuItem(
+            menu,
+            "AddCalculatedColumn",
+            columnIndex,
+            canAddCalculatedColumn);
         ConfigureColumnMenuItem(
             menu,
             "ShowAllColumns",
@@ -743,6 +759,100 @@ public partial class ResultInspectorWindow : Window
         if (TryGetMenuColumnIndex(sender, out var columnIndex) &&
             tableColumnLayout?.MoveRight(columnIndex) == true)
             ApplyTableColumnLayout();
+    }
+
+    private void AddCalculatedColumn_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetMenuColumnIndex(sender, out var columnIndex) ||
+            tableModel is null ||
+            tableColumnLayout is null ||
+            tableBaseExpression is null ||
+            ResultExpressionBuilder.ForCalculatedColumnFormula(tableModel, columnIndex) is not { } initialFormula)
+            return;
+
+        var model = tableModel;
+        var layout = tableColumnLayout.Clone();
+        var baseExpression = tableBaseExpression;
+        var visibleColumns = layout.VisibleColumnIndexes;
+        var visiblePosition = visibleColumns.ToList().IndexOf(columnIndex);
+        var insertPosition = visiblePosition < 0 ? visibleColumns.Count : visiblePosition + 1;
+        var suggestedName = CreateCalculatedColumnName(model);
+        SnapshotTableModel? calculatedModel = null;
+
+        string? CreateExpression(string name, string formula) =>
+            ResultExpressionBuilder.ForCalculatedColumn(
+                baseExpression,
+                model,
+                visibleColumns,
+                name,
+                formula,
+                insertPosition);
+
+        async Task<string?> EvaluateAsync(string expression, CancellationToken cancellationToken)
+        {
+            var result = await viewModel.InspectExpressionAsync(expression, cancellationToken);
+            if (result.Diagnostics.Count > 0)
+                return FormatInspectionDiagnostics(result.Diagnostics, result.TotalDiagnosticCount);
+            if (result.Exception is { } exception)
+                return $"{exception.TypeName}: {exception.Message}";
+            if (result.Snapshot is null)
+                return AppLocalization.Text(languageMode, "Inspector.CalculatedColumnNoResult");
+            calculatedModel = SnapshotTableModel.TryCreate(result.Snapshot);
+            return calculatedModel is null
+                ? AppLocalization.Text(languageMode, "Inspector.CalculatedColumnNotTable")
+                : null;
+        }
+
+        var dialog = new CalculatedColumnDialog(
+            languageMode,
+            suggestedName,
+            initialFormula,
+            CreateExpression,
+            EvaluateAsync)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true ||
+            dialog.AppliedExpression is not { } expression ||
+            calculatedModel is null)
+            return;
+
+        var selectedSourceIndex = model.Rows.FirstOrDefault()?.SourceIndex ?? 0;
+        if (TryGetSelectedTableCell(out _, out _, out _, out var currentSourceIndex))
+            selectedSourceIndex = currentSourceIndex;
+        tableHistory.Push(new(
+            model,
+            tablePath,
+            baseExpression,
+            layout,
+            selectedSourceIndex,
+            columnIndex));
+        ShowTable(calculatedModel, tablePath, expression);
+        Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
+    }
+
+    private static string CreateCalculatedColumnName(SnapshotTableModel model)
+    {
+        const string baseName = "Calculated";
+        if (!model.Columns.Contains(baseName, StringComparer.Ordinal)) return baseName;
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{baseName}{suffix}";
+            if (!model.Columns.Contains(candidate, StringComparer.Ordinal)) return candidate;
+        }
+    }
+
+    private string FormatInspectionDiagnostics(
+        IReadOnlyList<DiagnosticInfo> diagnostics,
+        int totalCount)
+    {
+        const int displayLimit = 5;
+        var text = string.Join(Environment.NewLine, diagnostics.Take(displayLimit).Select(static diagnostic =>
+            $"{diagnostic.Id} ({diagnostic.StartLine},{diagnostic.StartColumn}): {diagnostic.Message}"));
+        var remaining = Math.Max(totalCount, diagnostics.Count) - Math.Min(displayLimit, diagnostics.Count);
+        return remaining > 0
+            ? $"{text}{Environment.NewLine}{AppLocalization.Text(languageMode, "Inspector.CalculatedColumnMoreDiagnostics", remaining)}"
+            : text;
     }
 
     private void ShowColumn_Click(object sender, RoutedEventArgs e)

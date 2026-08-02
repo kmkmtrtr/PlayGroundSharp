@@ -70,6 +70,38 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task InspectionEvaluatesWithoutChangingSubmissionStateOrResultHistory()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "var rows = new[] { new { Price = 10, Quantity = 2 } }; 7");
+
+        var inspection = await session.InspectExpressionAsync(
+            "rows.Select(row => new { row.Price, Total = row.Price * row.Quantity })");
+
+        Assert.Empty(inspection.Diagnostics);
+        Assert.Null(inspection.Exception);
+        var item = Assert.Single(inspection.Snapshot?.Items ?? []);
+        Assert.Equal("20", item.Properties?.Single(property => property.Name == "Total").Value.Display);
+        Assert.DoesNotContain(session.GetVariables(), static variable => variable.Name == "Total");
+        Assert.Equal("7", (await session.ExecuteAsync(2, "Last")).Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task InspectionReturnsCompilationAndRuntimeFailuresWithoutAcceptingThem()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "var value = 21;");
+
+        var compilation = await session.InspectExpressionAsync("missing + 1");
+        var runtime = await session.InspectExpressionAsync("throw new InvalidOperationException(\"preview\")");
+        var next = await session.ExecuteAsync(2, "value * 2");
+
+        Assert.Contains(compilation.Diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.Contains("preview", runtime.Exception?.Message, StringComparison.Ordinal);
+        Assert.Equal("42", next.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task SupportsDynamicMemberBinding()
     {
         var result = await new ScriptSession().ExecuteAsync(

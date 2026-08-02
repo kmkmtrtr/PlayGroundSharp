@@ -34,6 +34,50 @@ internal static class ResultExpressionBuilder
             : $"{AsSequence(tableExpression, model.SourceSnapshot)}.Select(item => {projection})";
     }
 
+    public static string? ForCalculatedColumn(
+        string? tableExpression,
+        SnapshotTableModel model,
+        IReadOnlyList<int> columnIndexes,
+        string columnName,
+        string formula,
+        int insertPosition)
+    {
+        if (string.IsNullOrWhiteSpace(tableExpression) ||
+            string.IsNullOrWhiteSpace(formula) ||
+            !IsCSharpIdentifier(columnName) ||
+            model.Columns.Contains(columnName, StringComparer.Ordinal) ||
+            columnIndexes.Count == 0 ||
+            columnIndexes.Any(index => index < 0 || index >= model.Columns.Count) ||
+            RequiresShapeSafeAccess(tableExpression))
+            return null;
+
+        var names = columnIndexes.Select(index => model.Columns[index]).ToArray();
+        var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
+        var projection = BuildCalculatedColumnProjection(
+            "row",
+            rowSnapshot,
+            names,
+            columnName,
+            formula.Trim(),
+            Math.Clamp(insertPosition, 0, names.Length),
+            model.HasSyntheticValueColumn);
+        if (projection is null) return null;
+
+        return model.SourceRowsAreItems
+            ? $"{AsSequence(tableExpression, model.SourceSnapshot)}.Select(row => {projection})"
+            : $"new[] {{ {tableExpression.Trim()} }}.Select(row => {projection}).Single()";
+    }
+
+    public static string? ForCalculatedColumnFormula(
+        SnapshotTableModel model,
+        int columnIndex)
+    {
+        if (columnIndex < 0 || columnIndex >= model.Columns.Count) return null;
+        if (model.HasSyntheticValueColumn) return "row";
+        var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
+        return AppendProjectionProperty("row", rowSnapshot, model.Columns[columnIndex]);
+    }
+
     public static string? ForCell(
         string? tableExpression,
         SnapshotTableModel model,
@@ -188,6 +232,34 @@ internal static class ResultExpressionBuilder
         return "new System.Collections.Generic.Dictionary<string, object?> { " +
                string.Join(", ", names.Select((name, index) =>
                    $"[{QuoteString(name)}] = {projectionValues[index]}")) +
+               " }";
+    }
+
+    private static string? BuildCalculatedColumnProjection(
+        string receiver,
+        ResultSnapshot source,
+        IReadOnlyList<string> names,
+        string calculatedColumnName,
+        string formula,
+        int insertPosition,
+        bool hasSyntheticValueColumn)
+    {
+        var entries = names
+            .Select(name => (
+                Name: name,
+                Value: hasSyntheticValueColumn
+                    ? receiver
+                    : AppendProjectionProperty(receiver, source, name)))
+            .ToList();
+        if (entries.Any(static entry => entry.Value is null)) return null;
+        entries.Insert(insertPosition, (calculatedColumnName, formula));
+
+        if (entries.All(static entry => IsCSharpIdentifier(entry.Name)))
+            return $"new {{ {string.Join(", ", entries.Select(entry => $"{entry.Name} = {entry.Value}"))} }}";
+
+        return "new System.Collections.Generic.Dictionary<string, object?> { " +
+               string.Join(", ", entries.Select(entry =>
+                   $"[{QuoteString(entry.Name)}] = {entry.Value}")) +
                " }";
     }
 

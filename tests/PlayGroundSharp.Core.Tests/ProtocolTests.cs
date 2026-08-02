@@ -104,6 +104,23 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void InspectionResultRoundTripsSnapshotAndDiagnostics()
+    {
+        var payload = new InspectionResultEvent(
+            new(SnapshotKind.Number, "42", "System.Int32"),
+            [new("CS0001", DiagnosticLevel.Warning, "warning", 1, 1, 1, 2)],
+            null,
+            1);
+
+        var envelope = PipeEnvelope.Create(MessageKinds.InspectionResult, Guid.NewGuid(), payload);
+        var restored = envelope.ReadPayload<InspectionResultEvent>();
+
+        Assert.Equal("42", restored.Snapshot?.Display);
+        Assert.Single(restored.Diagnostics);
+        Assert.Equal(1, restored.TotalDiagnosticCount);
+    }
+
+    [Fact]
     public void LegacyDiagnosticsReaderIgnoresTotalCount()
     {
         var envelope = PipeEnvelope.Create(

@@ -17,8 +17,8 @@ public sealed class ResultExpressionBuilderTests
         var cell = ResultExpressionBuilder.ForCell("customers", table, table.Rows[1], ordersColumn);
         var flattened = ResultExpressionBuilder.ForFlattenedColumn("customers", table, ordersColumn);
 
-        Assert.Equal("((customers).ElementAt(1)).Orders", cell);
-        Assert.Equal("(customers).SelectMany(item => ((item).Orders))", flattened);
+        Assert.Equal("customers.ElementAt(1).Orders", cell);
+        Assert.Equal("customers.SelectMany(item => item.Orders)", flattened);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public sealed class ResultExpressionBuilderTests
 
         var flattened = ResultExpressionBuilder.ForFlattenedColumn("json", table, 0);
 
-        Assert.Equal("(json!).AsArray().SelectMany(item => ((item!)[\"order-items\"]!).AsArray())", flattened);
+        Assert.Equal("json!.AsArray().SelectMany(item => item![\"order-items\"]!.AsArray())", flattened);
         var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
             SessionContext.Empty with
             {
@@ -70,7 +70,7 @@ public sealed class ResultExpressionBuilderTests
 
         var expression = ResultExpressionBuilder.ForFlattenedColumn("customers", table, 0);
         Assert.Equal(
-            "(customers).SelectMany(item => PlayGroundSharp.Core.ResultQuery.Flatten(" +
+            "customers.SelectMany(item => PlayGroundSharp.Core.ResultQuery.Flatten(" +
             "PlayGroundSharp.Core.ResultQuery.Property(item, \"Orders\")))",
             expression);
         var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
@@ -98,7 +98,7 @@ public sealed class ResultExpressionBuilderTests
         var ordersColumn = table.Columns.ToList().IndexOf("Orders");
 
         Assert.Equal(
-            "(customers).SelectMany(item => PlayGroundSharp.Core.ResultQuery.Flatten(" +
+            "customers.SelectMany(item => PlayGroundSharp.Core.ResultQuery.Flatten(" +
             "PlayGroundSharp.Core.ResultQuery.Property(item, \"Orders\")))",
             ResultExpressionBuilder.ForFlattenedColumn("customers", table, ordersColumn));
     }
@@ -115,7 +115,7 @@ public sealed class ResultExpressionBuilderTests
 
         var expression = ResultExpressionBuilder.ForCell("values", table, table.Rows[0], 0);
 
-        Assert.Equal("(values)[\"order-items\"]", expression);
+        Assert.Equal("values[\"order-items\"]", expression);
     }
 
     [Fact]

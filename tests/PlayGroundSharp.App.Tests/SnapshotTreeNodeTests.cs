@@ -111,7 +111,7 @@ public sealed class SnapshotTreeNodeTests
 
         Assert.Same(nested, address.Snapshot);
         Assert.Equal("$.Address", address.Path);
-        Assert.Equal("(customer).Address", address.Expression);
+        Assert.Equal("customer.Address", address.Expression);
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public sealed class SnapshotTreeNodeTests
 
         var item = Assert.Single(root!.Children);
 
-        Assert.Equal("(customers).ElementAt(1)", item.Expression);
+        Assert.Equal("customers.ElementAt(1)", item.Expression);
     }
 
     [Fact]

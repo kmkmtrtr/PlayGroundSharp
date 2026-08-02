@@ -1,5 +1,6 @@
 using System.Text;
 using PlayGroundSharp.Core;
+using PlayGroundSharp.LanguageService;
 
 namespace PlayGroundSharp.App;
 
@@ -19,7 +20,7 @@ internal static class ResultExpressionBuilder
         {
             var shapeSafeRowExpression = model.SourceRowsAreItems
                 ? $"{ShapeSafeSequence(tableExpression)}.ElementAt({row.SourceIndex})"
-                : Parenthesize(tableExpression);
+                : tableExpression.Trim();
             return model.HasSyntheticValueColumn
                 ? shapeSafeRowExpression
                 : ShapeSafeProperty(shapeSafeRowExpression, model.Columns[columnIndex]);
@@ -29,7 +30,7 @@ internal static class ResultExpressionBuilder
             ? $"{AsSequence(tableExpression, model.SourceSnapshot)}.ElementAt({row.SourceIndex})"
             : tableExpression.Trim();
         return model.HasSyntheticValueColumn
-            ? Parenthesize(rowExpression)
+            ? rowExpression
             : AppendProperty(rowExpression, row.Source, model.Columns[columnIndex]);
     }
 
@@ -77,7 +78,7 @@ internal static class ResultExpressionBuilder
             if (!model.SourceRowsAreItems)
             {
                 var valueExpression = model.HasSyntheticValueColumn
-                    ? Parenthesize(tableExpression)
+                    ? tableExpression.Trim()
                     : ShapeSafeProperty(tableExpression, model.Columns[columnIndex]);
                 return ShapeSafeSequence(valueExpression);
             }
@@ -100,7 +101,7 @@ internal static class ResultExpressionBuilder
         if (!model.SourceRowsAreItems)
         {
             var cellExpression = model.HasSyntheticValueColumn
-                ? Parenthesize(tableExpression)
+                ? tableExpression.Trim()
                 : AppendProperty(tableExpression, sequenceRow.Source, model.Columns[columnIndex]);
             return cellExpression is null ? null : AsSequence(cellExpression, sequenceCell.Source);
         }
@@ -132,19 +133,19 @@ internal static class ResultExpressionBuilder
     private static string? AppendProperty(string expression, ResultSnapshot source, string propertyName)
     {
         var literal = QuoteString(propertyName);
-        if (IsJsonElement(source)) return $"{Parenthesize(expression)}.GetProperty({literal})";
-        if (IsJsonNode(source)) return $"{NullForgive(expression)}[{literal}]";
-        if (UsesStringIndexer(source)) return $"{Parenthesize(expression)}[{literal}]";
+        if (IsJsonElement(source)) return $"{CSharpExpressionText.Receiver(expression)}.GetProperty({literal})";
+        if (IsJsonNode(source)) return $"{CSharpExpressionText.NullForgivenReceiver(expression)}[{literal}]";
+        if (UsesStringIndexer(source)) return $"{CSharpExpressionText.Receiver(expression)}[{literal}]";
         return IsSimpleIdentifier(propertyName)
-            ? $"{Parenthesize(expression)}.{propertyName}"
+            ? $"{CSharpExpressionText.Receiver(expression)}.{propertyName}"
             : null;
     }
 
     private static string AsSequence(string expression, ResultSnapshot snapshot)
     {
-        if (IsJsonElement(snapshot)) return $"{Parenthesize(expression)}.EnumerateArray()";
-        if (IsJsonNode(snapshot)) return $"{NullForgive(expression)}.AsArray()";
-        return Parenthesize(expression);
+        if (IsJsonElement(snapshot)) return $"{CSharpExpressionText.Receiver(expression)}.EnumerateArray()";
+        if (IsJsonNode(snapshot)) return $"{CSharpExpressionText.NullForgivenReceiver(expression)}.AsArray()";
+        return CSharpExpressionText.Receiver(expression);
     }
 
     private static bool RequiresShapeSafeAccess(string expression) =>
@@ -152,10 +153,10 @@ internal static class ResultExpressionBuilder
         expression.Contains("PlayGroundSharp.Core.ResultQuery.", StringComparison.Ordinal);
 
     private static string ShapeSafeProperty(string expression, string propertyName) =>
-        $"PlayGroundSharp.Core.ResultQuery.Property((object?){Parenthesize(expression)}, {QuoteString(propertyName)})";
+        $"PlayGroundSharp.Core.ResultQuery.Property((object?){CSharpExpressionText.CastOperand(expression)}, {QuoteString(propertyName)})";
 
     private static string ShapeSafeSequence(string expression) =>
-        $"PlayGroundSharp.Core.ResultQuery.Flatten((object?){Parenthesize(expression)})";
+        $"PlayGroundSharp.Core.ResultQuery.Flatten((object?){CSharpExpressionText.CastOperand(expression)})";
 
     private static bool IsJsonElement(ResultSnapshot snapshot) =>
         snapshot.Kind == SnapshotKind.Json &&
@@ -173,9 +174,6 @@ internal static class ResultExpressionBuilder
         value.Length > 0 &&
         (char.IsLetter(value[0]) || value[0] == '_') &&
         value.Skip(1).All(static character => char.IsLetterOrDigit(character) || character == '_');
-
-    private static string Parenthesize(string expression) => $"({expression.Trim()})";
-    private static string NullForgive(string expression) => $"({expression.Trim()}!)";
 
     private static string QuoteString(string value)
     {

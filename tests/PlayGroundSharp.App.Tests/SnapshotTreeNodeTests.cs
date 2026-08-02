@@ -104,10 +104,66 @@ public sealed class SnapshotTreeNodeTests
             "Customer",
             Properties: [new("Address", nested)]);
 
-        var address = Assert.Single(SnapshotTreeNode.CreateRoot(snapshot, AppLanguageMode.English).Children);
+        var address = Assert.Single(SnapshotTreeNode.CreateRoot(
+            snapshot,
+            AppLanguageMode.English,
+            "customer").Children);
 
         Assert.Same(nested, address.Snapshot);
         Assert.Equal("$.Address", address.Path);
+        Assert.Equal("customer.Address", address.Expression);
+    }
+
+    [Fact]
+    public void ItemAndFilteredNodesKeepTheirSourceExpression()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "2 items",
+            "Customer[]",
+            Items:
+            [
+                new(SnapshotKind.String, "Ada", "System.String"),
+                new(SnapshotKind.String, "Grace", "System.String")
+            ]);
+        var root = SnapshotTreeNode.CreateFilteredRoot(
+            snapshot,
+            AppLanguageMode.English,
+            "Grace",
+            out _,
+            out _,
+            sourceExpression: "customers");
+
+        var item = Assert.Single(root!.Children);
+
+        Assert.Equal("customers[1]", item.Expression);
+    }
+
+    [Fact]
+    public void ResultHistoryExpressionUsesShapeSafeTreeNavigation()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Object,
+            "1 property",
+            "Customer",
+            Properties:
+            [
+                new("Orders", new(
+                    SnapshotKind.Sequence,
+                    "1 item",
+                    "Order[]",
+                    Items: [new(SnapshotKind.Number, "1", "System.Int32")]))
+            ]);
+
+        var orders = Assert.Single(SnapshotTreeNode.CreateRoot(
+            snapshot,
+            AppLanguageMode.English,
+            "Out[1]").Children);
+        var order = Assert.Single(orders.Children);
+
+        Assert.Contains("ResultQuery.Property", orders.Expression, StringComparison.Ordinal);
+        Assert.Contains("ResultQuery.Flatten", order.Expression, StringComparison.Ordinal);
+        Assert.EndsWith(".ElementAt(0)", order.Expression, StringComparison.Ordinal);
     }
 
     private static int CountNodes(SnapshotTreeNode node) =>

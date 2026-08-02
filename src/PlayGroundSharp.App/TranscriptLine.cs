@@ -13,7 +13,8 @@ public sealed record TranscriptLine(
     string? CopyValue = null,
     IReadOnlyList<ConsoleSnapshotNode>? SnapshotRoots = null,
     string? LocalizationKey = null,
-    IReadOnlyList<object?>? LocalizationArguments = null)
+    IReadOnlyList<object?>? LocalizationArguments = null,
+    string? ResultExpression = null)
 {
     private const int MaximumConsolePreviewLength = 8 * 1024;
     public bool IsInspectable => Snapshot is not null;
@@ -28,11 +29,12 @@ public sealed record TranscriptLine(
     public string CopyText => CopyValue ?? (Snapshot is null ? Text : SnapshotTextFormatter.FormatFull(Snapshot));
 
     public static TranscriptLine Input(int index, string code) => new(">", code, Resource("AccentBrush"), Resource("ForegroundBrush"), code);
-    public static TranscriptLine Output(int index, string text, ResultSnapshot snapshot) =>
+    public static TranscriptLine Output(int index, string text, ResultSnapshot snapshot, string? resultExpression = null) =>
         new(string.Empty, text, Brushes.Transparent, Resource("ForegroundBrush"), Snapshot: snapshot,
             SnapshotRoots: snapshot.Properties is not null || snapshot.Items is not null
                 ? [ConsoleSnapshotNode.CreateRoot(snapshot)]
-                : null);
+                : null,
+            ResultExpression: resultExpression);
     public static TranscriptLine Console(string text, bool error, string previewLimitedMessage)
     {
         var displaySource = text.TrimEnd('\r', '\n');

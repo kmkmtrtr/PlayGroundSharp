@@ -1225,7 +1225,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 break;
             case MessageKinds.Result:
                 var result = envelope.ReadPayload<ResultEvent>();
-                Transcript.Add(TranscriptLine.Output(result.SubmissionIndex, FormatResultSnapshot(result.Snapshot), result.Snapshot));
+                Transcript.Add(TranscriptLine.Output(
+                    result.SubmissionIndex,
+                    FormatResultSnapshot(result.Snapshot),
+                    result.Snapshot,
+                    SubmissionResultExpression.ForResult(executingCode, result.SubmissionIndex)));
                 break;
             case MessageKinds.RuntimeError:
                 var exception = envelope.ReadPayload<RuntimeErrorEvent>().Exception;

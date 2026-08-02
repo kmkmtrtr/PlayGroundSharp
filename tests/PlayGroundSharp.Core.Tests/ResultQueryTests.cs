@@ -8,18 +8,6 @@ namespace PlayGroundSharp.Core.Tests;
 public sealed class ResultQueryTests
 {
     [Fact]
-    public void ProjectKeepsTheRequestedNamesAndOrder()
-    {
-        var source = new { Id = 7, Name = "Ada", Active = true };
-
-        var projected = ResultQuery.Project(source, "Name", "Id");
-
-        Assert.Equal(["Name", "Id"], projected.Keys);
-        Assert.Equal("Ada", projected["Name"]);
-        Assert.Equal(7, projected["Id"]);
-    }
-
-    [Fact]
     public void PropertyReadsClrDictionaryAndJsonValues()
     {
         var customer = new Customer("Ada");

@@ -15,8 +15,9 @@ public sealed class ResultExpressionBuilderTests
         var expression = ResultExpressionBuilder.ForColumns("customers", table, [1, 0]);
 
         Assert.Equal(
-            "customers.Select(item => PlayGroundSharp.Core.ResultQuery.Project(item, \"Name\", \"Id\"))",
+            "customers.Select(item => new { Name = item.Name, Id = item.Id })",
             expression);
+        Assert.DoesNotContain("PlayGroundSharp", expression, StringComparison.Ordinal);
         var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
             SessionContext.Empty with
             {
@@ -36,6 +37,54 @@ public sealed class ResultExpressionBuilderTests
             Sequence(Row(("Id", Number("1")), ("Name", Text("Ada"))))));
 
         Assert.Equal("customers", ResultExpressionBuilder.ForColumns(" customers ", table, [0, 1]));
+    }
+
+    [Fact]
+    public async Task DictionaryColumnsUseOnlyStandardIndexersAndLinq()
+    {
+        var dictionaryRow = new ResultSnapshot(
+            SnapshotKind.Object,
+            "3 entries",
+            "System.Collections.Generic.Dictionary`2[System.String,System.Object]",
+            Properties:
+            [
+                new("Id", Number("1")),
+                new("display-name", Text("Ada")),
+                new("Active", Text("true"))
+            ]);
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(new(
+            SnapshotKind.Sequence,
+            "1 item",
+            "System.Collections.Generic.List`1[System.Collections.Generic.Dictionary`2[System.String,System.Object]]",
+            Items: [dictionaryRow])));
+
+        var expression = ResultExpressionBuilder.ForColumns("values", table, [1, 0]);
+
+        Assert.Equal(
+            "values.Select(item => new System.Collections.Generic.Dictionary<string, object?> { " +
+            "[\"display-name\"] = item[\"display-name\"], [\"Id\"] = item[\"Id\"] })",
+            expression);
+        Assert.DoesNotContain("PlayGroundSharp", expression, StringComparison.Ordinal);
+        var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
+            SessionContext.Empty with
+            {
+                Submissions =
+                [
+                    "var values = new[] { new Dictionary<string, object?> { " +
+                    "[\"Id\"] = 1, [\"display-name\"] = \"Ada\", [\"Active\"] = true } };"
+                ]
+            },
+            expression!);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public void ShapeSafeFallbackDoesNotClaimToGenerateAPortableProjection()
+    {
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(
+            Sequence(Row(("Id", Number("1")), ("Name", Text("Ada"))))));
+
+        Assert.Null(ResultExpressionBuilder.ForColumns("Out[1]", table, [1]));
     }
 
     [Fact]

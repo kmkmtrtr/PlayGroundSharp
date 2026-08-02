@@ -20,14 +20,18 @@ internal static class ResultExpressionBuilder
             return tableExpression.Trim();
         if (model.HasSyntheticValueColumn)
             return tableExpression.Trim();
+        if (RequiresShapeSafeAccess(tableExpression))
+            return null;
 
         var names = columnIndexes.Select(index => model.Columns[index]).ToArray();
-        var namesExpression = string.Join(", ", names.Select(QuoteString));
+        var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
         if (!model.SourceRowsAreItems)
-            return $"PlayGroundSharp.Core.ResultQuery.Project((object?){CSharpExpressionText.CastOperand(tableExpression)}, {namesExpression})";
+            return BuildColumnProjection(tableExpression.Trim(), rowSnapshot, names);
 
-        return $"{(RequiresShapeSafeAccess(tableExpression) ? ShapeSafeSequence(tableExpression) : AsSequence(tableExpression, model.SourceSnapshot))}" +
-               $".Select(item => PlayGroundSharp.Core.ResultQuery.Project(item, {namesExpression}))";
+        var projection = BuildColumnProjection("item", rowSnapshot, names);
+        return projection is null
+            ? null
+            : $"{AsSequence(tableExpression, model.SourceSnapshot)}.Select(item => {projection})";
     }
 
     public static string? ForCell(
@@ -167,6 +171,39 @@ internal static class ResultExpressionBuilder
             : null;
     }
 
+    private static string? BuildColumnProjection(
+        string receiver,
+        ResultSnapshot source,
+        IReadOnlyList<string> names)
+    {
+        var values = names
+            .Select(name => AppendProjectionProperty(receiver, source, name))
+            .ToArray();
+        if (values.Any(static value => value is null)) return null;
+        var projectionValues = values.Select(static value => value!).ToArray();
+
+        if (names.All(IsCSharpIdentifier))
+            return $"new {{ {string.Join(", ", names.Select((name, index) => $"{name} = {projectionValues[index]}"))} }}";
+
+        return "new System.Collections.Generic.Dictionary<string, object?> { " +
+               string.Join(", ", names.Select((name, index) =>
+                   $"[{QuoteString(name)}] = {projectionValues[index]}")) +
+               " }";
+    }
+
+    private static string? AppendProjectionProperty(
+        string receiver,
+        ResultSnapshot source,
+        string propertyName)
+    {
+        if (IsJsonElement(source) || IsJsonNode(source) || UsesStringIndexer(source) ||
+            IsCSharpIdentifier(propertyName))
+            return AppendProperty(receiver, source, propertyName);
+
+        var operand = CSharpExpressionText.CastOperand(receiver);
+        return $"((object?){operand})?.GetType().GetProperty({QuoteString(propertyName)})?.GetValue((object?){operand})";
+    }
+
     private static string AsSequence(string expression, ResultSnapshot snapshot)
     {
         if (IsJsonElement(snapshot)) return $"{CSharpExpressionText.Receiver(expression)}.EnumerateArray()";
@@ -231,6 +268,22 @@ internal static class ResultExpressionBuilder
         value.Length > 0 &&
         (char.IsLetter(value[0]) || value[0] == '_') &&
         value.Skip(1).All(static character => char.IsLetterOrDigit(character) || character == '_');
+
+    private static bool IsCSharpIdentifier(string value) =>
+        IsSimpleIdentifier(value) && !CSharpKeywords.Contains(value);
+
+    private static readonly HashSet<string> CSharpKeywords =
+    [
+        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
+        "class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else",
+        "enum", "event", "explicit", "extern", "false", "finally", "fixed", "float", "for",
+        "foreach", "goto", "if", "implicit", "in", "int", "interface", "internal", "is", "lock",
+        "long", "namespace", "new", "null", "object", "operator", "out", "override", "params",
+        "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed", "short",
+        "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true",
+        "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual",
+        "void", "volatile", "while"
+    ];
 
     private static string QuoteString(string value)
     {

@@ -6,7 +6,7 @@ namespace PlayGroundSharp.App.Tests;
 public sealed class ResultExpressionBuilderTests
 {
     [Fact]
-    public void CellAndFlattenOperationsFollowTheOriginalResult()
+    public async Task CellAndFlattenOperationsFollowTheOriginalResult()
     {
         var customers = Sequence(
             Row(("Name", Text("Ada")), ("Orders", Sequence(Row(("Id", Number("101")))))),
@@ -17,8 +17,24 @@ public sealed class ResultExpressionBuilderTests
         var cell = ResultExpressionBuilder.ForCell("customers", table, table.Rows[1], ordersColumn);
         var flattened = ResultExpressionBuilder.ForFlattenedColumn("customers", table, ordersColumn);
 
-        Assert.Equal("customers.ElementAt(1).Orders", cell);
+        Assert.Equal("customers[1].Orders", cell);
         Assert.Equal("customers.SelectMany(item => item.Orders)", flattened);
+        var context = SessionContext.Empty with
+        {
+            Submissions =
+            [
+                "var customers = new[] { " +
+                "new { Orders = new[] { new { Id = 1 } } }, " +
+                "new { Orders = new[] { new { Id = 2 } } } };"
+            ]
+        };
+        var service = new CSharpLanguageService();
+        Assert.DoesNotContain(
+            await service.GetDiagnosticsAsync(context, cell!),
+            static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.DoesNotContain(
+            await service.GetDiagnosticsAsync(context, flattened!),
+            static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 
     [Fact]
@@ -46,8 +62,10 @@ public sealed class ResultExpressionBuilderTests
         var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(jsonArray));
 
         var flattened = ResultExpressionBuilder.ForFlattenedColumn("json", table, 0);
+        var firstItem = ResultExpressionBuilder.ForItem("json", jsonArray, 0);
 
         Assert.Equal("json!.AsArray().SelectMany(item => item![\"order-items\"]!.AsArray())", flattened);
+        Assert.Equal("json!.AsArray()[0]", firstItem);
         var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
             SessionContext.Empty with
             {
@@ -139,6 +157,20 @@ public sealed class ResultExpressionBuilderTests
         Assert.DoesNotContain(
             await service.GetDiagnosticsAsync(SessionContext.Empty, flattenedExpression!),
             static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public void EnumerableOnlyResultsKeepElementAt()
+    {
+        var customers = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "1 item",
+            "System.Linq.Enumerable+WhereArrayIterator`1",
+            Items: [Row(("Name", Text("Ada")))]);
+
+        var expression = ResultExpressionBuilder.ForItem("customers", customers, 0);
+
+        Assert.Equal("customers.ElementAt(0)", expression);
     }
 
     private static ResultSnapshot Row(params (string Name, ResultSnapshot Value)[] properties) => new(

@@ -136,7 +136,7 @@ public sealed class SnapshotTreeNodeTests
 
         var item = Assert.Single(root!.Children);
 
-        Assert.Equal("customers.ElementAt(1)", item.Expression);
+        Assert.Equal("customers[1]", item.Expression);
     }
 
     [Fact]

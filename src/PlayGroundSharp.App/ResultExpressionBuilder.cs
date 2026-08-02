@@ -27,7 +27,7 @@ internal static class ResultExpressionBuilder
         }
 
         var rowExpression = model.SourceRowsAreItems
-            ? $"{AsSequence(tableExpression, model.SourceSnapshot)}.ElementAt({row.SourceIndex})"
+            ? AppendItemAccess(tableExpression, model.SourceSnapshot, row.SourceIndex)
             : tableExpression.Trim();
         return model.HasSyntheticValueColumn
             ? rowExpression
@@ -50,7 +50,9 @@ internal static class ResultExpressionBuilder
         int index) =>
         string.IsNullOrWhiteSpace(sourceExpression)
             ? null
-            : $"{(RequiresShapeSafeAccess(sourceExpression) ? ShapeSafeSequence(sourceExpression) : AsSequence(sourceExpression, source))}.ElementAt({index})";
+            : RequiresShapeSafeAccess(sourceExpression)
+                ? $"{ShapeSafeSequence(sourceExpression)}.ElementAt({index})"
+                : AppendItemAccess(sourceExpression, source, index);
 
     public static string? ForSlice(
         string? sourceExpression,
@@ -147,6 +149,37 @@ internal static class ResultExpressionBuilder
         if (IsJsonNode(snapshot)) return $"{CSharpExpressionText.NullForgivenReceiver(expression)}.AsArray()";
         return CSharpExpressionText.Receiver(expression);
     }
+
+    private static string AppendItemAccess(string expression, ResultSnapshot snapshot, int index)
+    {
+        var sequence = AsSequence(expression, snapshot);
+        return SupportsIntegerIndexer(snapshot)
+            ? $"{sequence}[{index}]"
+            : $"{sequence}.ElementAt({index})";
+    }
+
+    private static bool SupportsIntegerIndexer(ResultSnapshot snapshot)
+    {
+        if (snapshot.Items is not null && IsJsonNode(snapshot)) return true;
+        var typeName = snapshot.TypeName;
+        if (string.IsNullOrEmpty(typeName)) return false;
+        if (typeName.EndsWith("[]", StringComparison.Ordinal)) return true;
+        return IntegerIndexerTypePrefixes.Any(prefix =>
+            typeName.StartsWith(prefix, StringComparison.Ordinal));
+    }
+
+    private static readonly string[] IntegerIndexerTypePrefixes =
+    [
+        "System.Collections.ArrayList",
+        "System.Collections.Generic.List`1",
+        "System.Collections.Generic.IList`1",
+        "System.Collections.Generic.IReadOnlyList`1",
+        "System.Collections.ObjectModel.Collection`1",
+        "System.Collections.ObjectModel.ObservableCollection`1",
+        "System.Collections.ObjectModel.ReadOnlyCollection`1",
+        "System.Collections.Immutable.ImmutableArray`1",
+        "System.ArraySegment`1"
+    ];
 
     private static bool RequiresShapeSafeAccess(string expression) =>
         expression.TrimStart().StartsWith("Out[", StringComparison.Ordinal) ||

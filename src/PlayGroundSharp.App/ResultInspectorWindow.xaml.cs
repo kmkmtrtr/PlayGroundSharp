@@ -13,6 +13,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using PlayGroundSharp.Core;
+using PlayGroundSharp.LanguageService;
 
 namespace PlayGroundSharp.App;
 
@@ -803,12 +804,34 @@ public partial class ResultInspectorWindow : Window
                 : null;
         }
 
+        async Task<IReadOnlyList<CompletionCandidate>> GetCompletionsAsync(
+            string formula,
+            int position,
+            CancellationToken cancellationToken)
+        {
+            var analysis = ResultExpressionBuilder.ForCalculatedColumnCompletion(
+                baseExpression,
+                model,
+                visibleColumns,
+                suggestedName,
+                formula,
+                position,
+                insertPosition);
+            return analysis is null
+                ? []
+                : await viewModel.GetCodeCompletionsAsync(
+                    analysis.Code,
+                    analysis.Position,
+                    cancellationToken);
+        }
+
         var dialog = new CalculatedColumnDialog(
             languageMode,
             suggestedName,
             initialFormula,
             CreateExpression,
-            EvaluateAsync)
+            EvaluateAsync,
+            GetCompletionsAsync)
         {
             Owner = this
         };

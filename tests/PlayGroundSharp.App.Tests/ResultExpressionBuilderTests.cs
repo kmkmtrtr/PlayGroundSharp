@@ -63,6 +63,39 @@ public sealed class ResultExpressionBuilderTests
     }
 
     [Fact]
+    public async Task CalculatedColumnCompletionUsesTheSourceRowType()
+    {
+        var products = Sequence(
+            Row(("Name", Text("Pen")), ("Price", Number("10")), ("Quantity", Number("2"))));
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(products));
+
+        var analysis = Assert.IsType<ResultExpressionBuilder.CompletionAnalysis>(
+            ResultExpressionBuilder.ForCalculatedColumnCompletion(
+                "products",
+                table,
+                [0, 1, 2],
+                "Total",
+                "row.",
+                "row.".Length,
+                2));
+
+        Assert.Equal('.', analysis.Code[analysis.Position - 1]);
+        var completions = await new CSharpLanguageService().GetCompletionsAsync(
+            SessionContext.Empty with
+            {
+                Submissions =
+                [
+                    "var products = new[] { new { Name = \"Pen\", Price = 10, Quantity = 2 } };"
+                ]
+            },
+            analysis.Code,
+            analysis.Position);
+
+        Assert.Contains(completions, static item => item.DisplayText == "Price");
+        Assert.Contains(completions, static item => item.DisplayText == "Quantity");
+    }
+
+    [Fact]
     public async Task SingleJsonObjectUsesAStandardSingleItemLinqProjection()
     {
         var jsonObject = new ResultSnapshot(

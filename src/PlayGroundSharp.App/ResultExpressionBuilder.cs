@@ -6,6 +6,8 @@ namespace PlayGroundSharp.App;
 
 internal static class ResultExpressionBuilder
 {
+    internal sealed record CompletionAnalysis(string Code, int Position);
+
     public static string? ForColumns(
         string? tableExpression,
         SnapshotTableModel model,
@@ -76,6 +78,34 @@ internal static class ResultExpressionBuilder
         if (model.HasSyntheticValueColumn) return "row";
         var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
         return AppendProjectionProperty("row", rowSnapshot, model.Columns[columnIndex]);
+    }
+
+    public static CompletionAnalysis? ForCalculatedColumnCompletion(
+        string? tableExpression,
+        SnapshotTableModel model,
+        IReadOnlyList<int> columnIndexes,
+        string columnName,
+        string formula,
+        int formulaPosition,
+        int insertPosition)
+    {
+        const string marker = "__playgroundsharp_completion_position__";
+        var markedFormula = formula.Insert(
+            Math.Clamp(formulaPosition, 0, formula.Length),
+            marker);
+        var expression = ForCalculatedColumn(
+            tableExpression,
+            model,
+            columnIndexes,
+            columnName,
+            markedFormula,
+            insertPosition);
+        if (expression is null) return null;
+
+        var position = expression.IndexOf(marker, StringComparison.Ordinal);
+        return position < 0
+            ? null
+            : new(expression.Remove(position, marker.Length), position);
     }
 
     public static string? ForCell(

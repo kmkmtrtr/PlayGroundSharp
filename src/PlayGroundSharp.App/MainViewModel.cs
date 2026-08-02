@@ -697,6 +697,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             cancellationToken);
     }
 
+    public Task<IReadOnlyList<CompletionCandidate>> GetCodeCompletionsAsync(
+        string code,
+        int position,
+        CancellationToken cancellationToken = default)
+    {
+        var context = Context;
+        var offset = Math.Clamp(position, 0, code.Length);
+        return Task.Run(
+            () => languageService.GetCompletionsAsync(context, code, offset, cancellationToken),
+            cancellationToken);
+    }
+
     private Task<IReadOnlyList<CompletionCandidate>> GetCommandCompletionsAsync(
         SessionContext context,
         string code,

@@ -1,5 +1,12 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using ICSharpCode.AvalonEdit.CodeCompletion;
+using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Editing;
+using ICSharpCode.AvalonEdit.Highlighting;
+using PlayGroundSharp.LanguageService;
 
 namespace PlayGroundSharp.App;
 
@@ -7,20 +14,29 @@ public partial class CalculatedColumnDialog : Window
 {
     private readonly Func<string, string, string?> expressionFactory;
     private readonly Func<string, CancellationToken, Task<string?>> evaluator;
+    private readonly Func<string, int, CancellationToken, Task<IReadOnlyList<CompletionCandidate>>> completionProvider;
     private readonly AppLanguageMode languageMode;
     private CancellationTokenSource? evaluationCancellation;
+    private CancellationTokenSource? completionCancellation;
+    private CompletionWindow? completionWindow;
 
     public CalculatedColumnDialog(
         AppLanguageMode languageMode,
         string suggestedName,
         string initialFormula,
         Func<string, string, string?> expressionFactory,
-        Func<string, CancellationToken, Task<string?>> evaluator)
+        Func<string, CancellationToken, Task<string?>> evaluator,
+        Func<string, int, CancellationToken, Task<IReadOnlyList<CompletionCandidate>>> completionProvider)
     {
         this.languageMode = languageMode;
         this.expressionFactory = expressionFactory;
         this.evaluator = evaluator;
+        this.completionProvider = completionProvider;
         InitializeComponent();
+        FormulaText.SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("C#");
+        FormulaText.TextChanged += FormulaText_TextChanged;
+        FormulaText.TextArea.TextEntered += FormulaText_TextEntered;
+        FormulaText.PreviewKeyDown += FormulaText_PreviewKeyDown;
         ColumnNameText.Text = suggestedName;
         FormulaText.Text = initialFormula;
         UpdateGeneratedExpression();
@@ -29,7 +45,12 @@ public partial class CalculatedColumnDialog : Window
             ColumnNameText.Focus();
             ColumnNameText.SelectAll();
         };
-        Closed += (_, _) => evaluationCancellation?.Cancel();
+        Closed += (_, _) =>
+        {
+            evaluationCancellation?.Cancel();
+            CancelCompletionRequest();
+            completionWindow?.Close();
+        };
     }
 
     public string? AppliedExpression { get; private set; }
@@ -40,6 +61,92 @@ public partial class CalculatedColumnDialog : Window
         StatusText.Text = string.Empty;
         UpdateGeneratedExpression();
     }
+
+    private void FormulaText_TextChanged(object? sender, EventArgs e)
+    {
+        if (!IsInitialized) return;
+        StatusText.Text = string.Empty;
+        UpdateGeneratedExpression();
+    }
+
+    private async void FormulaText_TextEntered(object? sender, TextCompositionEventArgs e)
+    {
+        if (e.Text == ".") await ShowCompletionAsync();
+    }
+
+    private async void FormulaText_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space || !Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) return;
+        e.Handled = true;
+        await ShowCompletionAsync();
+    }
+
+    private async Task ShowCompletionAsync()
+    {
+        completionWindow?.Close();
+        CancelCompletionRequest();
+        var cancellation = new CancellationTokenSource();
+        completionCancellation = cancellation;
+        var requestText = FormulaText.Text;
+        var requestOffset = FormulaText.CaretOffset;
+        IReadOnlyList<CompletionCandidate> items;
+        try
+        {
+            items = await completionProvider(requestText, requestOffset, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch
+        {
+            return;
+        }
+        finally
+        {
+            if (ReferenceEquals(completionCancellation, cancellation))
+                completionCancellation = null;
+            cancellation.Dispose();
+        }
+
+        var inputUnchanged = FormulaText.CaretOffset == requestOffset && FormulaText.Text == requestText;
+        var inputAppendedAtEnd = requestOffset == requestText.Length &&
+                                 FormulaText.CaretOffset == FormulaText.Text.Length &&
+                                 FormulaText.Text.StartsWith(requestText, StringComparison.Ordinal);
+        if (!inputUnchanged && !inputAppendedAtEnd || items.Count == 0) return;
+
+        var window = new CompletionWindow(FormulaText.TextArea)
+        {
+            StartOffset = FindCompletionStart(requestText, requestOffset)
+        };
+        foreach (var item in items)
+            window.CompletionList.CompletionData.Add(new FormulaCompletionData(item));
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(completionWindow, window)) completionWindow = null;
+        };
+        completionWindow = window;
+        window.Show();
+    }
+
+    private void CancelCompletionRequest()
+    {
+        var cancellation = completionCancellation;
+        completionCancellation = null;
+        if (cancellation is null) return;
+        cancellation.Cancel();
+        cancellation.Dispose();
+    }
+
+    private static int FindCompletionStart(string text, int caretOffset)
+    {
+        var start = Math.Clamp(caretOffset, 0, text.Length);
+        while (start > 0 && IsIdentifierPart(text[start - 1])) start--;
+        return start;
+    }
+
+    private static bool IsIdentifierPart(char character) =>
+        char.IsLetterOrDigit(character) || character == '_';
 
     private void UpdateGeneratedExpression()
     {
@@ -101,8 +208,26 @@ public partial class CalculatedColumnDialog : Window
 
     private void SetEvaluationState(bool evaluating)
     {
+        if (evaluating) completionWindow?.Close();
         ColumnNameText.IsEnabled = !evaluating;
         FormulaText.IsEnabled = !evaluating;
         ApplyButton.IsEnabled = !evaluating && GeneratedExpressionText.Text.Length > 0;
+    }
+
+    private sealed class FormulaCompletionData(CompletionCandidate candidate) : ICompletionData
+    {
+        public ImageSource? Image => null;
+        public string Text => candidate.FilterText;
+        public object Content => $"{candidate.KindGlyph}  {candidate.DisplayText}";
+        public object? Description => candidate.HasNamespaceHint
+            ? candidate.NamespaceDisplayText
+            : null;
+        public double Priority => 0;
+
+        public void Complete(
+            TextArea textArea,
+            ISegment completionSegment,
+            EventArgs insertionRequestEventArgs) =>
+            textArea.Document.Replace(completionSegment, candidate.TextToInsert);
     }
 }

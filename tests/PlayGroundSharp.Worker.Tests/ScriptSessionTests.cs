@@ -305,6 +305,133 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task ReportsUnnamedResultsAndNamesTheSameInstance()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "new JsonObject { [\"name\"] = \"before\" }");
+
+        var retained = Assert.Single(session.GetRetainedResults());
+        Assert.Equal(1, retained.SubmissionIndex);
+        Assert.Equal("System.Text.Json.Nodes.JsonObject", retained.TypeName);
+        Assert.Equal("global::System.Text.Json.Nodes.JsonObject", retained.TypeExpression);
+
+        var naming = await session.ExecuteAsync(
+            2,
+            "var json = RetainResultAs<global::System.Text.Json.Nodes.JsonObject>(1);");
+
+        Assert.True(naming.StateAccepted);
+        Assert.Empty(session.GetRetainedResults());
+        var sameInstance = await session.ExecuteAsync(
+            3,
+            "json[\"name\"] = \"after\"; object.ReferenceEquals(json, Out[1])");
+        Assert.Equal("true", sameInstance.Snapshot?.Display);
+        Assert.Contains(session.GetVariables(), static variable =>
+            variable.Name == "json" && variable.Value.Properties?.Single().Value.Display == "after");
+    }
+
+    [Fact]
+    public async Task DoesNotDuplicateANamedValueResult()
+    {
+        var session = new ScriptSession();
+
+        await session.ExecuteAsync(1, "var count = 42; count");
+
+        Assert.Contains(session.GetVariables(), static variable => variable.Name == "count");
+        Assert.Empty(session.GetRetainedResults());
+    }
+
+    [Fact]
+    public async Task AnonymousResultCanBeNamedAsDynamic()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "new { Name = \"Alice\" }");
+
+        var retained = Assert.Single(session.GetRetainedResults());
+        Assert.Equal("dynamic", retained.TypeExpression);
+
+        Assert.True((await session.ExecuteAsync(
+            2,
+            "dynamic person = RetainResultAsDynamic(1);")).StateAccepted);
+        var value = await session.ExecuteAsync(3, "person.Name");
+
+        Assert.Equal("Alice", value.Snapshot?.Display);
+        Assert.DoesNotContain(session.GetRetainedResults(), static result => result.SubmissionIndex == 1);
+    }
+
+    [Fact]
+    public async Task DynamicResultUsesItsPublicRuntimeTypeWhenAvailable()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(
+            1,
+            "(dynamic)new JsonObject { [\"name\"] = \"Alice\" }");
+
+        var retained = Assert.Single(session.GetRetainedResults());
+
+        Assert.Equal("global::System.Text.Json.Nodes.JsonObject", retained.TypeExpression);
+    }
+
+    [Fact]
+    public async Task JsonLoadedThroughTargetFrameworkGlobalsCanBeNamedWithAStaticType()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .FirstOrDefault(candidate => candidate.Version.Major == Environment.Version.Major);
+        Assert.NotNull(framework);
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, "{\"name\":\"Alice\"}");
+            var session = new ScriptSession(framework.GetReferencePaths(), framework.TargetFramework);
+            await session.ExecuteAsync(
+                1,
+                $"await Data.ReadJsonAsync(@\"{path}\", ExecutionCancellation)");
+
+            var retained = Assert.Single(session.GetRetainedResults());
+            Assert.Equal("global::System.Text.Json.Nodes.JsonObject", retained.TypeExpression);
+
+            var naming = await session.ExecuteAsync(
+                2,
+                "var json = RetainResultAs<global::System.Text.Json.Nodes.JsonObject>(1);");
+            var value = await session.ExecuteAsync(3, "json[\"name\"]!.GetValue<string>()");
+
+            Assert.True(naming.StateAccepted);
+            Assert.Equal("Alice", value.Snapshot?.Display);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task FailedNamingCastLeavesTheResultUnnamed()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "new object()");
+
+        var result = await session.ExecuteAsync(
+            2,
+            "var number = RetainResultAs<global::System.Int32>(1);");
+
+        Assert.True(result.StateAccepted);
+        Assert.Equal("System.InvalidCastException", result.Exception?.TypeName);
+        Assert.Equal(1, Assert.Single(session.GetRetainedResults()).SubmissionIndex);
+    }
+
+    [Fact]
+    public async Task ReleaseRemovesAnUnnamedResultFromHistory()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "new object()");
+
+        Assert.True((await session.ExecuteAsync(2, "ReleaseResult(1);")).StateAccepted);
+
+        Assert.Empty(session.GetRetainedResults());
+        var missing = await session.ExecuteAsync(3, "Out[1]");
+        Assert.Equal("System.Collections.Generic.KeyNotFoundException", missing.Exception?.TypeName);
+    }
+
+    [Fact]
     public async Task BoundsSnapshotsAcrossTheEntireVariableList()
     {
         var session = new ScriptSession();

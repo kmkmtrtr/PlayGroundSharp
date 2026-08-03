@@ -690,6 +690,9 @@
                                           ContextMenuOpening="VariableList_ContextMenuOpening">
                                     <ListView.ContextMenu>
                                         <ContextMenu>
+                                            <MenuItem x:Name="NameRetainedResultMenuItem" Header="{DynamicResource Variables.NameResult}" Click="NameRetainedResult_Click" />
+                                            <MenuItem x:Name="ReleaseRetainedResultMenuItem" Header="{DynamicResource Variables.ReleaseResult}" Click="ReleaseRetainedResult_Click" />
+                                            <Separator x:Name="RetainedResultMenuSeparator" />
                                             <MenuItem Header="{DynamicResource Ui.Copy}" Click="CopyVariable_Click" />
                                             <MenuItem Header="{DynamicResource Ui.Inspect}" Click="InspectVariable_Click" />
                                         </ContextMenu>
@@ -704,7 +707,37 @@
                                             <GridViewColumn Header="{DynamicResource Column.Kind}" DisplayMemberBinding="{Binding Kind}" Width="48" />
                                             <GridViewColumn Header="{DynamicResource Column.Name}" Width="110">
                                                 <GridViewColumn.CellTemplate>
-                                                    <DataTemplate><TextBlock Text="{Binding Name}" ToolTip="{Binding Name}" TextTrimming="CharacterEllipsis" /></DataTemplate>
+                                                    <DataTemplate>
+                                                        <Grid>
+                                                            <TextBlock Text="{Binding Name}" ToolTip="{Binding Name}" TextTrimming="CharacterEllipsis">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsNaming}" Value="True">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <TextBox Text="{Binding PendingName, UpdateSourceTrigger=PropertyChanged}"
+                                                                     AutomationProperties.Name="{DynamicResource Variables.NamePlaceholder}"
+                                                                     Padding="3,0" VerticalContentAlignment="Center"
+                                                                     PreviewKeyDown="ResultNameBox_PreviewKeyDown">
+                                                                <TextBox.Style>
+                                                                    <Style TargetType="TextBox">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsNaming}" Value="True">
+                                                                                <Setter Property="Visibility" Value="Visible" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBox.Style>
+                                                            </TextBox>
+                                                        </Grid>
+                                                    </DataTemplate>
                                                 </GridViewColumn.CellTemplate>
                                             </GridViewColumn>
                                             <GridViewColumn Header="{DynamicResource Column.Type}" Width="140">

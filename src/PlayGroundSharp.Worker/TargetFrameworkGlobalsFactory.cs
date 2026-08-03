@@ -76,6 +76,21 @@ internal static class TargetFrameworkGlobalsFactory
                     public dynamic Out { get; set; }
                     public dynamic Data { get; set; }
                     public System.Threading.CancellationToken ExecutionCancellation { get; set; }
+
+                    public T RetainResultAs<T>(int index)
+                    {
+                        T value = (T)Out[index];
+                        Out.MarkNamed(index);
+                        return value;
+                    }
+
+                    public dynamic RetainResultAsDynamic(int index)
+                    {
+                        dynamic value = Out[index];
+                        Out.MarkNamed(index);
+                        return value;
+                    }
+                    public void ReleaseResult(int index) => Out.Release(index);
                 }
             }
             """;

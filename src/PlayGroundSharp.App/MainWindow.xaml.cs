@@ -1403,12 +1403,16 @@ public partial class MainWindow : Window
     {
         if (FindAncestor<ListViewItem>(e.OriginalSource as DependencyObject)?.DataContext is not VariableItem item)
             return;
+        if (item.IsNaming) return;
         e.Handled = true;
-        InsertDroppedSnippet(item.Name);
+        if (item.IsUnnamedResult) BeginNamingResult(item);
+        else InsertDroppedSnippet(item.Name);
     }
 
     private async void VariableItem_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.OriginalSource is TextBox { DataContext: VariableItem { IsNaming: true } })
+            return;
         if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = true;
@@ -1425,7 +1429,8 @@ public partial class MainWindow : Window
         if (e.Key is not (Key.Enter or Key.Space) || sender is not ListView { SelectedItem: VariableItem item })
             return;
         e.Handled = true;
-        InsertDroppedSnippet(item.Name);
+        if (item.IsUnnamedResult) BeginNamingResult(item);
+        else InsertDroppedSnippet(item.Name);
     }
 
     private void VariableItem_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -1437,7 +1442,73 @@ public partial class MainWindow : Window
 
     private void VariableList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        if (VariableList.SelectedItem is null) e.Handled = true;
+        if (VariableList.SelectedItem is not VariableItem item)
+        {
+            e.Handled = true;
+            return;
+        }
+        var visibility = item.IsUnnamedResult ? Visibility.Visible : Visibility.Collapsed;
+        NameRetainedResultMenuItem.Visibility = visibility;
+        ReleaseRetainedResultMenuItem.Visibility = visibility;
+        RetainedResultMenuSeparator.Visibility = visibility;
+    }
+
+    private void NameRetainedResult_Click(object sender, RoutedEventArgs e)
+    {
+        if (VariableList.SelectedItem is VariableItem { IsUnnamedResult: true } item)
+            BeginNamingResult(item);
+    }
+
+    private async void ReleaseRetainedResult_Click(object sender, RoutedEventArgs e)
+    {
+        if (VariableList.SelectedItem is not VariableItem { SubmissionIndex: { } index }) return;
+        await viewModel.ReleaseRetainedResultAsync(index);
+    }
+
+    private void BeginNamingResult(VariableItem item, string? initialName = null)
+    {
+        if (!item.IsUnnamedResult) return;
+        item.PendingName = initialName ?? string.Empty;
+        item.IsNaming = true;
+        VariableList.ScrollIntoView(item);
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (VariableList.ItemContainerGenerator.ContainerFromItem(item) is not ListViewItem row)
+                return;
+            var textBox = FindDescendant<TextBox>(row);
+            if (textBox is null) return;
+            textBox.Focus();
+            textBox.SelectAll();
+        }, DispatcherPriority.Input);
+    }
+
+    private async void ResultNameBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox { DataContext: VariableItem item } textBox || !item.IsUnnamedResult)
+            return;
+        if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            item.IsNaming = false;
+            VariableList.Focus();
+            return;
+        }
+        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None) return;
+        e.Handled = true;
+        var name = item.PendingName;
+        if (!RetainedResultStatement.IsValidVariableName(name))
+        {
+            viewModel.ShowStatusNotification("Variables.InvalidName");
+            textBox.SelectAll();
+            return;
+        }
+        if (item.SubmissionIndex is not { } index || item.TypeExpression is not { } typeExpression)
+            return;
+
+        item.IsNaming = false;
+        if (await viewModel.NameRetainedResultAsync(index, typeExpression, name)) return;
+        if (viewModel.VariableItems.FirstOrDefault(candidate => candidate.SubmissionIndex == index) is { } current)
+            BeginNamingResult(current, name);
     }
 
     private async void CopyVariable_Click(object sender, RoutedEventArgs e)
@@ -1571,7 +1642,7 @@ public partial class MainWindow : Window
     private void InspectVariable_Click(object sender, RoutedEventArgs e)
     {
         if (VariableList.SelectedItem is VariableItem item)
-            new ResultInspectorWindow(item.Snapshot, viewModel, item.Name) { Owner = this }.Show();
+            new ResultInspectorWindow(item.Snapshot, viewModel, item.SourceExpression) { Owner = this }.Show();
     }
 
     private async void CopyTranscript_Click(object sender, RoutedEventArgs e) => await CopyTranscriptAsync();

@@ -130,6 +130,66 @@ public sealed class ScriptSession
         return variables;
     }
 
+    public IReadOnlyList<RetainedResultInfo> GetRetainedResults(CancellationToken cancellationToken = default)
+    {
+        var namedReferences = state?.Variables
+            .Select(static variable => variable.Value)
+            .Where(static value => value is not null && !value.GetType().IsValueType)
+            .ToArray() ?? [];
+        var results = new List<RetainedResultInfo>();
+        var remainingNodes = MaximumVariableSnapshotTotalNodes;
+        var remainingTextCharacters = MaximumVariableSnapshotTotalTextCharacters;
+        foreach (var result in resultHistory.UnnamedResults)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (result.Value is not null &&
+                namedReferences.Any(value => ReferenceEquals(value, result.Value)))
+                continue;
+
+            ResultSnapshot snapshot;
+            if (remainingNodes <= 0 || remainingTextCharacters <= 0)
+            {
+                snapshot = new(
+                    SnapshotKind.MaxDepth,
+                    "… retained result snapshot limit reached",
+                    result.Value?.GetType().FullName ?? result.TypeExpression,
+                    IsTruncated: true);
+            }
+            else
+            {
+                try
+                {
+                    snapshot = snapshots.Create(
+                        result.Value,
+                        Math.Min(MaximumVariableSnapshotNodes, remainingNodes),
+                        Math.Min(MaximumVariableSnapshotTextCharacters, remainingTextCharacters),
+                        cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception error)
+                {
+                    snapshot = new(
+                        SnapshotKind.Exception,
+                        $"Snapshot failed: {error.GetType().Name}: {error.Message}",
+                        result.Value?.GetType().FullName ?? result.TypeExpression);
+                }
+                var usage = MeasureSnapshot(snapshot);
+                remainingNodes -= usage.Nodes;
+                remainingTextCharacters -= usage.TextCharacters;
+            }
+
+            results.Add(new(
+                result.SubmissionIndex,
+                snapshot.TypeName ?? result.Value?.GetType().FullName ?? result.TypeExpression,
+                result.TypeExpression,
+                snapshot));
+        }
+        return results;
+    }
+
     public async Task<ScriptExecutionResult> ExecuteAsync(
         int submissionIndex,
         string code,
@@ -186,6 +246,9 @@ public sealed class ScriptSession
             }
 
             var hasReturnValue = HasTrailingValueExpression(candidate.Script.GetCompilation());
+            var resultTypeExpression = hasReturnValue
+                ? GetTrailingResultTypeExpression(candidate.Script.GetCompilation(), candidate.ReturnValue)
+                : null;
             ResultSnapshot? snapshot = null;
             if (hasReturnValue)
             {
@@ -211,7 +274,13 @@ public sealed class ScriptSession
             if (hasReturnValue)
             {
                 SetGlobal(nameof(SessionGlobals.Last), candidate.ReturnValue);
-                resultHistory.Set(submissionIndex, candidate.ReturnValue);
+                var trailingIdentifier = GetTrailingIdentifier(candidate.Script.GetCompilation());
+                resultHistory.Set(
+                    submissionIndex,
+                    candidate.ReturnValue,
+                    resultTypeExpression ?? "dynamic",
+                    trailingIdentifier is not null &&
+                    candidate.Variables.Any(variable => variable.Name == trailingIdentifier));
             }
 
             return new(true, hasReturnValue, candidate.ReturnValue, snapshot, [], null);
@@ -417,6 +486,77 @@ public sealed class ScriptSession
         var type = compilation.GetSemanticModel(tree).GetTypeInfo(expression.Expression).Type;
         return type?.SpecialType != SpecialType.System_Void;
     }
+
+    private static string GetTrailingResultTypeExpression(Compilation compilation, object? value)
+    {
+        var tree = compilation.SyntaxTrees.Last();
+        var root = tree.GetCompilationUnitRoot();
+        if (root.Members.LastOrDefault() is not GlobalStatementSyntax
+            {
+                Statement: ExpressionStatementSyntax expression
+            })
+            return "dynamic";
+
+        var type = compilation.GetSemanticModel(tree).GetTypeInfo(expression.Expression).ConvertedType;
+        if (type is null || type.TypeKind is TypeKind.Dynamic or TypeKind.Error || ContainsAnonymousType(type))
+            return TryFormatRuntimeType(value?.GetType()) ?? "dynamic";
+
+        var format = SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
+            SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions |
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+        return type.ToDisplayString(format);
+    }
+
+    private static string? GetTrailingIdentifier(Compilation compilation)
+    {
+        var root = compilation.SyntaxTrees.Last().GetCompilationUnitRoot();
+        if (root.Members.LastOrDefault() is not GlobalStatementSyntax
+            {
+                Statement: ExpressionStatementSyntax expression
+            })
+            return null;
+        ExpressionSyntax value = expression.Expression;
+        while (value is ParenthesizedExpressionSyntax parenthesized)
+            value = parenthesized.Expression;
+        return value is IdentifierNameSyntax identifier ? identifier.Identifier.ValueText : null;
+    }
+
+    private static string? TryFormatRuntimeType(Type? type)
+    {
+        if (type is not null && typeof(System.Text.Json.Nodes.JsonValue).IsAssignableFrom(type))
+            return "global::System.Text.Json.Nodes.JsonValue";
+        if (type is null || type.IsGenericParameter || type.IsByRef || type.IsPointer || !type.IsVisible ||
+            type.Name.StartsWith('<') ||
+            type.IsDefined(typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), false) &&
+            type.Name.Contains("AnonymousType", StringComparison.Ordinal))
+            return null;
+        if (type.IsArray)
+        {
+            var element = TryFormatRuntimeType(type.GetElementType());
+            if (element is null) return null;
+            return $"{element}[{new string(',', type.GetArrayRank() - 1)}]";
+        }
+        if (type.IsGenericType)
+        {
+            var definition = type.GetGenericTypeDefinition();
+            if (definition.IsNested || definition.FullName is not { } fullName) return null;
+            var marker = fullName.IndexOf('`');
+            if (marker < 0) return null;
+            var arguments = type.GetGenericArguments().Select(TryFormatRuntimeType).ToArray();
+            if (arguments.Any(static argument => argument is null)) return null;
+            return $"global::{fullName[..marker]}<{string.Join(", ", arguments!)}>";
+        }
+        return type.FullName is { } name ? $"global::{name.Replace('+', '.')}" : null;
+    }
+
+    private static bool ContainsAnonymousType(ITypeSymbol type) => type switch
+    {
+        INamedTypeSymbol { IsAnonymousType: true } => true,
+        INamedTypeSymbol named => named.TypeArguments.Any(ContainsAnonymousType),
+        IArrayTypeSymbol array => ContainsAnonymousType(array.ElementType),
+        IPointerTypeSymbol pointer => ContainsAnonymousType(pointer.PointedAtType),
+        _ => false
+    };
 
     private static DiagnosticInfo ToDiagnostic(Diagnostic diagnostic)
     {

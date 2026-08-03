@@ -13,15 +13,51 @@ using PlayGroundSharp.LanguageService;
 
 namespace PlayGroundSharp.App;
 
-public sealed record VariableItem(
-    string Name,
-    string TypeName,
-    string Value,
-    bool IsReadOnly,
-    ResultSnapshot Snapshot)
+public sealed partial class VariableItem : ObservableObject
 {
-    public string Kind => IsReadOnly ? "const" : "var";
+    private string name;
+
+    public VariableItem(
+        string name,
+        string typeName,
+        string value,
+        bool isReadOnly,
+        ResultSnapshot snapshot,
+        int? submissionIndex = null,
+        string? typeExpression = null)
+    {
+        this.name = name;
+        TypeName = typeName;
+        Value = value;
+        IsReadOnly = isReadOnly;
+        Snapshot = snapshot;
+        SubmissionIndex = submissionIndex;
+        TypeExpression = typeExpression;
+    }
+
+    public string Name
+    {
+        get => name;
+        private set => SetProperty(ref name, value);
+    }
+    public string TypeName { get; }
+    public string Value { get; }
+    public bool IsReadOnly { get; }
+    public ResultSnapshot Snapshot { get; }
+    public int? SubmissionIndex { get; }
+    public string? TypeExpression { get; }
+    public bool IsUnnamedResult => SubmissionIndex is not null;
+    public string Kind => IsUnnamedResult ? "result" : IsReadOnly ? "const" : "var";
     public string CopyText => SnapshotTextFormatter.FormatFull(Snapshot);
+    public string SourceExpression => IsUnnamedResult ? $"Out[{SubmissionIndex}]" : Name;
+
+    [ObservableProperty] private bool isNaming;
+    [ObservableProperty] private string pendingName = string.Empty;
+
+    internal void UpdateUnnamedName(string value)
+    {
+        if (IsUnnamedResult) Name = value;
+    }
 }
 
 public sealed record LibraryItem(string Kind, string Name, string Version, string Source, string? Path);
@@ -607,6 +643,45 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    internal Task<bool> NameRetainedResultAsync(
+        int submissionIndex,
+        string typeExpression,
+        string variableName)
+    {
+        if (VariableItems.Any(item =>
+                !item.IsUnnamedResult &&
+                RetainedResultStatement.RepresentsSameIdentifier(item.Name, variableName)))
+        {
+            ShowStatusNotification("Variables.NameExists", variableName);
+            return Task.FromResult(false);
+        }
+        return ExecuteGeneratedSubmissionAsync(
+            RetainedResultStatement.Name(submissionIndex, typeExpression, variableName));
+    }
+
+    internal Task<bool> ReleaseRetainedResultAsync(int submissionIndex) =>
+        ExecuteGeneratedSubmissionAsync(RetainedResultStatement.Release(submissionIndex));
+
+    private async Task<bool> ExecuteGeneratedSubmissionAsync(string code)
+    {
+        if (IsRunning || IsPreparingExecution || HasPendingSessionMutation || !IsWorkerConnected)
+            return false;
+
+        var draft = InputText;
+        var previousSubmissionCount = submissions.Count;
+        InputText = code;
+        try
+        {
+            await ExecuteAsync();
+            return submissions.Count == previousSubmissionCount + 1;
+        }
+        finally
+        {
+            InputText = draft;
+            ScheduleDiagnostics(InputText);
+        }
+    }
+
     private async Task AddRequiredExtensionImportsAsync(string code, CancellationToken cancellationToken)
     {
         IReadOnlyList<string> requiredImports;
@@ -1047,6 +1122,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         CursorStatus = Localize("Cursor.Position", cursorLine, cursorColumn);
         if (packageSearchLocalizationKey is not null)
             PackageSearchMessage = Localize(packageSearchLocalizationKey, packageSearchLocalizationArguments);
+        foreach (var item in VariableItems)
+        {
+            if (item.SubmissionIndex is { } index)
+                item.UpdateUnnamedName(Localize("Variables.Unnamed", index));
+        }
         _ = RebuildTypeExplorerAsync();
     }
 
@@ -1266,12 +1346,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Transcript.Add(TranscriptLine.Diagnostic($"{exception.TypeName}: {exception.Message}"));
                 break;
             case MessageKinds.Variables:
-                variableItems.ReplaceAll(envelope.ReadPayload<VariablesEvent>().Variables.Select(variable => new VariableItem(
-                    variable.Name,
-                    variable.TypeName,
-                    FormatSnapshot(variable.Value),
-                    variable.IsReadOnly,
-                    variable.Value)));
+                var variableEvent = envelope.ReadPayload<VariablesEvent>();
+                variableItems.ReplaceAll(CreateVariableItems(variableEvent));
                 break;
             case MessageKinds.Completed:
                 var completed = envelope.ReadPayload<ExecutionCompletedEvent>();
@@ -1402,6 +1478,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }
         }
     }
+
+    internal IReadOnlyList<VariableItem> CreateVariableItems(VariablesEvent variableEvent) =>
+        [.. variableEvent.Variables.Select(variable => new VariableItem(
+                variable.Name,
+                variable.TypeName,
+                FormatSnapshot(variable.Value),
+                variable.IsReadOnly,
+                variable.Value))
+            .Concat(variableEvent.RetainedResults.Select(result => new VariableItem(
+                Localize("Variables.Unnamed", result.SubmissionIndex),
+                result.TypeName,
+                FormatSnapshot(result.Value),
+                true,
+                result.Value,
+                result.SubmissionIndex,
+                result.TypeExpression)))];
 
     private async Task ResetAsync()
     {

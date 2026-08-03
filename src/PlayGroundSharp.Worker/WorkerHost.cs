@@ -194,7 +194,7 @@ public sealed class WorkerHost
         if (result.Exception is not null)
             await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.RuntimeError, envelope.CorrelationId, new RuntimeErrorEvent(result.Exception)), hostToken).ConfigureAwait(false);
         await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Variables, envelope.CorrelationId,
-            new VariablesEvent(session.GetVariables())), hostToken).ConfigureAwait(false);
+            new VariablesEvent(session.GetVariables(), session.GetRetainedResults())), hostToken).ConfigureAwait(false);
         // A terminal event is the client's signal that it may submit the next operation.
         ReleaseOperation(operationToken);
         await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Completed, envelope.CorrelationId,

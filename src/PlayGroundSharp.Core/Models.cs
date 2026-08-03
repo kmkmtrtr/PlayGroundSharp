@@ -32,6 +32,13 @@ public sealed record ResultProperty(string Name, ResultSnapshot Value);
 /// <summary>A process-neutral view of a variable retained by a script session.</summary>
 public sealed record VariableInfo(string Name, string TypeName, ResultSnapshot Value, bool IsReadOnly);
 
+/// <summary>A process-neutral view of an unnamed result retained by a script session.</summary>
+public sealed record RetainedResultInfo(
+    int SubmissionIndex,
+    string TypeName,
+    string TypeExpression,
+    ResultSnapshot Value);
+
 /// <summary>A process-neutral exception representation.</summary>
 public sealed record ExceptionInfo(string TypeName, string Message, string? StackTrace, ExceptionInfo? InnerException = null);
 

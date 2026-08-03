@@ -75,7 +75,9 @@ public sealed record InspectionResultEvent(
     ExceptionInfo? Exception,
     int TotalDiagnosticCount = 0);
 public sealed record RuntimeErrorEvent(ExceptionInfo Exception);
-public sealed record VariablesEvent(IReadOnlyList<VariableInfo> Variables);
+public sealed record VariablesEvent(
+    IReadOnlyList<VariableInfo> Variables,
+    IReadOnlyList<RetainedResultInfo> RetainedResults);
 public sealed record ExecutionCompletedEvent(int SubmissionIndex, bool StateAccepted, long WorkerMemoryBytes);
 public sealed record CancelledEvent(bool Cooperative);
 public sealed record SessionChangedEvent(IReadOnlyList<string> References, IReadOnlyList<string> Usings);

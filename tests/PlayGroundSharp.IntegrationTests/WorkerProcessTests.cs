@@ -84,6 +84,52 @@ public sealed class WorkerProcessTests
     }
 
     [Fact]
+    public async Task WorkerProcessInspectsExpressionWithoutCommittingIt()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-inspection-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName);
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(
+                ".",
+                pipeName,
+                PipeDirection.InOut,
+                PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var transport = new PipeTransport(pipe);
+
+            await ExecuteAsync(
+                transport,
+                1,
+                "var rows = new[] { new { Price = 10, Quantity = 2 } }; 7",
+                timeout.Token);
+            var inspection = await InspectExpressionAsync(
+                transport,
+                "rows.Select(row => new { row.Price, Total = row.Price * row.Quantity })",
+                timeout.Token);
+            var next = await ExecuteAsync(transport, 2, "Last", timeout.Token);
+
+            var result = inspection.ReadPayload<InspectionResultEvent>();
+            Assert.Empty(result.Diagnostics);
+            Assert.Null(result.Exception);
+            Assert.Equal(
+                "20",
+                Assert.Single(result.Snapshot?.Items ?? []).Properties?
+                    .Single(property => property.Name == "Total").Value.Display);
+            Assert.Equal(
+                "7",
+                next.Single(static envelope => envelope.Kind == MessageKinds.Result)
+                    .ReadPayload<ResultEvent>().Snapshot.Display);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public async Task WorkerProcessReturnsIncompleteTasksWithoutBlockingLaterSubmissions()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -420,6 +466,25 @@ public sealed class WorkerProcessTests
             if (envelope.CorrelationId != correlationId) continue;
             events.Add(envelope);
             if (envelope.Kind is MessageKinds.Completed or MessageKinds.Error) return events;
+        }
+    }
+
+    private static async Task<PipeEnvelope> InspectExpressionAsync(
+        PipeTransport transport,
+        string code,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = Guid.NewGuid();
+        await transport.WriteAsync(PipeEnvelope.Create(
+            MessageKinds.InspectExpression,
+            correlationId,
+            new InspectExpressionRequest(code)), cancellationToken);
+        while (true)
+        {
+            var envelope = await transport.ReadAsync(cancellationToken) ?? throw new EndOfStreamException();
+            if (envelope.CorrelationId != correlationId) continue;
+            Assert.Equal(MessageKinds.InspectionResult, envelope.Kind);
+            return envelope;
         }
     }
 }

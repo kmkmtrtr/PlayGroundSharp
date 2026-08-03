@@ -17,6 +17,12 @@ public sealed record ScriptExecutionResult(
     ExceptionInfo? Exception,
     int TotalDiagnosticCount = 0);
 
+public sealed record ScriptInspectionResult(
+    ResultSnapshot? Snapshot,
+    IReadOnlyList<DiagnosticInfo> Diagnostics,
+    ExceptionInfo? Exception,
+    int TotalDiagnosticCount = 0);
+
 /// <summary>Owns the mutable Roslyn ScriptState for one Worker session.</summary>
 public sealed class ScriptSession
 {
@@ -215,6 +221,83 @@ public sealed class ScriptSession
             }
 
             return new(true, hasReturnValue, candidate.ReturnValue, snapshot, [], null);
+        }
+        finally
+        {
+            outputWriter.Flush();
+            errorWriter.Flush();
+            Console.SetOut(originalOut);
+            Console.SetError(originalError);
+            SetGlobal(nameof(SessionGlobals.ExecutionCancellation), default(CancellationToken));
+        }
+    }
+
+    public async Task<ScriptInspectionResult> InspectExpressionAsync(
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
+        using var outputWriter = new BoundedEventWriter(null);
+        using var errorWriter = new BoundedEventWriter(null);
+        Console.SetOut(outputWriter);
+        Console.SetError(errorWriter);
+        SetGlobal(nameof(SessionGlobals.ExecutionCancellation), cancellationToken);
+        try
+        {
+            var executableCode = PrepareSubmission(code);
+            ScriptState<object?> candidate;
+            try
+            {
+                if (state is null && requiresReferenceAssemblyBootstrap)
+                {
+                    state = await CSharpScript.Create<object?>(string.Empty, options, globalsType)
+                        .RunAsync(globals, static _ => true, cancellationToken).ConfigureAwait(false);
+                }
+                candidate = state is null
+                    ? await CSharpScript.Create<object?>(executableCode, options, globalsType)
+                        .RunAsync(globals, static _ => true, cancellationToken).ConfigureAwait(false)
+                    : await state.ContinueWithAsync<object?>(
+                        executableCode,
+                        options,
+                        static _ => true,
+                        cancellationToken).ConfigureAwait(false);
+            }
+            catch (CompilationErrorException error)
+            {
+                return new(
+                    null,
+                    error.Diagnostics.Take(MaximumTransferredDiagnostics).Select(ToDiagnostic).ToArray(),
+                    null,
+                    error.Diagnostics.Length);
+            }
+
+            if (candidate.Exception is OperationCanceledException cancelled && cancellationToken.IsCancellationRequested)
+                throw cancelled;
+            if (candidate.Exception is not null)
+                return new(null, [], ResultSnapshotFactory.CreateException(candidate.Exception));
+            if (!HasTrailingValueExpression(candidate.Script.GetCompilation()))
+                return new(null, [], null);
+
+            try
+            {
+                return new(snapshots.Create(candidate.ReturnValue, cancellationToken), [], null);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception error)
+            {
+                return new(
+                    new(
+                        SnapshotKind.Exception,
+                        $"Snapshot failed: {error.GetType().Name}: {error.Message}",
+                        candidate.ReturnValue?.GetType().FullName),
+                    [],
+                    null);
+            }
         }
         finally
         {

@@ -6,6 +6,108 @@ namespace PlayGroundSharp.App;
 
 internal static class ResultExpressionBuilder
 {
+    internal sealed record CompletionAnalysis(string Code, int Position);
+
+    public static string? ForColumns(
+        string? tableExpression,
+        SnapshotTableModel model,
+        IReadOnlyList<int> columnIndexes)
+    {
+        if (string.IsNullOrWhiteSpace(tableExpression) ||
+            columnIndexes.Count == 0 ||
+            columnIndexes.Any(index => index < 0 || index >= model.Columns.Count))
+            return null;
+
+        if (columnIndexes.SequenceEqual(Enumerable.Range(0, model.Columns.Count)))
+            return tableExpression.Trim();
+        if (model.HasSyntheticValueColumn)
+            return tableExpression.Trim();
+        if (RequiresShapeSafeAccess(tableExpression))
+            return null;
+
+        var names = columnIndexes.Select(index => model.Columns[index]).ToArray();
+        var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
+        if (!model.SourceRowsAreItems)
+            return BuildColumnProjection(tableExpression.Trim(), rowSnapshot, names);
+
+        var projection = BuildColumnProjection("item", rowSnapshot, names);
+        return projection is null
+            ? null
+            : $"{AsSequence(tableExpression, model.SourceSnapshot)}.Select(item => {projection})";
+    }
+
+    public static string? ForCalculatedColumn(
+        string? tableExpression,
+        SnapshotTableModel model,
+        IReadOnlyList<int> columnIndexes,
+        string columnName,
+        string formula,
+        int insertPosition)
+    {
+        if (string.IsNullOrWhiteSpace(tableExpression) ||
+            string.IsNullOrWhiteSpace(formula) ||
+            !IsCSharpIdentifier(columnName) ||
+            model.Columns.Contains(columnName, StringComparer.Ordinal) ||
+            columnIndexes.Count == 0 ||
+            columnIndexes.Any(index => index < 0 || index >= model.Columns.Count) ||
+            RequiresShapeSafeAccess(tableExpression))
+            return null;
+
+        var names = columnIndexes.Select(index => model.Columns[index]).ToArray();
+        var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
+        var projection = BuildCalculatedColumnProjection(
+            "row",
+            rowSnapshot,
+            names,
+            columnName,
+            formula.Trim(),
+            Math.Clamp(insertPosition, 0, names.Length),
+            model.HasSyntheticValueColumn);
+        if (projection is null) return null;
+
+        return model.SourceRowsAreItems
+            ? $"{AsSequence(tableExpression, model.SourceSnapshot)}.Select(row => {projection})"
+            : $"new[] {{ {tableExpression.Trim()} }}.Select(row => {projection}).Single()";
+    }
+
+    public static string? ForCalculatedColumnFormula(
+        SnapshotTableModel model,
+        int columnIndex)
+    {
+        if (columnIndex < 0 || columnIndex >= model.Columns.Count) return null;
+        if (model.HasSyntheticValueColumn) return "row";
+        var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
+        return AppendProjectionProperty("row", rowSnapshot, model.Columns[columnIndex]);
+    }
+
+    public static CompletionAnalysis? ForCalculatedColumnCompletion(
+        string? tableExpression,
+        SnapshotTableModel model,
+        IReadOnlyList<int> columnIndexes,
+        string columnName,
+        string formula,
+        int formulaPosition,
+        int insertPosition)
+    {
+        const string marker = "__playgroundsharp_completion_position__";
+        var markedFormula = formula.Insert(
+            Math.Clamp(formulaPosition, 0, formula.Length),
+            marker);
+        var expression = ForCalculatedColumn(
+            tableExpression,
+            model,
+            columnIndexes,
+            columnName,
+            markedFormula,
+            insertPosition);
+        if (expression is null) return null;
+
+        var position = expression.IndexOf(marker, StringComparison.Ordinal);
+        return position < 0
+            ? null
+            : new(expression.Remove(position, marker.Length), position);
+    }
+
     public static string? ForCell(
         string? tableExpression,
         SnapshotTableModel model,
@@ -143,6 +245,67 @@ internal static class ResultExpressionBuilder
             : null;
     }
 
+    private static string? BuildColumnProjection(
+        string receiver,
+        ResultSnapshot source,
+        IReadOnlyList<string> names)
+    {
+        var values = names
+            .Select(name => AppendProjectionProperty(receiver, source, name))
+            .ToArray();
+        if (values.Any(static value => value is null)) return null;
+        var projectionValues = values.Select(static value => value!).ToArray();
+
+        if (names.All(IsCSharpIdentifier))
+            return $"new {{ {string.Join(", ", names.Select((name, index) => $"{name} = {projectionValues[index]}"))} }}";
+
+        return "new System.Collections.Generic.Dictionary<string, object?> { " +
+               string.Join(", ", names.Select((name, index) =>
+                   $"[{QuoteString(name)}] = {projectionValues[index]}")) +
+               " }";
+    }
+
+    private static string? BuildCalculatedColumnProjection(
+        string receiver,
+        ResultSnapshot source,
+        IReadOnlyList<string> names,
+        string calculatedColumnName,
+        string formula,
+        int insertPosition,
+        bool hasSyntheticValueColumn)
+    {
+        var entries = names
+            .Select(name => (
+                Name: name,
+                Value: hasSyntheticValueColumn
+                    ? receiver
+                    : AppendProjectionProperty(receiver, source, name)))
+            .ToList();
+        if (entries.Any(static entry => entry.Value is null)) return null;
+        entries.Insert(insertPosition, (calculatedColumnName, formula));
+
+        if (entries.All(static entry => IsCSharpIdentifier(entry.Name)))
+            return $"new {{ {string.Join(", ", entries.Select(entry => $"{entry.Name} = {entry.Value}"))} }}";
+
+        return "new System.Collections.Generic.Dictionary<string, object?> { " +
+               string.Join(", ", entries.Select(entry =>
+                   $"[{QuoteString(entry.Name)}] = {entry.Value}")) +
+               " }";
+    }
+
+    private static string? AppendProjectionProperty(
+        string receiver,
+        ResultSnapshot source,
+        string propertyName)
+    {
+        if (IsJsonElement(source) || IsJsonNode(source) || UsesStringIndexer(source) ||
+            IsCSharpIdentifier(propertyName))
+            return AppendProperty(receiver, source, propertyName);
+
+        var operand = CSharpExpressionText.CastOperand(receiver);
+        return $"((object?){operand})?.GetType().GetProperty({QuoteString(propertyName)})?.GetValue((object?){operand})";
+    }
+
     private static string AsSequence(string expression, ResultSnapshot snapshot)
     {
         if (IsJsonElement(snapshot)) return $"{CSharpExpressionText.Receiver(expression)}.EnumerateArray()";
@@ -207,6 +370,22 @@ internal static class ResultExpressionBuilder
         value.Length > 0 &&
         (char.IsLetter(value[0]) || value[0] == '_') &&
         value.Skip(1).All(static character => char.IsLetterOrDigit(character) || character == '_');
+
+    private static bool IsCSharpIdentifier(string value) =>
+        IsSimpleIdentifier(value) && !CSharpKeywords.Contains(value);
+
+    private static readonly HashSet<string> CSharpKeywords =
+    [
+        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
+        "class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else",
+        "enum", "event", "explicit", "extern", "false", "finally", "fixed", "float", "for",
+        "foreach", "goto", "if", "implicit", "in", "int", "interface", "internal", "is", "lock",
+        "long", "namespace", "new", "null", "object", "operator", "out", "override", "params",
+        "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed", "short",
+        "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true",
+        "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual",
+        "void", "volatile", "while"
+    ];
 
     private static string QuoteString(string value)
     {

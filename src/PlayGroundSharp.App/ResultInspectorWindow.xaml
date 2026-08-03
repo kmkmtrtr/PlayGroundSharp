@@ -171,12 +171,28 @@
                       ClipboardCopyMode="IncludeHeader" LoadingRow="TableGrid_LoadingRow"
                       SelectedCellsChanged="TableGrid_SelectedCellsChanged"
                       Sorting="TableGrid_Sorting"
+                      ColumnReordered="TableGrid_ColumnReordered"
                       MouseDoubleClick="TableGrid_MouseDoubleClick"
                       PreviewKeyDown="TableGrid_PreviewKeyDown">
                 <DataGrid.Resources>
                     <ContextMenu x:Key="TableColumnHeaderMenu" x:Shared="False">
+                        <MenuItem Header="{DynamicResource Inspector.HideColumn}"
+                                  Tag="HideColumn" Click="HideColumn_Click" />
+                        <MenuItem Header="{DynamicResource Inspector.MoveColumnLeft}"
+                                  Tag="MoveColumnLeft" Click="MoveColumnLeft_Click" />
+                        <MenuItem Header="{DynamicResource Inspector.MoveColumnRight}"
+                                  Tag="MoveColumnRight" Click="MoveColumnRight_Click" />
+                        <MenuItem Header="{DynamicResource Inspector.AddCalculatedColumn}"
+                                  Tag="AddCalculatedColumn" Click="AddCalculatedColumn_Click" />
+                        <Separator />
+                        <MenuItem Header="{DynamicResource Inspector.ShowColumn}" Tag="ShowColumn" />
+                        <MenuItem Header="{DynamicResource Inspector.ShowAllColumns}"
+                                  Tag="ShowAllColumns" Click="ShowAllColumns_Click" />
+                        <MenuItem Header="{DynamicResource Inspector.ResetColumnLayout}"
+                                  Tag="ResetColumnLayout" Click="ResetColumnLayout_Click" />
+                        <Separator />
                         <MenuItem Header="{DynamicResource Inspector.FlattenColumn}"
-                                  Click="FlattenColumn_Click" />
+                                  Tag="FlattenColumn" Click="FlattenColumn_Click" />
                     </ContextMenu>
                     <Style TargetType="DataGridColumnHeader">
                         <Setter Property="Background" Value="{DynamicResource PanelBrush}" />

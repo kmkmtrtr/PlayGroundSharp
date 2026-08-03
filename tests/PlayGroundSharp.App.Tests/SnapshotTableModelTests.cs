@@ -56,6 +56,28 @@ public sealed class SnapshotTableModelTests
     }
 
     [Fact]
+    public void DelimitedExportUsesTheDisplayedColumnsAndRowOrder()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "2 items",
+            "Row[]",
+            Items:
+            [
+                Row(("Id", Number("1")), ("Name", Text("Ada")), ("Active", Boolean("true"))),
+                Row(("Id", Number("2")), ("Name", Text("Grace")), ("Active", Boolean("false")))
+            ],
+            TotalCount: 2);
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(snapshot));
+
+        var tsv = table.FormatDelimited('\t', [1, 0], table.Rows.Reverse());
+
+        Assert.Equal(
+            $"Name\tId{Environment.NewLine}Grace\t2{Environment.NewLine}Ada\t1",
+            tsv);
+    }
+
+    [Fact]
     public void ScalarSequencesOfferAnOptionalSingleValueColumn()
     {
         var snapshot = new ResultSnapshot(

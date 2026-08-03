@@ -54,6 +54,10 @@ public sealed class WorkerHost
                     StartOperation(transport, envelope, hostToken,
                         token => ExecuteAsync(transport, envelope, hostToken, token));
                     break;
+                case MessageKinds.InspectExpression:
+                    StartOperation(transport, envelope, hostToken,
+                        token => InspectExpressionAsync(transport, envelope, hostToken, token));
+                    break;
                 case MessageKinds.Cancel:
                     CancelCurrentOperation();
                     break;
@@ -195,6 +199,25 @@ public sealed class WorkerHost
         ReleaseOperation(operationToken);
         await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Completed, envelope.CorrelationId,
             new ExecutionCompletedEvent(request.SubmissionIndex, result.StateAccepted, Process.GetCurrentProcess().WorkingSet64)), hostToken).ConfigureAwait(false);
+    }
+
+    private async Task InspectExpressionAsync(
+        PipeTransport transport,
+        PipeEnvelope envelope,
+        CancellationToken hostToken,
+        CancellationToken operationToken)
+    {
+        var request = envelope.ReadPayload<InspectExpressionRequest>();
+        var result = await session.InspectExpressionAsync(request.Code, operationToken).ConfigureAwait(false);
+        ReleaseOperation(operationToken);
+        await transport.WriteAsync(PipeEnvelope.Create(
+            MessageKinds.InspectionResult,
+            envelope.CorrelationId,
+            new InspectionResultEvent(
+                result.Snapshot,
+                result.Diagnostics,
+                result.Exception,
+                result.TotalDiagnosticCount)), hostToken).ConfigureAwait(false);
     }
 
     private Task SendContextAsync(PipeTransport transport, Guid correlationId, CancellationToken cancellationToken)

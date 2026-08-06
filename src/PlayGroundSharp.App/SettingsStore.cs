@@ -54,7 +54,7 @@ internal static class SettingsStore
         }
     }
 
-    private static AppSettings Normalize(AppSettings settings) => settings with
+    internal static AppSettings Normalize(AppSettings settings) => settings with
     {
         WindowWidth = Normalize(settings.WindowWidth, 820, 10_000, 1200),
         WindowHeight = Normalize(settings.WindowHeight, 560, 10_000, 800),

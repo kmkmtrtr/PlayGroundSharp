@@ -1207,13 +1207,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void SaveSettings()
     {
-        settings = settings with
+        // Windows opened in the same process reuse this instance before settings are loaded again.
+        settings = SettingsStore.Normalize(settings with
         {
             ExecutionKeyMode = ExecutionKeyMode,
             ThemeMode = ThemeMode,
             LanguageMode = LanguageMode,
             TargetFramework = TargetFramework
-        };
+        });
         SettingsStore.Save(settings);
     }
 

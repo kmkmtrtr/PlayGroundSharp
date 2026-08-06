@@ -36,6 +36,60 @@ internal static class ResultExpressionBuilder
             : $"{AsSequence(tableExpression, model.SourceSnapshot)}.Select(item => {projection})";
     }
 
+    public static string? ForFilters(
+        string? tableExpression,
+        SnapshotTableModel model,
+        IReadOnlyDictionary<int, TableColumnFilter> filters)
+    {
+        if (string.IsNullOrWhiteSpace(tableExpression)) return null;
+        if (filters.Count == 0) return tableExpression.Trim();
+        if (!model.SourceRowsAreItems || RequiresShapeSafeAccess(tableExpression) ||
+            filters.Keys.Any(index => index < 0 || index >= model.Columns.Count))
+            return null;
+
+        var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
+        var predicates = new List<string>();
+        var filterIndex = 0;
+        foreach (var pair in filters.OrderBy(static pair => pair.Key))
+        {
+            var valueExpression = model.HasSyntheticValueColumn
+                ? "row"
+                : AppendProperty("row", rowSnapshot, model.Columns[pair.Key]);
+            if (valueExpression is null) return null;
+            var predicate = BuildFilterPredicate(
+                valueExpression,
+                pair.Value,
+                IsNumericColumn(model, pair.Key),
+                filterIndex++);
+            if (predicate is null) return null;
+            predicates.Add(predicate);
+        }
+
+        return $"{AsSequence(tableExpression, model.SourceSnapshot)}.Where(row => {string.Join(" && ", predicates)})";
+    }
+
+    public static string? ForFilteredColumns(
+        string? tableExpression,
+        SnapshotTableModel model,
+        IReadOnlyDictionary<int, TableColumnFilter> filters,
+        IReadOnlyList<int> columnIndexes)
+    {
+        if (filters.Count == 0) return ForColumns(tableExpression, model, columnIndexes);
+        var filteredExpression = ForFilters(tableExpression, model, filters);
+        if (filteredExpression is null ||
+            columnIndexes.Count == 0 ||
+            columnIndexes.Any(index => index < 0 || index >= model.Columns.Count))
+            return null;
+        if (columnIndexes.SequenceEqual(Enumerable.Range(0, model.Columns.Count)) ||
+            model.HasSyntheticValueColumn)
+            return filteredExpression;
+
+        var names = columnIndexes.Select(index => model.Columns[index]).ToArray();
+        var rowSnapshot = model.Rows.FirstOrDefault()?.Source ?? model.SourceSnapshot;
+        var projection = BuildColumnProjection("item", rowSnapshot, names);
+        return projection is null ? null : $"{filteredExpression}.Select(item => {projection})";
+    }
+
     public static string? ForCalculatedColumn(
         string? tableExpression,
         SnapshotTableModel model,
@@ -243,6 +297,89 @@ internal static class ResultExpressionBuilder
         return IsSimpleIdentifier(propertyName)
             ? $"{CSharpExpressionText.Receiver(expression)}.{propertyName}"
             : null;
+    }
+
+    private static string? BuildFilterPredicate(
+        string valueExpression,
+        TableColumnFilter filter,
+        bool numericColumn,
+        int filterIndex)
+    {
+        var operand = CSharpExpressionText.CastOperand(valueExpression);
+        var text = $"System.Convert.ToString((object?){operand}, System.Globalization.CultureInfo.InvariantCulture)";
+        if (filter.Operator == TableFilterOperator.IsEmpty)
+            return $"string.IsNullOrEmpty({text})";
+        if (filter.Operator == TableFilterOperator.IsNotEmpty)
+            return $"!string.IsNullOrEmpty({text})";
+
+        var isNumericOperator = filter.Operator is
+            TableFilterOperator.Equals or
+            TableFilterOperator.NotEquals or
+            TableFilterOperator.GreaterThan or
+            TableFilterOperator.GreaterThanOrEqual or
+            TableFilterOperator.LessThan or
+            TableFilterOperator.LessThanOrEqual;
+        if (numericColumn && isNumericOperator &&
+            double.TryParse(
+                filter.Value,
+                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var comparisonValue))
+        {
+            var comparisonOperator = filter.Operator switch
+            {
+                TableFilterOperator.Equals => "==",
+                TableFilterOperator.NotEquals => "!=",
+                TableFilterOperator.GreaterThan => ">",
+                TableFilterOperator.GreaterThanOrEqual => ">=",
+                TableFilterOperator.LessThan => "<",
+                TableFilterOperator.LessThanOrEqual => "<=",
+                _ => null
+            };
+            var parsedValue = $"filterValue{filterIndex}";
+            return $"(double.TryParse({text}, System.Globalization.NumberStyles.Float | " +
+                   $"System.Globalization.NumberStyles.AllowThousands, System.Globalization.CultureInfo.InvariantCulture, " +
+                   $"out var {parsedValue}) && {parsedValue} {comparisonOperator} {comparisonValue.ToString("R", System.Globalization.CultureInfo.InvariantCulture)})";
+        }
+
+        var quotedValue = QuoteString(filter.Value);
+        var stringPredicate = filter.Operator switch
+        {
+            TableFilterOperator.Equals =>
+                $"string.Equals({text}, {quotedValue}, System.StringComparison.OrdinalIgnoreCase)",
+            TableFilterOperator.NotEquals =>
+                $"!string.Equals({text}, {quotedValue}, System.StringComparison.OrdinalIgnoreCase)",
+            TableFilterOperator.Contains =>
+                $"{text}!.Contains({quotedValue}, System.StringComparison.OrdinalIgnoreCase)",
+            TableFilterOperator.DoesNotContain =>
+                $"!{text}!.Contains({quotedValue}, System.StringComparison.OrdinalIgnoreCase)",
+            TableFilterOperator.StartsWith =>
+                $"{text}!.StartsWith({quotedValue}, System.StringComparison.OrdinalIgnoreCase)",
+            TableFilterOperator.EndsWith =>
+                $"{text}!.EndsWith({quotedValue}, System.StringComparison.OrdinalIgnoreCase)",
+            TableFilterOperator.GreaterThan =>
+                $"string.Compare({text}, {quotedValue}, System.StringComparison.OrdinalIgnoreCase) > 0",
+            TableFilterOperator.GreaterThanOrEqual =>
+                $"string.Compare({text}, {quotedValue}, System.StringComparison.OrdinalIgnoreCase) >= 0",
+            TableFilterOperator.LessThan =>
+                $"string.Compare({text}, {quotedValue}, System.StringComparison.OrdinalIgnoreCase) < 0",
+            TableFilterOperator.LessThanOrEqual =>
+                $"string.Compare({text}, {quotedValue}, System.StringComparison.OrdinalIgnoreCase) <= 0",
+            _ => null
+        };
+        if (stringPredicate is not null)
+            return $"(!string.IsNullOrEmpty({text}) && {stringPredicate})";
+
+        return null;
+    }
+
+    private static bool IsNumericColumn(SnapshotTableModel model, int columnIndex)
+    {
+        var cells = model.Rows
+            .Select(row => row.Cells[columnIndex])
+            .Where(static cell => cell.Source?.Kind is not null and not SnapshotKind.Null)
+            .ToArray();
+        return cells.Length > 0 && cells.All(static cell => cell.Source!.Kind == SnapshotKind.Number);
     }
 
     private static string? BuildColumnProjection(

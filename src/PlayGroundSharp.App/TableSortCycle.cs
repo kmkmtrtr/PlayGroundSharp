@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace PlayGroundSharp.App;
 
@@ -46,6 +48,7 @@ internal sealed class TableSortHeader : Grid
         ClipToBounds = true;
         ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        ColumnDefinitions.Add(new() { Width = GridLength.Auto });
 
         Label = new()
         {
@@ -62,12 +65,25 @@ internal sealed class TableSortHeader : Grid
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        SetColumn(SortGlyph, 1);
+        FilterGlyph = new()
+        {
+            Width = 10,
+            Height = 10,
+            Margin = new(6, 0, 0, 0),
+            Data = Geometry.Parse("M0,0 L10,0 L6,5 L6,9 L4,7 L4,5 Z"),
+            Stretch = Stretch.Uniform,
+            Visibility = Visibility.Collapsed,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        SetColumn(FilterGlyph, 1);
+        SetColumn(SortGlyph, 2);
         Children.Add(Label);
+        Children.Add(FilterGlyph);
         Children.Add(SortGlyph);
     }
 
     public TextBlock Label { get; }
+    public Path FilterGlyph { get; }
     public TextBlock SortGlyph { get; }
 
     public override string ToString() => exportName;

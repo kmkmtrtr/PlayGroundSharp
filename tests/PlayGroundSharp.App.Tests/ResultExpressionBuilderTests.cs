@@ -419,6 +419,87 @@ public sealed class ResultExpressionBuilderTests
         Assert.Equal("customers.ElementAt(0)", expression);
     }
 
+    [Fact]
+    public async Task ColumnFiltersGenerateReusableStandardLinqWhereExpression()
+    {
+        var customers = Sequence(
+            Row(("Name", Text("Ada")), ("Age", Number("36"))),
+            Row(("Name", Text("Grace")), ("Age", Number("28"))));
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
+        var filters = new Dictionary<int, TableColumnFilter>
+        {
+            [0] = new(TableFilterOperator.Contains, "a"),
+            [1] = new(TableFilterOperator.GreaterThanOrEqual, "30")
+        };
+
+        var expression = ResultExpressionBuilder.ForFilters("customers", table, filters);
+
+        Assert.Contains("customers.Where(row =>", expression, StringComparison.Ordinal);
+        Assert.Contains("row.Name", expression, StringComparison.Ordinal);
+        Assert.Contains("row.Age", expression, StringComparison.Ordinal);
+        Assert.Contains("Contains(\"a\", System.StringComparison.OrdinalIgnoreCase)", expression, StringComparison.Ordinal);
+        Assert.Contains("filterValue1 >= 30", expression, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlayGroundSharp", expression, StringComparison.Ordinal);
+        var diagnostics = await new CSharpLanguageService().GetDiagnosticsAsync(
+            SessionContext.Empty with
+            {
+                Submissions =
+                [
+                    "var customers = new[] { new { Name = \"Ada\", Age = 36 }, new { Name = \"Grace\", Age = 28 } };"
+                ]
+            },
+            expression!);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public void EmptyFilterUsesStandardNullOrEmptyCheck()
+    {
+        var customers = Sequence(Row(("Name", Text("Ada"))));
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(customers));
+
+        var expression = ResultExpressionBuilder.ForFilters(
+            "customers",
+            table,
+            new Dictionary<int, TableColumnFilter>
+            {
+                [0] = new(TableFilterOperator.IsEmpty, string.Empty)
+            });
+
+        Assert.Contains("string.IsNullOrEmpty", expression, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void JsonFilteringAndProjectionEnumeratesTheArrayOnlyOnce()
+    {
+        var json = new ResultSnapshot(
+            SnapshotKind.Json,
+            "1 item",
+            "System.Text.Json.Nodes.JsonArray",
+            Items:
+            [
+                new(
+                    SnapshotKind.Json,
+                    "2 properties",
+                    "System.Text.Json.Nodes.JsonObject",
+                    Properties: [new("name", Text("Ada")), new("age", Number("36"))])
+            ]);
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(json));
+
+        var expression = ResultExpressionBuilder.ForFilteredColumns(
+            "json",
+            table,
+            new Dictionary<int, TableColumnFilter>
+            {
+                [0] = new(TableFilterOperator.Contains, "a")
+            },
+            [0]);
+
+        Assert.Equal(1, expression!.Split(".AsArray()", StringSplitOptions.None).Length - 1);
+        Assert.Contains(".Where(", expression, StringComparison.Ordinal);
+        Assert.Contains(".Select(", expression, StringComparison.Ordinal);
+    }
+
     private static ResultSnapshot Row(params (string Name, ResultSnapshot Value)[] properties) => new(
         SnapshotKind.Object,
         $"{properties.Length} properties",

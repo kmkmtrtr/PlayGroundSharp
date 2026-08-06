@@ -29,6 +29,7 @@ public partial class ResultInspectorWindow : Window
     private readonly Dictionary<DataGridColumn, TextBlock> tableSortGlyphs = [];
     private readonly Dictionary<DataGridColumn, FrameworkElement> tableSortHeaders = [];
     private readonly Stack<TableNavigationState> tableHistory = [];
+    private Dictionary<int, TableColumnFilter> tableColumnFilters = [];
     private SnapshotTableModel? tableModel;
     private TableColumnLayout? tableColumnLayout;
     private readonly DispatcherTimer searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
@@ -614,12 +615,14 @@ public partial class ResultInspectorWindow : Window
         SnapshotTableModel model,
         string path,
         string? expression,
-        TableColumnLayout? columnLayout = null)
+        TableColumnLayout? columnLayout = null,
+        IReadOnlyDictionary<int, TableColumnFilter>? columnFilters = null)
     {
         tableModel = model;
         tablePath = path;
         tableBaseExpression = expression;
         tableColumnLayout = columnLayout?.Clone() ?? new(model.Columns.Count);
+        tableColumnFilters = columnFilters?.ToDictionary() ?? [];
         UpdateProjectedTableExpression();
         ConfigureTable();
     }
@@ -644,6 +647,7 @@ public partial class ResultInspectorWindow : Window
             tablePath,
             tableBaseExpression,
             tableColumnLayout?.Clone() ?? new(tableModel.Columns.Count),
+            new Dictionary<int, TableColumnFilter>(tableColumnFilters),
             sourceIndex,
             columnIndex));
         ShowTable(nestedTable, path, expression);
@@ -654,7 +658,7 @@ public partial class ResultInspectorWindow : Window
     private bool NavigateToParentTable()
     {
         if (!tableHistory.TryPop(out var parent)) return false;
-        ShowTable(parent.Model, parent.Path, parent.BaseExpression, parent.ColumnLayout);
+        ShowTable(parent.Model, parent.Path, parent.BaseExpression, parent.ColumnLayout, parent.ColumnFilters);
         RestoreTableSelection(parent.SelectedSourceIndex, parent.SelectedColumnIndex);
         return true;
     }
@@ -695,6 +699,12 @@ public partial class ResultInspectorWindow : Window
             "AddCalculatedColumn",
             columnIndex,
             canAddCalculatedColumn);
+        ConfigureColumnMenuItem(menu, "FilterColumn", columnIndex, true);
+        ConfigureColumnMenuItem(
+            menu,
+            "ClearColumnFilter",
+            columnIndex,
+            tableColumnFilters.ContainsKey(columnIndex));
         ConfigureColumnMenuItem(
             menu,
             "ShowAllColumns",
@@ -760,6 +770,35 @@ public partial class ResultInspectorWindow : Window
         if (TryGetMenuColumnIndex(sender, out var columnIndex) &&
             tableColumnLayout?.MoveRight(columnIndex) == true)
             ApplyTableColumnLayout();
+    }
+
+    private void FilterColumn_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetMenuColumnIndex(sender, out var columnIndex) ||
+            tableModel is null ||
+            columnIndex < 0 ||
+            columnIndex >= tableModel.Columns.Count)
+            return;
+
+        tableColumnFilters.TryGetValue(columnIndex, out var currentFilter);
+        var dialog = new ColumnFilterDialog(
+            languageMode,
+            tableModel.Columns[columnIndex],
+            currentFilter)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true) return;
+        if (dialog.WasCleared) tableColumnFilters.Remove(columnIndex);
+        else if (dialog.AppliedFilter is { } filter) tableColumnFilters[columnIndex] = filter;
+        ApplyTableFilters();
+    }
+
+    private void ClearColumnFilter_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryGetMenuColumnIndex(sender, out var columnIndex) &&
+            tableColumnFilters.Remove(columnIndex))
+            ApplyTableFilters();
     }
 
     private void AddCalculatedColumn_Click(object sender, RoutedEventArgs e)
@@ -848,6 +887,7 @@ public partial class ResultInspectorWindow : Window
             tablePath,
             baseExpression,
             layout,
+            new Dictionary<int, TableColumnFilter>(tableColumnFilters),
             selectedSourceIndex,
             columnIndex));
         ShowTable(calculatedModel, tablePath, expression);
@@ -932,6 +972,7 @@ public partial class ResultInspectorWindow : Window
             tablePath,
             tableBaseExpression,
             tableColumnLayout?.Clone() ?? new(tableModel.Columns.Count),
+            new Dictionary<int, TableColumnFilter>(tableColumnFilters),
             selectedSourceIndex,
             selectedColumnIndex));
         ShowTable(flattenedTable, path, expression);
@@ -950,7 +991,7 @@ public partial class ResultInspectorWindow : Window
             !tableHistory.TryPop(out var parent))
             return;
 
-        ShowTable(parent.Model, parent.Path, parent.BaseExpression, parent.ColumnLayout);
+        ShowTable(parent.Model, parent.Path, parent.BaseExpression, parent.ColumnLayout, parent.ColumnFilters);
         RestoreTableSelection(origin.ParentSourceIndex, origin.ParentColumnIndex);
     }
 
@@ -1137,6 +1178,7 @@ public partial class ResultInspectorWindow : Window
             // Attach the potentially large row source after all columns are ready. Adding
             // columns to a live ItemsSource repeatedly invalidates the DataGrid layout.
             TableGrid.ItemsSource = tableModel.Rows;
+            ApplyTableFiltersToView();
             UpdateTableSummary();
             StartTableCacheWarmup();
         }
@@ -1157,7 +1199,8 @@ public partial class ResultInspectorWindow : Window
             name,
             profile.IsMixed ? $"{name} ⚠" : name);
         header.SortGlyph.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
-        header.ToolTip = BuildTableColumnHeaderTooltip(profile, canFlatten);
+        header.FilterGlyph.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "AccentBrush");
+        header.ToolTip = BuildTableColumnHeaderTooltip(profile, canFlatten, null);
         tableSortGlyphs.Add(column, header.SortGlyph);
         tableSortHeaders.Add(column, header);
         return header;
@@ -1174,18 +1217,25 @@ public partial class ResultInspectorWindow : Window
 
         var profile = tableModel.GetColumnProfile(columnIndex);
         glyph.Text = TableSortCycle.Glyph(state);
+        var filter = tableColumnFilters.GetValueOrDefault(columnIndex);
+        if (header is TableSortHeader tableHeader)
+            tableHeader.FilterGlyph.Visibility = filter is null
+                ? Visibility.Collapsed
+                : Visibility.Visible;
         header.ToolTip = BuildTableColumnHeaderTooltip(
             profile,
-            tableModel.CanFlattenColumn(columnIndex));
+            tableModel.CanFlattenColumn(columnIndex),
+            filter);
         var stateKey = state switch
         {
             TableSortState.Ascending => "Inspector.SortAscending",
             TableSortState.Descending => "Inspector.SortDescending",
             _ => "Inspector.SortOriginal"
         };
-        AutomationProperties.SetName(
-            header,
-            $"{tableModel.Columns[columnIndex]}, {AppLocalization.Text(languageMode, stateKey)}");
+        var automationName = $"{tableModel.Columns[columnIndex]}, {AppLocalization.Text(languageMode, stateKey)}";
+        if (filter is not null)
+            automationName += $", {AppLocalization.Text(languageMode, "Inspector.FilteredColumn")}";
+        AutomationProperties.SetName(header, automationName);
     }
 
     private void UpdateTableExpression()
@@ -1229,17 +1279,23 @@ public partial class ResultInspectorWindow : Window
 
     private void UpdateProjectedTableExpression()
     {
-        tableExpression = tableModel is null || tableColumnLayout is null
-            ? tableBaseExpression
-            : ResultExpressionBuilder.ForColumns(
-                tableBaseExpression,
-                tableModel,
-                tableColumnLayout.VisibleColumnIndexes);
+        if (tableModel is null || tableColumnLayout is null)
+        {
+            tableExpression = tableBaseExpression;
+            return;
+        }
+
+        tableExpression = ResultExpressionBuilder.ForFilteredColumns(
+            tableBaseExpression,
+            tableModel,
+            tableColumnFilters,
+            tableColumnLayout.VisibleColumnIndexes);
     }
 
     private string BuildTableColumnHeaderTooltip(
         SnapshotTableColumnProfile profile,
-        bool canFlatten)
+        bool canFlatten,
+        TableColumnFilter? filter)
     {
         var parts = new List<string>();
         if (profile.IsMixed)
@@ -1252,8 +1308,36 @@ public partial class ResultInspectorWindow : Window
                 profile.NullCount));
         if (canFlatten)
             parts.Add(AppLocalization.Text(languageMode, "Inspector.FlattenColumnTooltip"));
+        if (filter is not null)
+        {
+            var condition = AppLocalization.Text(
+                languageMode,
+                $"Inspector.FilterOperator.{filter.Operator}");
+            parts.Add(filter.RequiresValue
+                ? AppLocalization.Text(languageMode, "Inspector.ActiveColumnFilter", condition, filter.Value)
+                : AppLocalization.Text(languageMode, "Inspector.ActiveColumnFilterWithoutValue", condition));
+        }
         parts.Add(AppLocalization.Text(languageMode, "Inspector.SortColumnTooltip"));
         return string.Join(Environment.NewLine, parts);
+    }
+
+    private void ApplyTableFilters()
+    {
+        ApplyTableFiltersToView();
+        foreach (var column in tableSortStates.Keys)
+            UpdateTableSortHeader(column);
+        RefreshTableColumnState();
+    }
+
+    private void ApplyTableFiltersToView()
+    {
+        if (CollectionViewSource.GetDefaultView(TableGrid.ItemsSource) is not ListCollectionView view)
+            return;
+        view.Filter = tableColumnFilters.Count == 0
+            ? null
+            : item => item is SnapshotTableRow row &&
+                TableColumnFilter.MatchesRow(row, tableColumnFilters);
+        view.Refresh();
     }
 
     private void RestoreTableSelection(int sourceIndex, int columnIndex)
@@ -1356,15 +1440,24 @@ public partial class ResultInspectorWindow : Window
     private void UpdateTableSummary()
     {
         if (tableModel is null) return;
+        var visibleRowCount = CollectionViewSource.GetDefaultView(TableGrid.ItemsSource) is { } view
+            ? view.Cast<object>().Count()
+            : tableModel.Rows.Count;
         var parts = new List<string>
         {
             tablePath,
             AppLocalization.Text(
                 languageMode,
                 "Inspector.TableSummary",
-                tableModel.Rows.Count,
+                visibleRowCount,
                 tableColumnLayout?.VisibleCount ?? tableModel.Columns.Count)
         };
+        if (tableColumnFilters.Count > 0)
+            parts.Add(AppLocalization.Text(
+                languageMode,
+                "Inspector.FilteredRows",
+                visibleRowCount,
+                tableModel.Rows.Count));
         if (tableColumnLayout is { } layout && layout.VisibleCount < tableModel.Columns.Count)
             parts.Add(AppLocalization.Text(
                 languageMode,
@@ -1508,6 +1601,7 @@ public partial class ResultInspectorWindow : Window
         string Path,
         string? BaseExpression,
         TableColumnLayout ColumnLayout,
+        IReadOnlyDictionary<int, TableColumnFilter> ColumnFilters,
         int SelectedSourceIndex,
         int SelectedColumnIndex);
 

@@ -43,7 +43,23 @@ public sealed class TableSortCycleTests
             Assert.Equal(TextTrimming.CharacterEllipsis, header.Label.TextTrimming);
             Assert.Equal(GridUnitType.Star, header.ColumnDefinitions[0].Width.GridUnitType);
             Assert.Equal(GridUnitType.Auto, header.ColumnDefinitions[1].Width.GridUnitType);
+            Assert.Equal(GridUnitType.Auto, header.ColumnDefinitions[2].Width.GridUnitType);
             Assert.Equal(12, header.SortGlyph.ActualWidth);
+            Assert.True(header.Label.ActualWidth < header.ActualWidth);
+        });
+    }
+
+    [Fact]
+    public void FilterGlyphKeepsItsOwnHeaderSpace()
+    {
+        RunOnStaThread(() =>
+        {
+            var header = new TableSortHeader("Name", "Name") { Width = 120 };
+            header.FilterGlyph.Visibility = Visibility.Visible;
+            header.Measure(new Size(120, 26));
+            header.Arrange(new Rect(0, 0, 120, 26));
+
+            Assert.Equal(10, header.FilterGlyph.ActualWidth);
             Assert.True(header.Label.ActualWidth < header.ActualWidth);
         });
     }

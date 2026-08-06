@@ -184,6 +184,10 @@
                                   Tag="MoveColumnRight" Click="MoveColumnRight_Click" />
                         <MenuItem Header="{DynamicResource Inspector.AddCalculatedColumn}"
                                   Tag="AddCalculatedColumn" Click="AddCalculatedColumn_Click" />
+                        <MenuItem Header="{DynamicResource Inspector.FilterColumn}"
+                                  Tag="FilterColumn" Click="FilterColumn_Click" />
+                        <MenuItem Header="{DynamicResource Inspector.ClearColumnFilter}"
+                                  Tag="ClearColumnFilter" Click="ClearColumnFilter_Click" />
                         <Separator />
                         <MenuItem Header="{DynamicResource Inspector.ShowColumn}" Tag="ShowColumn" />
                         <MenuItem Header="{DynamicResource Inspector.ShowAllColumns}"

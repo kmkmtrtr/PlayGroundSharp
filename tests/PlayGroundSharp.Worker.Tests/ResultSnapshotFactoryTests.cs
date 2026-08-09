@@ -340,6 +340,61 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public void LongJsonStringDoesNotConsumeTextBudgetNeededByLaterProperties()
+    {
+        var json = new JsonObject
+        {
+            ["large"] = new string('x', 100),
+            ["after"] = "visible"
+        };
+
+        var snapshot = factory.Create(json, maximumNodes: 100, maximumTextCharacters: 40);
+
+        var properties = Assert.IsAssignableFrom<IReadOnlyList<ResultProperty>>(snapshot.Properties);
+        var large = Assert.Single(properties, static property => property.Name == "large").Value;
+        var after = Assert.Single(properties, static property => property.Name == "after").Value;
+        Assert.True(large.IsTruncated);
+        Assert.Equal("visible", after.Display);
+        Assert.False(after.IsTruncated);
+    }
+
+    [Fact]
+    public void NestedLongJsonStringPreservesBudgetsForNestedAndParentSiblings()
+    {
+        var json = new JsonObject
+        {
+            ["nested"] = new JsonObject
+            {
+                ["large"] = new string('x', 100),
+                ["insideAfter"] = "inside"
+            },
+            ["after"] = "outside"
+        };
+
+        var snapshot = factory.Create(json, maximumNodes: 100, maximumTextCharacters: 48);
+
+        var nested = Assert.Single(snapshot.Properties!, static property => property.Name == "nested").Value;
+        Assert.Equal(
+            "inside",
+            Assert.Single(nested.Properties!, static property => property.Name == "insideAfter").Value.Display);
+        Assert.Equal(
+            "outside",
+            Assert.Single(snapshot.Properties!, static property => property.Name == "after").Value.Display);
+    }
+
+    [Fact]
+    public void LongJsonArrayItemDoesNotConsumeTextBudgetNeededByLaterItems()
+    {
+        var json = new JsonArray(new string('x', 100), "visible");
+
+        var snapshot = factory.Create(json, maximumNodes: 100, maximumTextCharacters: 40);
+
+        Assert.True(snapshot.Items![0].IsTruncated);
+        Assert.Equal("visible", snapshot.Items[1].Display);
+        Assert.False(snapshot.Items[1].IsTruncated);
+    }
+
+    [Fact]
     public void SnapshotsExceptions()
     {
         var snapshot = factory.Create(new InvalidOperationException("boom"));

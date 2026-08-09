@@ -19,6 +19,7 @@ public sealed class ResultSnapshotFactory
     public const int MaximumTextCharacters = 10 * 1024 * 1024;
     public const int MaximumExceptionTextLength = 64 * 1024;
     private const int MaximumExceptionDepth = 8;
+    private const int MinimumJsonSiblingTextCharacters = 4 * 1024;
 
     public ResultSnapshot Create(object? value) => Create(
         value,
@@ -896,7 +897,8 @@ public sealed class ResultSnapshotFactory
         string typeName,
         int depth,
         SnapshotBudget budget,
-        bool nodeAlreadyTaken = false)
+        bool nodeAlreadyTaken = false,
+        int reservedTextCharacters = 0)
     {
         if (!nodeAlreadyTaken && !budget.TryTakeNode())
             return new(SnapshotKind.MaxDepth, "… snapshot limit reached", typeName, IsTruncated: true);
@@ -912,8 +914,18 @@ public sealed class ResultSnapshotFactory
                 foreach (var property in element.EnumerateObject())
                 {
                     if (!budget.CanTakeNode) break;
+                    var remainingSiblings = propertyCount - properties.Count - 1;
+                    var childReservation = budget.ReserveTextForSiblings(
+                        reservedTextCharacters,
+                        remainingSiblings,
+                        MinimumJsonSiblingTextCharacters);
                     properties.Add(new(property.Name,
-                        CreateJsonElement(property.Value, typeName, depth + 1, budget)));
+                        CreateJsonElement(
+                            property.Value,
+                            typeName,
+                            depth + 1,
+                            budget,
+                            reservedTextCharacters: childReservation)));
                 }
                 return new(
                     SnapshotKind.Json,
@@ -930,7 +942,18 @@ public sealed class ResultSnapshotFactory
                 foreach (var item in element.EnumerateArray())
                 {
                     if (items.Count >= MaximumItems || !budget.CanTakeNode) break;
-                    items.Add(CreateJsonElement(item, typeName, depth + 1, budget));
+                    var capturedItemCount = Math.Min(itemCount, MaximumItems);
+                    var remainingSiblings = capturedItemCount - items.Count - 1;
+                    var childReservation = budget.ReserveTextForSiblings(
+                        reservedTextCharacters,
+                        remainingSiblings,
+                        MinimumJsonSiblingTextCharacters);
+                    items.Add(CreateJsonElement(
+                        item,
+                        typeName,
+                        depth + 1,
+                        budget,
+                        reservedTextCharacters: childReservation));
                 }
                 return new(
                     SnapshotKind.Json,
@@ -945,7 +968,11 @@ public sealed class ResultSnapshotFactory
                 var text = element.GetString() ?? string.Empty;
                 return new(
                     SnapshotKind.String,
-                    budget.TakeText(text, MaximumStringLength, out var truncated),
+                    budget.TakeText(
+                        text,
+                        MaximumStringLength,
+                        out var truncated,
+                        reservedTextCharacters),
                     typeName,
                     IsTruncated: truncated);
             }
@@ -990,10 +1017,39 @@ public sealed class ResultSnapshotFactory
             return true;
         }
 
-        public string TakeText(string value, int perValueMaximum, out bool truncated)
+        public int ReserveTextForSiblings(
+            int inheritedReservation,
+            int remainingSiblingCount,
+            int preferredCharactersPerSibling)
+        {
+            if (remainingSiblingCount <= 0) return Math.Min(inheritedReservation, remainingTextCharacters);
+
+            var protectedCharacters = Math.Min(inheritedReservation, remainingTextCharacters);
+            var availableCharacters = remainingTextCharacters - protectedCharacters;
+            if (availableCharacters <= 0) return protectedCharacters;
+
+            // Keep a modest amount for every following sibling. If the remaining budget
+            // cannot provide that amount, divide it fairly so the current value cannot
+            // starve all later values.
+            var fairCharactersPerValue = availableCharacters / (remainingSiblingCount + 1);
+            var charactersPerSibling = Math.Min(preferredCharactersPerSibling, fairCharactersPerValue);
+            var siblingReservation = Math.Min(
+                availableCharacters,
+                (long)charactersPerSibling * remainingSiblingCount);
+            return protectedCharacters + (int)siblingReservation;
+        }
+
+        public string TakeText(
+            string value,
+            int perValueMaximum,
+            out bool truncated,
+            int reservedTextCharacters = 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var length = Math.Min(value.Length, Math.Min(perValueMaximum, remainingTextCharacters));
+            var availableCharacters = Math.Max(
+                0,
+                remainingTextCharacters - Math.Min(reservedTextCharacters, remainingTextCharacters));
+            var length = Math.Min(value.Length, Math.Min(perValueMaximum, availableCharacters));
             remainingTextCharacters -= length;
             truncated = length < value.Length;
             return length == value.Length ? value : value[..length];

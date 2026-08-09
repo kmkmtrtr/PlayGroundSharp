@@ -88,6 +88,9 @@ public sealed class CSharpLanguageServiceTests
         Assert.Contains(items, static item => item.DisplayText == "ReadLines");
         Assert.Contains(items, static item => item.DisplayText == "ReadJsonAsync");
         Assert.Contains(items, static item => item.DisplayText == "ReadJsonArrayAsync");
+        Assert.Contains(items, static item => item.DisplayText == "ReadJsonLinesAsync");
+        Assert.Contains(items, static item => item.DisplayText == "ReadAllJsonLinesAsync");
+        Assert.Contains(items, static item => item.DisplayText == "StreamJsonLinesAsync");
     }
 
     [Fact]

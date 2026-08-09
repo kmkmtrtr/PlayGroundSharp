@@ -33,6 +33,7 @@ public sealed class LargeDataAccess
     public const int MaximumPreviewCharacters = 1_048_576;
     public const int MaximumByteReadCount = 1_048_576;
     public const int MaximumJsonItemCount = 10_000;
+    public const int DefaultJsonPreviewItemCount = 1_000;
 
     /// <summary>Reads one complete JSON value such as an object, scalar, or array.</summary>
     public async Task<JsonNode?> ReadJsonAsync(
@@ -86,7 +87,7 @@ public sealed class LargeDataAccess
     /// <summary>Streams a top-level JSON array and retains only the requested number of elements.</summary>
     public async Task<IReadOnlyList<JsonNode?>> ReadJsonArrayAsync(
         string path,
-        int take = 100,
+        int take = DefaultJsonPreviewItemCount,
         CancellationToken cancellationToken = default)
     {
         var file = GetFile(path);
@@ -107,8 +108,49 @@ public sealed class LargeDataAccess
         return new BoundedJsonNodeList(items, hasMoreItems);
     }
 
+    /// <summary>Reads the leading values from newline-delimited JSON without loading the whole file.</summary>
+    public async Task<IReadOnlyList<JsonNode?>> ReadJsonLinesAsync(
+        string path,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var boundedTake = ValidateRange(take, 1, MaximumJsonItemCount, nameof(take));
+        var items = new List<JsonNode?>(Math.Min(boundedTake, 256));
+        var hasMoreItems = false;
+        await foreach (var item in StreamJsonLinesAsync(path, cancellationToken)
+                           .WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            if (items.Count >= boundedTake)
+            {
+                hasMoreItems = true;
+                break;
+            }
+            items.Add(item);
+        }
+        return new BoundedJsonNodeList(items, hasMoreItems);
+    }
+
+    /// <summary>Reads every value from newline-delimited JSON into memory.</summary>
+    /// <remarks>Prefer the bounded overload or <see cref="StreamJsonLinesAsync"/> for large files.</remarks>
+    public async Task<IReadOnlyList<JsonNode?>> ReadAllJsonLinesAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        var items = new List<JsonNode?>();
+        await foreach (var item in StreamJsonLinesAsync(path, cancellationToken)
+                           .WithCancellation(cancellationToken).ConfigureAwait(false))
+            items.Add(item);
+        return items;
+    }
+
+    /// <summary>Compatibility overload that streams newline-delimited JSON.</summary>
+    public IAsyncEnumerable<JsonNode?> ReadJsonLinesAsync(
+        string path,
+        CancellationToken cancellationToken = default) =>
+        StreamJsonLinesAsync(path, cancellationToken);
+
     /// <summary>Streams newline-delimited JSON and parses one independent value at a time.</summary>
-    public async IAsyncEnumerable<JsonNode?> ReadJsonLinesAsync(
+    public async IAsyncEnumerable<JsonNode?> StreamJsonLinesAsync(
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {

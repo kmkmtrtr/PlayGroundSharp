@@ -762,4 +762,61 @@ public sealed class ScriptSessionTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task JsonLinesPreviewSnapshotReportsUncapturedItems()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.jsonl");
+        await File.WriteAllTextAsync(path, "1\n2\n3\n");
+        try
+        {
+            var result = await new ScriptSession().ExecuteAsync(
+                1,
+                DataSnippetBuilder.CreateJsonLines(path, 2));
+
+            Assert.True(result.StateAccepted);
+            Assert.True(result.Snapshot?.IsTruncated);
+            Assert.Null(result.Snapshot?.TotalCount);
+            Assert.Equal(2, result.Snapshot?.Items?.Count);
+            Assert.Equal("2 captured items", result.Snapshot?.Display);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ExecutesGeneratedMixedJsonAndJsonLinesSnippet()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-JsonBatch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var paths = new[]
+        {
+            Path.Combine(directory, "one.json"),
+            Path.Combine(directory, "two.jsonl"),
+            Path.Combine(directory, "three.ndjson")
+        };
+        await File.WriteAllTextAsync(paths[0], "{\"id\":1}");
+        await File.WriteAllTextAsync(paths[1], "{\"id\":2}\n{\"id\":3}\n");
+        await File.WriteAllTextAsync(paths[2], "{\"id\":4}\n");
+        try
+        {
+            var result = await new ScriptSession().ExecuteAsync(
+                1,
+                DataSnippetBuilder.CreateJsonFilesBatch(paths));
+
+            Assert.True(result.StateAccepted,
+                string.Join(" | ", result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+            Assert.Equal(4, result.Snapshot?.TotalCount);
+            Assert.Equal(
+                ["1", "2", "3", "4"],
+                result.Snapshot?.Items?.Select(static item =>
+                    item.Properties?.Single(property => property.Name == "id").Value.Display));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 }

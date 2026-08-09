@@ -610,7 +610,7 @@ public partial class Home
         var literal = DataSnippetBuilder.ToVerbatimStringLiteral(path);
         return Path.GetExtension(fileName).ToLowerInvariant() switch
         {
-            ".json" => $"await Data.ReadJsonAsync({literal})",
+            ".json" => $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)",
             ".jsonl" or ".ndjson" => DataSnippetBuilder.CreateJsonLines(path),
             _ => $"Data.PreviewText({literal}, 65536)"
         };

@@ -48,6 +48,26 @@ public sealed class DataTypeInferenceTests
     }
 
     [Fact]
+    public async Task AvoidsPropertyNamesMatchingTheirContainingType()
+    {
+        var snapshot = JsonObject(("a", JsonObject(("a", Number("1")))));
+
+        var result = DataTypeInference.Generate(snapshot, "json", "RootModel", "typedJson")!;
+        var service = new CSharpLanguageService();
+        var diagnostics = await service.GetDiagnosticsAsync(
+            SessionContext.Empty with
+            {
+                Submissions = ["JsonNode json = JsonNode.Parse(\"{\\\"a\\\":{\\\"a\\\":1}}\")!;"]
+            },
+            result.GeneratedCode);
+
+        Assert.Contains("public sealed class A", result.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains("JsonPropertyName(\"a\")", result.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains("public int A2", result.GeneratedCode, StringComparison.Ordinal);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public void InfersClrQueryRowsUsingRuntimeNumberTypes()
     {
         var row = new ResultSnapshot(
@@ -135,6 +155,55 @@ public sealed class DataTypeInferenceTests
         var row = Assert.Single(variable.Value.Items!);
         Assert.Contains(row.Properties!, property => property.Name == "Customer" && property.Value.Display == "A");
         Assert.Contains(row.Properties!, property => property.Name == "Quantity" && property.Value.Display == "2");
+    }
+
+    [Fact]
+    public async Task ClrProjectionPreservesIPAddressWithoutJsonRoundTrip()
+    {
+        var session = new ScriptSession();
+        var source = await session.ExecuteAsync(
+            1,
+            "dynamic row = new global::System.Dynamic.ExpandoObject(); " +
+            "row.Host = \"local\"; row.Address = global::System.Net.IPAddress.Loopback; " +
+            "var rows = new[] { row }; rows");
+        var generated = DataTypeInference.Generate(source.Snapshot!, "rows", "Endpoint", "typedRows")!;
+
+        Assert.Contains("global::System.Net.IPAddress Address", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("JsonSerializer", generated.GeneratedCode, StringComparison.Ordinal);
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var verification = await session.ExecuteAsync(3, "typedRows[0].Address.ToString()");
+
+        Assert.True(source.StateAccepted);
+        Assert.True(projection.StateAccepted);
+        Assert.DoesNotContain(projection.Diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.True(verification.StateAccepted);
+        Assert.Equal("127.0.0.1", verification.Snapshot?.Display);
+    }
+
+    [Fact]
+    public void ClrProjectionOmitsUnreadableProperties()
+    {
+        var row = new ResultSnapshot(
+            SnapshotKind.Object,
+            "2 members",
+            "Row",
+            [
+                new("Name", new(SnapshotKind.String, "Ada", "System.String", TypeExpression: "string", IsReferenceType: true)),
+                new(
+                    "Dangerous",
+                    new(SnapshotKind.Exception, "boom", "System.InvalidOperationException"),
+                    "string",
+                    true,
+                    IsReadable: false)
+            ]);
+        var rows = new ResultSnapshot(SnapshotKind.Sequence, "1 item", "Row[]", Items: [row]);
+
+        var generated = DataTypeInference.Generate(rows, "rows", "RowModel", "typedRows")!;
+
+        Assert.Contains("string Name", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dangerous", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains(DataTypeInferenceWarning.UnreadableProperty, generated.Warnings);
     }
 
     private static ResultSnapshot JsonObject(params (string Name, ResultSnapshot Value)[] properties) =>

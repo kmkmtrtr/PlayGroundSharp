@@ -100,6 +100,7 @@ public partial class DataTypeInferenceDialog : Window
         DataTypeInferenceWarning.TruncatedSnapshot => "DataInference.WarningTruncated",
         DataTypeInferenceWarning.FallbackType => "DataInference.WarningFallback",
         DataTypeInferenceWarning.EmptyCollection => "DataInference.WarningEmptyCollection",
+        DataTypeInferenceWarning.UnreadableProperty => "DataInference.WarningUnreadableProperty",
         _ => "DataInference.WarningFallback"
     };
 

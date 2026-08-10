@@ -276,6 +276,7 @@
                                             <DataTrigger Binding="{Binding Kind}" Value="delegate"><Setter Property="Foreground" Value="{DynamicResource ExplorerDelegateBrush}" /></DataTrigger>
                                             <DataTrigger Binding="{Binding Kind}" Value="method"><Setter Property="Foreground" Value="{DynamicResource ExplorerMethodBrush}" /></DataTrigger>
                                             <DataTrigger Binding="{Binding Kind}" Value="constructor"><Setter Property="Foreground" Value="{DynamicResource ExplorerMethodBrush}" /></DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="property"><Setter Property="Foreground" Value="{DynamicResource ExplorerMethodBrush}" /></DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                     <HierarchicalDataTemplate DataType="{x:Type local:SymbolExplorerNode}" ItemsSource="{Binding Children}">

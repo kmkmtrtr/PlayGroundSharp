@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer signatureHelpTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
     private readonly DispatcherTimer completionDescriptionTimer = new() { Interval = TimeSpan.FromMilliseconds(140) };
     private readonly DispatcherTimer hoverQuickInfoTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
+    private readonly DispatcherTimer hoverQuickInfoCloseTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly DispatcherTimer quickInfoChordTimer = new() { Interval = TimeSpan.FromSeconds(2.5) };
     private DiagnosticUnderlineRenderer? diagnosticUnderlineRenderer;
     private AssistMode assistMode;
@@ -52,6 +53,8 @@ public partial class MainWindow : Window
     private bool copyInProgress;
     private Action? quickInfoChordStatusRestore;
     private Point? hoverQuickInfoPoint;
+    private int hoverQuickInfoSpanStart = -1;
+    private int hoverQuickInfoSpanEnd = -1;
     private bool quickInfoChordPending;
     private WindowState lastNonMinimizedWindowState = WindowState.Normal;
     private bool typeExplorerAutoCollapsed;
@@ -109,6 +112,12 @@ public partial class MainWindow : Window
             var point = hoverQuickInfoPoint;
             hoverQuickInfoPoint = null;
             if (point is not null) await ShowHoverQuickInfoAsync(point.Value);
+        };
+        hoverQuickInfoCloseTimer.Tick += (_, _) =>
+        {
+            hoverQuickInfoCloseTimer.Stop();
+            if (!Editor.IsMouseOver && !HoverQuickInfoBorder.IsMouseOver)
+                CancelHoverQuickInfo();
         };
         quickInfoChordTimer.Tick += (_, _) => CancelQuickInfoChord();
     }
@@ -451,7 +460,8 @@ public partial class MainWindow : Window
             !IsDescendantOf(source, AssistPopupBorder))
             HideAssist();
         if (SymbolDetailPopup.IsOpen &&
-            FindAncestor<TreeView>(source) != TypeExplorerTree)
+            FindAncestor<TreeView>(source) != TypeExplorerTree &&
+            !IsDescendantOf(source, SymbolDetailPopupBorder))
             SymbolDetailPopup.IsOpen = false;
         if (QuickInfoPopup.IsOpen &&
             FindAncestor<ICSharpCode.AvalonEdit.TextEditor>(source) != Editor)
@@ -977,12 +987,25 @@ public partial class MainWindow : Window
     private void OpenSymbolDocumentation_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: SymbolExplorerNode { DocumentationPath: { } path } }) return;
-        var locale = viewModel.LanguageMode == AppLanguageMode.Japanese ? "ja-jp" : "en-us";
-        var documentationView = viewModel.TargetFramework.Replace("net", "net-", StringComparison.Ordinal);
+        e.Handled = true;
+        OpenMicrosoftLearnDocumentation(path);
+    }
+
+    private void OpenQuickInfoDocumentation_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string path }) return;
+        e.Handled = true;
+        OpenMicrosoftLearnDocumentation(path);
+    }
+
+    private void OpenMicrosoftLearnDocumentation(string path)
+    {
         try
         {
-            Process.Start(new ProcessStartInfo(
-                $"https://learn.microsoft.com/{locale}/dotnet/api/{path}?view={documentationView}")
+            Process.Start(new ProcessStartInfo(MicrosoftLearnDocumentation.CreateUri(
+                path,
+                viewModel.LanguageMode,
+                viewModel.TargetFramework).AbsoluteUri)
             {
                 UseShellExecute = true
             });
@@ -2269,6 +2292,7 @@ public partial class MainWindow : Window
                 return;
             }
             QuickInfoDocumentation.ShowQuickInfo(result.Text);
+            SetDocumentationButton(QuickInfoLearnButton, result.DocumentationPath);
             QuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth * 1.15, 480, 680);
             QuickInfoPopup.IsOpen = true;
             viewModel.ShowStatusNotification("Status.QuickInfoShown");
@@ -2292,16 +2316,22 @@ public partial class MainWindow : Window
     {
         QuickInfoPopup.IsOpen = false;
         QuickInfoDocumentation.Clear();
+        SetDocumentationButton(QuickInfoLearnButton, null);
         pinnedQuickInfoCancellation?.Cancel();
     }
 
     private void Editor_MouseMove(object sender, MouseEventArgs e)
     {
-        hoverQuickInfoPoint = e.GetPosition(Editor);
+        hoverQuickInfoCloseTimer.Stop();
+        var point = e.GetPosition(Editor);
+        if (HoverQuickInfoPopup.IsOpen &&
+            TryGetEditorOffset(point, out var offset) &&
+            offset >= hoverQuickInfoSpanStart && offset < hoverQuickInfoSpanEnd)
+            return;
+        hoverQuickInfoPoint = point;
         hoverQuickInfoTimer.Stop();
         hoverQuickInfoTimer.Start();
         CancelAndDispose(ref hoverQuickInfoCancellation);
-        CloseHoverQuickInfo();
     }
 
     private async Task ShowHoverQuickInfoAsync(Point point)
@@ -2318,6 +2348,9 @@ public partial class MainWindow : Window
                 Math.Abs(currentPoint.Y - point.Y) <= 4)
             {
                 HoverQuickInfoDocumentation.ShowDiagnostics(diagnostics);
+                hoverQuickInfoSpanStart = offset;
+                hoverQuickInfoSpanEnd = Math.Min(Editor.Document.TextLength, offset + 1);
+                SetDocumentationButton(HoverQuickInfoLearnButton, null);
                 HoverQuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth * 1.15, 380, 620);
                 HoverQuickInfoPopup.IsOpen = true;
             }
@@ -2343,6 +2376,9 @@ public partial class MainWindow : Window
                     return;
                 }
                 HoverQuickInfoDocumentation.ShowQuickInfo(result.Text);
+                hoverQuickInfoSpanStart = result.SpanStart;
+                hoverQuickInfoSpanEnd = result.SpanEnd;
+                SetDocumentationButton(HoverQuickInfoLearnButton, result.DocumentationPath);
                 HoverQuickInfoBorder.Width = Math.Clamp(Editor.ActualWidth * 1.15, 480, 680);
                 HoverQuickInfoPopup.IsOpen = true;
             }
@@ -2364,12 +2400,29 @@ public partial class MainWindow : Window
 
     private void Editor_MouseLeave(object sender, MouseEventArgs e)
     {
-        CancelHoverQuickInfo();
+        hoverQuickInfoTimer.Stop();
+        hoverQuickInfoPoint = null;
+        CancelAndDispose(ref hoverQuickInfoCancellation);
+        ScheduleHoverQuickInfoClose();
+    }
+
+    private void HoverQuickInfoBorder_MouseEnter(object sender, MouseEventArgs e) =>
+        hoverQuickInfoCloseTimer.Stop();
+
+    private void HoverQuickInfoBorder_MouseLeave(object sender, MouseEventArgs e) =>
+        ScheduleHoverQuickInfoClose();
+
+    private void ScheduleHoverQuickInfoClose()
+    {
+        if (!HoverQuickInfoPopup.IsOpen) return;
+        hoverQuickInfoCloseTimer.Stop();
+        hoverQuickInfoCloseTimer.Start();
     }
 
     private void CancelHoverQuickInfo()
     {
         hoverQuickInfoTimer.Stop();
+        hoverQuickInfoCloseTimer.Stop();
         hoverQuickInfoPoint = null;
         CancelAndDispose(ref hoverQuickInfoCancellation);
         CloseHoverQuickInfo();
@@ -2379,6 +2432,29 @@ public partial class MainWindow : Window
     {
         HoverQuickInfoPopup.IsOpen = false;
         HoverQuickInfoDocumentation.Clear();
+        hoverQuickInfoSpanStart = -1;
+        hoverQuickInfoSpanEnd = -1;
+        SetDocumentationButton(HoverQuickInfoLearnButton, null);
+    }
+
+    private bool TryGetEditorOffset(Point point, out int offset)
+    {
+        var position = Editor.GetPositionFromPoint(point);
+        if (position is null)
+        {
+            offset = 0;
+            return false;
+        }
+        offset = Editor.Document.GetOffset(position.Value.Location);
+        return true;
+    }
+
+    private static void SetDocumentationButton(Button button, string? documentationPath)
+    {
+        button.Tag = documentationPath;
+        button.Visibility = string.IsNullOrWhiteSpace(documentationPath)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
     }
 
     private static void CancelAndDispose(ref CancellationTokenSource? source)

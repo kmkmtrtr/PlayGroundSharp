@@ -547,6 +547,8 @@ public sealed class CSharpLanguageServiceTests
         Assert.NotNull(quickInfo);
         Assert.Contains("Length", quickInfo.Text, StringComparison.Ordinal);
         Assert.Contains("int", quickInfo.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.True(quickInfo.ContainsPosition(code.IndexOf("Length", StringComparison.Ordinal) + 2));
+        Assert.Equal("system.string.length", quickInfo.DocumentationPath);
     }
 
     [Fact]
@@ -573,6 +575,7 @@ public sealed class CSharpLanguageServiceTests
         Assert.NotNull(argumentInfo);
         Assert.Contains("name : string", argumentInfo.Text, StringComparison.Ordinal);
         Assert.Contains("The person to greet", argumentInfo.Text, StringComparison.Ordinal);
+        Assert.Null(methodInfo.DocumentationPath);
     }
 
     [Fact]
@@ -637,6 +640,11 @@ public sealed class CSharpLanguageServiceTests
         var entries = await service.GetSymbolExplorerAsync(context);
 
         Assert.Contains(entries, static entry => entry.Namespace == "System" && entry.Name == "String" && entry.Kind == "class");
+        Assert.Equal(
+            "system.collections.generic.list-1",
+            Assert.Single(entries, static entry =>
+                entry.Namespace == "System.Collections.Generic" && entry.Name == "List<T>" &&
+                entry.Kind == "class").DocumentationPath);
         Assert.Contains(entries, static entry => entry.Namespace == "System.Linq" && entry.Name == "Enumerable" && entry.Kind == "class");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "User" && entry.Kind == "record");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "Transformer" && entry.Kind == "delegate");
@@ -669,6 +677,12 @@ public sealed class CSharpLanguageServiceTests
             entry.Name == "Contains" && entry.Parameters.Count == 1 && entry.Parameters[0].TypeName == "string");
         Assert.NotEmpty(frameworkMethod.Summary);
         Assert.NotEmpty(frameworkMethod.Parameters[0].Summary);
+        Assert.Equal("system.string.contains", frameworkMethod.DocumentationPath);
+        Assert.Equal(
+            "system.dayofweek",
+            Assert.Single(entries, static entry =>
+                entry.Namespace == "System" && entry.ContainingType == "DayOfWeek" &&
+                entry.Name == "Sunday" && entry.Kind == "enum member").DocumentationPath);
 
         var dynamicMethod = Assert.Single(entries, static entry =>
             entry.Namespace == "PlayGroundSharp.TestFixture" && entry.ContainingType == "Greeter" && entry.Name == "Greet");

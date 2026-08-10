@@ -50,7 +50,15 @@ public sealed record CompletionCandidate(
 
     private bool HasTag(string tag) => Tags.Contains(tag, StringComparer.OrdinalIgnoreCase);
 }
-public sealed record QuickInfoResult(string Text);
+public sealed record QuickInfoResult(
+    string Text,
+    int SpanStart,
+    int SpanLength,
+    string? DocumentationPath = null)
+{
+    public int SpanEnd => SpanStart + SpanLength;
+    public bool ContainsPosition(int position) => position >= SpanStart && position < SpanEnd;
+}
 public sealed record SignatureParameterInformation(string Name, string TypeName, string Summary);
 public sealed record SignatureInformation(
     string DisplayText,
@@ -112,7 +120,8 @@ public sealed record SymbolExplorerEntry(
     string Summary,
     IReadOnlyList<ExplorerParameterInfo> Parameters,
     string Returns,
-    IReadOnlyList<string> InheritedTypes)
+    IReadOnlyList<string> InheritedTypes,
+    string? DocumentationPath = null)
 {
     public string FullName => string.Join('.', new[] { Namespace == "(session)" ? null : Namespace, ContainingType, Name }
         .Where(static part => !string.IsNullOrEmpty(part)));
@@ -380,7 +389,43 @@ public sealed class CSharpLanguageService
             ? null
             : GetInvocationQuickInfo(root, model, absolutePosition, cancellationToken);
         var text = invocationText ?? roslynText;
-        return string.IsNullOrWhiteSpace(text) ? null : new(text);
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var fallbackSpan = root is null || root.FullSpan.IsEmpty
+            ? new TextSpan(absolutePosition, 0)
+            : root.FindToken(Math.Clamp(absolutePosition, root.FullSpan.Start, root.FullSpan.End - 1), findInsideTrivia: true).Span;
+        var span = item?.Span ?? fallbackSpan;
+        var spanStart = Math.Clamp(span.Start - workspaceDocument.CurrentOffset, 0, currentCode.Length);
+        var spanEnd = Math.Clamp(span.End - workspaceDocument.CurrentOffset, spanStart, currentCode.Length);
+        var symbol = root is null || model is null
+            ? null
+            : GetDocumentationSymbol(root, model, absolutePosition, cancellationToken);
+        return new(
+            text,
+            spanStart,
+            Math.Max(1, spanEnd - spanStart),
+            CreateMicrosoftLearnDocumentationPath(symbol));
+    }
+
+    private static ISymbol? GetDocumentationSymbol(
+        SyntaxNode root,
+        SemanticModel model,
+        int position,
+        CancellationToken cancellationToken)
+    {
+        if (root.FullSpan.IsEmpty) return null;
+        var probePosition = Math.Clamp(position, root.FullSpan.Start, root.FullSpan.End - 1);
+        var nodes = root.FindToken(probePosition, findInsideTrivia: true).Parent?
+            .AncestorsAndSelf() ?? [];
+        foreach (var node in nodes)
+        {
+            var symbolInfo = model.GetSymbolInfo(node, cancellationToken);
+            var symbol = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
+            if (symbol is IAliasSymbol alias) symbol = alias.Target;
+            if (symbol is IMethodSymbol or IPropertySymbol or IFieldSymbol or IEventSymbol or INamedTypeSymbol)
+                return symbol;
+        }
+        return null;
     }
 
     private static string? GetInvocationQuickInfo(
@@ -1229,7 +1274,8 @@ public sealed class CSharpLanguageService
             documentation.Summary,
             [],
             string.Empty,
-            GetInheritedTypes(type)));
+            GetInheritedTypes(type),
+            CreateMicrosoftLearnDocumentationPath(type)));
 
         foreach (var method in type.GetMembers().OfType<IMethodSymbol>()
                      .Where(static method =>
@@ -1270,7 +1316,8 @@ public sealed class CSharpLanguageService
             documentation.Summary,
             [],
             string.Empty,
-            []);
+            [],
+            CreateMicrosoftLearnDocumentationPath(field));
     }
 
     private static SymbolExplorerEntry CreateMethodEntry(
@@ -1299,7 +1346,42 @@ public sealed class CSharpLanguageService
             documentation.Summary,
             parameters,
             documentation.Returns,
-            []);
+            [],
+            CreateMicrosoftLearnDocumentationPath(method));
+    }
+
+    private static string? CreateMicrosoftLearnDocumentationPath(ISymbol? symbol)
+    {
+        if (symbol is IAliasSymbol alias) symbol = alias.Target;
+        if (symbol is IMethodSymbol { ReducedFrom: { } reducedFrom }) symbol = reducedFrom;
+        var containingType = symbol switch
+        {
+            INamedTypeSymbol type => type,
+            _ => symbol?.ContainingType
+        };
+        var assemblyName = containingType?.ContainingAssembly?.Name ?? symbol?.ContainingAssembly?.Name;
+        if (containingType is null || string.IsNullOrWhiteSpace(assemblyName) ||
+            !assemblyName.StartsWith("System", StringComparison.Ordinal) &&
+            !assemblyName.StartsWith("Microsoft", StringComparison.Ordinal)) return null;
+
+        var typeNames = new Stack<string>();
+        for (var current = containingType; current is not null; current = current.ContainingType)
+            typeNames.Push(Regex.Replace(current.MetadataName, "`(?<arity>\\d+)$", "-${arity}"));
+        var namespaceName = containingType.ContainingNamespace is { IsGlobalNamespace: false } @namespace
+            ? @namespace.ToDisplayString()
+            : string.Empty;
+        var typePath = string.Join('.', new[] { namespaceName }.Where(static part => part.Length > 0)
+            .Concat(typeNames));
+        var memberName = symbol switch
+        {
+            IMethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.StaticConstructor } => null,
+            IFieldSymbol { ContainingType.TypeKind: TypeKind.Enum } => null,
+            INamedTypeSymbol => null,
+            _ => symbol?.Name
+        };
+        return string.IsNullOrWhiteSpace(memberName)
+            ? typePath.ToLowerInvariant()
+            : $"{typePath}.{memberName}".ToLowerInvariant();
     }
 
     private static IReadOnlyList<string> GetInheritedTypes(INamedTypeSymbol type)

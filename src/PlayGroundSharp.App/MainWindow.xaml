@@ -151,11 +151,12 @@
                     </MenuItem>
                     <MenuItem Header="{DynamicResource Menu.Data}" Style="{StaticResource HeaderMenuItemStyle}">
                         <MenuItem Header="{DynamicResource Menu.InspectFile}" Tag="Inspect" Click="InsertDataSnippet_Click" />
-                        <MenuItem Header="{DynamicResource Menu.PreviewText}" Tag="Preview" Click="InsertDataSnippet_Click" />
-                        <MenuItem Header="{DynamicResource Menu.ReadLines}" Tag="Lines" Click="InsertDataSnippet_Click" />
                         <Separator />
                         <MenuItem Header="{DynamicResource Menu.ReadJson}" Tag="Json" Click="InsertDataSnippet_Click" />
-                        <MenuItem Header="{DynamicResource Menu.ReadJsonLines}" Tag="JsonLines" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.ReadJsonLines}" Tag="JsonLinesAll" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.ReadTextAll}" Tag="TextAll" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.ReadLines}" Tag="Lines" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.ReadBinaryAll}" Tag="BytesAll" Click="InsertDataSnippet_Click" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource Menu.View}" Style="{StaticResource HeaderMenuItemStyle}">
                         <MenuItem Header="{DynamicResource Menu.SymbolExplorer}" Command="{Binding ToggleTypeExplorerCommand}"

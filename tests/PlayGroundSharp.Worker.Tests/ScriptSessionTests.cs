@@ -819,4 +819,51 @@ public sealed class ScriptSessionTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task ExecutesGeneratedCompleteFileReadingSnippets()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-FileModes-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var jsonPath = Path.Combine(directory, "items.data");
+        var jsonLinesPath = Path.Combine(directory, "events.data");
+        var textPath = Path.Combine(directory, "text.data");
+        await File.WriteAllTextAsync(jsonPath, "{\"id\":1}");
+        await File.WriteAllTextAsync(jsonLinesPath, "{\"id\":2}\n{\"id\":3}\n");
+        await File.WriteAllTextAsync(textPath, "alpha\nbeta");
+        try
+        {
+            var session = new ScriptSession();
+
+            var json = await session.ExecuteAsync(1, DataSnippetBuilder.CreateJson(jsonPath));
+            var jsonLines = await session.ExecuteAsync(2, DataSnippetBuilder.CreateAllJsonLines(jsonLinesPath));
+            var text = await session.ExecuteAsync(3, DataSnippetBuilder.CreateAllText(textPath));
+            var lines = await session.ExecuteAsync(4, DataSnippetBuilder.CreateLineStream(textPath));
+            var bytes = await session.ExecuteAsync(5, DataSnippetBuilder.CreateAllBytes(textPath));
+            var jsonLineFiles = await session.ExecuteAsync(6,
+                DataSnippetBuilder.CreateJsonLinesBatch([jsonLinesPath]));
+            var textFiles = await session.ExecuteAsync(7,
+                DataSnippetBuilder.CreateTextBatch([textPath]));
+            var lineStreams = await session.ExecuteAsync(8,
+                DataSnippetBuilder.CreateLineStreams([textPath]));
+            var binaryFiles = await session.ExecuteAsync(9,
+                DataSnippetBuilder.CreateBytesBatch([textPath]));
+
+            Assert.All(
+                [json, jsonLines, text, lines, bytes, jsonLineFiles, textFiles, lineStreams, binaryFiles],
+                result =>
+                Assert.True(result.StateAccepted,
+                    string.Join(" | ", result.Diagnostics.Select(static diagnostic => diagnostic.Message))));
+            Assert.Equal(2, jsonLines.Snapshot?.TotalCount);
+            Assert.Equal("alpha\nbeta", text.Snapshot?.Display);
+            Assert.Equal(2, lines.Snapshot?.TotalCount);
+            Assert.Equal(10, bytes.Snapshot?.TotalCount);
+            Assert.All([jsonLineFiles, textFiles, lineStreams, binaryFiles], result =>
+                Assert.Equal(1, result.Snapshot?.TotalCount));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 }

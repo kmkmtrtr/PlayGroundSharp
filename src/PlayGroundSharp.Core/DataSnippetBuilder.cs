@@ -18,6 +18,12 @@ public static class DataSnippetBuilder
                Environment.NewLine + "}";
     }
 
+    public static string CreateFileInspection(string path) =>
+        $"Data.Inspect({ToVerbatimStringLiteral(path)})";
+
+    public static string CreateJson(string path) =>
+        $"await Data.ReadJsonAsync({ToVerbatimStringLiteral(path)}, ExecutionCancellation)";
+
     public static string CreateJsonLines(
         string path,
         int take = LargeDataAccess.DefaultJsonPreviewItemCount)
@@ -30,6 +36,15 @@ public static class DataSnippetBuilder
 
     public static string CreateAllJsonLines(string path) =>
         $"await Data.ReadAllJsonLinesAsync({ToVerbatimStringLiteral(path)}, ExecutionCancellation)";
+
+    public static string CreateAllText(string path) =>
+        $"await Data.ReadAllTextAsync({ToVerbatimStringLiteral(path)}, ExecutionCancellation)";
+
+    public static string CreateLineStream(string path) =>
+        $"Data.ReadLines({ToVerbatimStringLiteral(path)})";
+
+    public static string CreateAllBytes(string path) =>
+        $"await Data.ReadAllBytesAsync({ToVerbatimStringLiteral(path)}, ExecutionCancellation)";
 
     public static string CreateJsonArray(
         string path,
@@ -51,6 +66,34 @@ public static class DataSnippetBuilder
         $"    jsonValues.Add(await Data.ReadJsonAsync(path, ExecutionCancellation));{Environment.NewLine}" +
         $"}}{Environment.NewLine}" +
         "jsonValues";
+
+    public static string CreateJsonLinesBatch(IReadOnlyList<string> paths) =>
+        $"var jsonLineFiles = new List<IReadOnlyList<JsonNode?>>();{Environment.NewLine}" +
+        $"foreach (var path in {CreatePathArray(paths)}){Environment.NewLine}" +
+        $"{{{Environment.NewLine}" +
+        $"    jsonLineFiles.Add(await Data.ReadAllJsonLinesAsync(path, ExecutionCancellation));{Environment.NewLine}" +
+        $"}}{Environment.NewLine}" +
+        "jsonLineFiles";
+
+    public static string CreateTextBatch(IReadOnlyList<string> paths) =>
+        $"var textFiles = new List<string>();{Environment.NewLine}" +
+        $"foreach (var path in {CreatePathArray(paths)}){Environment.NewLine}" +
+        $"{{{Environment.NewLine}" +
+        $"    textFiles.Add(await Data.ReadAllTextAsync(path, ExecutionCancellation));{Environment.NewLine}" +
+        $"}}{Environment.NewLine}" +
+        "textFiles";
+
+    public static string CreateLineStreams(IReadOnlyList<string> paths) =>
+        $"({CreatePathArray(paths)}){Environment.NewLine}" +
+        $".Select(path => new {{ Path = path, Lines = Data.ReadLines(path) }}){Environment.NewLine}.ToArray()";
+
+    public static string CreateBytesBatch(IReadOnlyList<string> paths) =>
+        $"var binaryFiles = new List<byte[]>();{Environment.NewLine}" +
+        $"foreach (var path in {CreatePathArray(paths)}){Environment.NewLine}" +
+        $"{{{Environment.NewLine}" +
+        $"    binaryFiles.Add(await Data.ReadAllBytesAsync(path, ExecutionCancellation));{Environment.NewLine}" +
+        $"}}{Environment.NewLine}" +
+        "binaryFiles";
 
     public static string CreateJsonFilesBatch(
         IReadOnlyList<string> paths,

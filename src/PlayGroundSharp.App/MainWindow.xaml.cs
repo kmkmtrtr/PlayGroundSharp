@@ -769,14 +769,14 @@ public partial class MainWindow : Window
             FocusEditor();
             return;
         }
-        var literal = DataSnippetBuilder.ToVerbatimStringLiteral(dialog.FileName);
         var snippet = operation switch
         {
-            "Inspect" => $"Data.Inspect({literal})",
-            "Preview" => $"Data.PreviewText({literal}, 65536)",
-            "Lines" => $"Data.ReadLines({literal}).Take(100)",
-            "Json" => $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)",
-            "JsonLines" => DataSnippetBuilder.CreateJsonLines(dialog.FileName),
+            "Inspect" => DataSnippetBuilder.CreateFileInspection(dialog.FileName),
+            "Json" => DataSnippetBuilder.CreateJson(dialog.FileName),
+            "JsonLinesAll" => DataSnippetBuilder.CreateAllJsonLines(dialog.FileName),
+            "TextAll" => DataSnippetBuilder.CreateAllText(dialog.FileName),
+            "Lines" => DataSnippetBuilder.CreateLineStream(dialog.FileName),
+            "BytesAll" => DataSnippetBuilder.CreateAllBytes(dialog.FileName),
             _ => null
         };
         if (snippet is null) return;
@@ -861,24 +861,11 @@ public partial class MainWindow : Window
         if (paths.All(File.Exists))
         {
             menu.Items.Add(CreateDropAction("Drop.InspectFiles", DataSnippetBuilder.CreateFileInspection(paths)));
-            if (paths.All(IsJsonDataPath))
-            {
-                if (paths.All(static path => Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase)))
-                {
-                    menu.Items.Add(CreateDropAction(
-                        "Drop.ReadJsonFiles",
-                        DataSnippetBuilder.CreateJsonFilesBatch(paths)));
-                }
-                else
-                {
-                    menu.Items.Add(CreateDropAction(
-                        "Drop.ReadJsonFilesPreview",
-                        DataSnippetBuilder.CreateJsonFilesBatch(paths)));
-                    menu.Items.Add(CreateDropAction(
-                        "Drop.ReadJsonFilesAll",
-                        DataSnippetBuilder.CreateJsonFilesBatch(paths, jsonLinesTake: null)));
-                }
-            }
+            menu.Items.Add(CreateDropAction("Drop.ReadJsonFiles", DataSnippetBuilder.CreateJsonBatch(paths)));
+            menu.Items.Add(CreateDropAction("Drop.ReadJsonLinesFilesAll", DataSnippetBuilder.CreateJsonLinesBatch(paths)));
+            menu.Items.Add(CreateDropAction("Drop.ReadTextFilesAll", DataSnippetBuilder.CreateTextBatch(paths)));
+            menu.Items.Add(CreateDropAction("Drop.ReadLineStreams", DataSnippetBuilder.CreateLineStreams(paths)));
+            menu.Items.Add(CreateDropAction("Drop.ReadBinaryFilesAll", DataSnippetBuilder.CreateBytesBatch(paths)));
         }
         OpenDropActionMenu(menu);
     }
@@ -911,44 +898,18 @@ public partial class MainWindow : Window
                 menu.Items.Add(CreateDropWorkspaceAction(path));
                 menu.Items.Add(new Separator());
             }
-            menu.Items.Add(CreateDropAction("Drop.FileInfo", $"Data.Inspect({literal})"));
+            menu.Items.Add(CreateDropAction("Drop.FileInfo", DataSnippetBuilder.CreateFileInspection(path)));
             if (extension.Equals(".dll", StringComparison.OrdinalIgnoreCase))
                 menu.Items.Add(CreateDropReferenceAction(path));
-            if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
-            {
-                menu.Items.Add(CreateDropAction(
-                    "Drop.ReadJson",
-                    $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)"));
-                menu.Items.Add(CreateDropAction(
-                    "Drop.ReadJsonArrayPreview",
-                    DataSnippetBuilder.CreateJsonArray(path)));
-                menu.Items.Add(CreateDropAction(
-                    "Drop.ReadJsonArrayMaximum",
-                    DataSnippetBuilder.CreateJsonArray(path, LargeDataAccess.MaximumJsonItemCount)));
-            }
-            else if (extension.Equals(".jsonl", StringComparison.OrdinalIgnoreCase) ||
-                     extension.Equals(".ndjson", StringComparison.OrdinalIgnoreCase))
-            {
-                menu.Items.Add(CreateDropAction(
-                    "Drop.ReadJsonLinesPreview",
-                    DataSnippetBuilder.CreateJsonLines(path)));
-                menu.Items.Add(CreateDropAction(
-                    "Drop.ReadJsonLinesMaximum",
-                    DataSnippetBuilder.CreateJsonLines(path, LargeDataAccess.MaximumJsonItemCount)));
-                menu.Items.Add(CreateDropAction(
-                    "Drop.ReadJsonLinesAll",
-                    DataSnippetBuilder.CreateAllJsonLines(path)));
-            }
-
-            if (IsTextFile(extension))
-            {
-                menu.Items.Add(CreateDropAction("Drop.TextPreview", $"Data.PreviewText({literal}, 65536)"));
-                menu.Items.Add(CreateDropAction("Drop.ReadLines", $"Data.ReadLines({literal}).Take(100)"));
-            }
-            else
-            {
-                menu.Items.Add(CreateDropAction("Drop.ReadBytes", $"Data.ReadBytes({literal}, count: 65536)"));
-            }
+            menu.Items.Add(CreateDropAction(
+                "Drop.ReadJson",
+                DataSnippetBuilder.CreateJson(path)));
+            menu.Items.Add(CreateDropAction(
+                "Drop.ReadJsonLinesAll",
+                DataSnippetBuilder.CreateAllJsonLines(path)));
+            menu.Items.Add(CreateDropAction("Drop.ReadTextAll", DataSnippetBuilder.CreateAllText(path)));
+            menu.Items.Add(CreateDropAction("Drop.ReadLines", DataSnippetBuilder.CreateLineStream(path)));
+            menu.Items.Add(CreateDropAction("Drop.ReadBytes", DataSnippetBuilder.CreateAllBytes(path)));
         }
 
         OpenDropActionMenu(menu);
@@ -1012,13 +973,6 @@ public partial class MainWindow : Window
         paths = availablePaths.Take(MaximumDroppedPathCount).ToArray();
         return paths.Length > 0;
     }
-
-    private static bool IsTextFile(string extension) => extension.ToLowerInvariant() is
-        ".txt" or ".log" or ".csv" or ".tsv" or ".md" or ".xml" or ".yaml" or ".yml" or
-        ".json" or ".jsonl" or ".ndjson" or ".cs" or ".csx";
-
-    private static bool IsJsonDataPath(string path) =>
-        Path.GetExtension(path).ToLowerInvariant() is ".json" or ".jsonl" or ".ndjson";
 
     private void OpenSymbolDocumentation_Click(object sender, RoutedEventArgs e)
     {

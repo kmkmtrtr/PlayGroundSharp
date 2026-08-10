@@ -121,14 +121,14 @@
                             ToolTip="{DynamicResource Tooltip.Clear}" AutomationProperties.Name="{DynamicResource Ui.Clear}"
                             Click="FocusEditorAfterCommand_Click" />
                 </StackPanel>
-                <Border DockPanel.Dock="Left" Width="32" Height="32" CornerRadius="8" Background="#1967D2" Margin="0,0,10,0"
+                <Border DockPanel.Dock="Left" Width="32" Height="32" CornerRadius="8" Background="#512BD4" Margin="0,0,10,0"
                         SnapsToDevicePixels="True">
                     <Viewbox Width="22" Height="22" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Canvas Width="24" Height="24">
-                            <Path Data="M 5.5,5.5 L 12,12 L 5.5,18.5" Stroke="White" StrokeThickness="2.8"
+                            <Path Data="M 4.3,8.2 L 8.2,12 L 4.3,15.8" Stroke="White" StrokeThickness="1.8"
                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                            <Path Data="M 14,18.5 L 21.5,18.5" Stroke="White" StrokeThickness="2.8"
-                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="C#" Canvas.Left="9.2" Canvas.Top="6.4" Foreground="White"
+                                       FontFamily="Segoe UI" FontSize="9.5" FontWeight="Bold" />
                         </Canvas>
                     </Viewbox>
                 </Border>

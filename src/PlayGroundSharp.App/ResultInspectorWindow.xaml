@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:PlayGroundSharp.App"
         Title="{DynamicResource Inspector.Title}" Width="760" Height="560" MinWidth="480" MinHeight="340"
+        Icon="Assets/PlayGroundSharp.ico"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
         Loaded="Window_Loaded" PreviewKeyDown="Window_PreviewKeyDown"
@@ -41,8 +42,6 @@
                         ToolTip="{DynamicResource Inspector.SaveAllTooltip}" />
             </StackPanel>
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{DynamicResource Inspector.Snapshot}" Foreground="{DynamicResource MutedBrush}"
-                           VerticalAlignment="Center" Margin="0,0,12,0" />
                 <Button x:Name="TreeModeButton" Content="{DynamicResource Inspector.TreeView}" Style="{StaticResource MiniButtonStyle}"
                         Click="TreeMode_Click" Margin="0,0,4,0" />
                 <Button x:Name="TableModeButton" Content="{DynamicResource Inspector.TableView}" Style="{StaticResource MiniButtonStyle}"

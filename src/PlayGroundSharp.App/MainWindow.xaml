@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:local="clr-namespace:PlayGroundSharp.App"
-        Title="PlayGroundSharp" Width="1200" Height="800" MinWidth="820" MinHeight="560"
+        Title="PlayGroundSharp" Icon="Assets/PlayGroundSharp.ico" Width="1200" Height="800" MinWidth="820" MinHeight="560"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}"
         Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="Window_Deactivated"
@@ -121,14 +121,19 @@
                             ToolTip="{DynamicResource Tooltip.Clear}" AutomationProperties.Name="{DynamicResource Ui.Clear}"
                             Click="FocusEditorAfterCommand_Click" />
                 </StackPanel>
-                <Border DockPanel.Dock="Left" Width="32" Height="32" CornerRadius="8" Background="{DynamicResource SelectionBrush}" Margin="0,0,10,0">
-                    <TextBlock Text=">_" Foreground="{DynamicResource AccentBrush}" FontFamily="Cascadia Mono,Consolas"
-                               FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Border DockPanel.Dock="Left" Width="32" Height="32" CornerRadius="8" Background="#1967D2" Margin="0,0,10,0"
+                        SnapsToDevicePixels="True">
+                    <Viewbox Width="22" Height="22" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Canvas Width="24" Height="24">
+                            <Path Data="M 5.5,5.5 L 12,12 L 5.5,18.5" Stroke="White" StrokeThickness="2.8"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                            <Path Data="M 14,18.5 L 21.5,18.5" Stroke="White" StrokeThickness="2.8"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Canvas>
+                    </Viewbox>
                 </Border>
-                <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
-                    <TextBlock Text="PlayGroundSharp" FontSize="16" FontWeight="SemiBold" />
-                    <TextBlock Text="{DynamicResource Ui.AppSubtitle}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" />
-                </StackPanel>
+                <TextBlock DockPanel.Dock="Left" Text="PlayGroundSharp" FontSize="16" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
                 <Menu DockPanel.Dock="Left" Style="{StaticResource HeaderMenuStyle}" Margin="18,0,0,0"
                       AutomationProperties.Name="{DynamicResource Ui.MainMenu}">
                     <MenuItem Header="{DynamicResource Menu.File}" Style="{StaticResource HeaderMenuItemStyle}">
@@ -185,7 +190,7 @@
                             Background="Transparent" BorderThickness="0"
                             SelectionChanged="ConsoleTabs_SelectionChanged"
                             PreviewMouseDown="ConsoleTabs_PreviewMouseDown"
-                            AutomationProperties.Name="{DynamicResource Ui.AppSubtitle}">
+                            AutomationProperties.Name="{DynamicResource Ui.Console}">
                     <TabControl.ItemContainerStyle>
                         <Style TargetType="TabItem">
                             <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
@@ -229,11 +234,8 @@
                     BorderThickness="0,0,1,0" Visibility="{Binding IsTypeExplorerOpen, Converter={StaticResource BooleanToVisibilityConverter}}"
                     IsVisibleChanged="TypeExplorerPane_IsVisibleChanged">
                 <DockPanel>
-                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,12,12,10">
-                        <StackPanel>
-                            <TextBlock Text="{DynamicResource Explorer.Title}" FontSize="14" FontWeight="SemiBold" />
-                            <TextBlock Text="{DynamicResource Explorer.Subtitle}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
-                        </StackPanel>
+                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,12,12,11">
+                        <TextBlock Text="{DynamicResource Explorer.Title}" FontSize="14" FontWeight="SemiBold" />
                     </Border>
                     <Grid Margin="10,10,8,8">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -489,7 +491,7 @@
             <ScrollViewer x:Name="TranscriptScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           Padding="20,16,18,6"
                           AllowDrop="True"
-                          AutomationProperties.Name="{DynamicResource Ui.AppSubtitle}"
+                          AutomationProperties.Name="{DynamicResource Ui.Console}"
                           PreviewMouseLeftButtonDown="ConsoleSurface_PreviewMouseLeftButtonDown"
                           PreviewMouseWheel="TranscriptScroll_PreviewMouseWheel"
                           ScrollChanged="TranscriptScroll_ScrollChanged">
@@ -730,11 +732,8 @@
                     BorderThickness="1,0,0,0" Visibility="{Binding IsReferenceDrawerOpen, Converter={StaticResource BooleanToVisibilityConverter}}"
                     IsVisibleChanged="ReferenceDrawerPane_IsVisibleChanged">
                 <DockPanel>
-                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,12,14,10">
-                        <StackPanel>
-                            <TextBlock Text="{DynamicResource Workspace.Title}" FontSize="16" FontWeight="SemiBold" />
-                            <TextBlock Text="{DynamicResource Workspace.Subtitle}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,2,0,0" />
-                        </StackPanel>
+                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,12,14,11">
+                        <TextBlock Text="{DynamicResource Workspace.Title}" FontSize="16" FontWeight="SemiBold" />
                     </Border>
                     <TabControl x:Name="WorkspaceTabs" Background="{DynamicResource DrawerBrush}" Foreground="{DynamicResource ForegroundBrush}" BorderThickness="0"
                                 AutomationProperties.Name="{DynamicResource Workspace.Title}"

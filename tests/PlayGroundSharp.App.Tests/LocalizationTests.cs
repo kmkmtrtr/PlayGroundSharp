@@ -19,7 +19,11 @@ public sealed class LocalizationTests
         var english = new HelpViewModel(AppLanguageMode.English);
 
         Assert.Equal(japanese.Topics.Count, english.Topics.Count);
+        Assert.Equal(9, japanese.Topics.Count);
         Assert.All(japanese.Topics, static topic => Assert.NotEmpty(topic.Sections));
         Assert.All(english.Topics, static topic => Assert.NotEmpty(topic.Sections));
+        Assert.All(
+            japanese.Topics.Zip(english.Topics),
+            static pair => Assert.Equal(pair.First.Sections.Count, pair.Second.Sections.Count));
     }
 }

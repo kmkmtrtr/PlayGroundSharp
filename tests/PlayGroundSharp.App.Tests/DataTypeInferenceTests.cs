@@ -87,7 +87,7 @@ public sealed class DataTypeInferenceTests
         var rows = JsonArray(JsonObject(("value", Number("1"))));
 
         Assert.Equal("OrderItem", DataTypeInference.SuggestTypeName("orders", rows));
-        Assert.Equal("ordersTyped", DataTypeInference.SuggestVariableName("orders"));
+        Assert.Equal("typedOrders", DataTypeInference.SuggestVariableName("orders"));
         Assert.Equal("SettingsModel", DataTypeInference.SuggestTypeName("settings", JsonObject()));
     }
 

@@ -53,9 +53,7 @@ internal static class DataTypeInference
     {
         var basis = NormalizeSourceName(sourceName);
         var identifier = CreateIdentifier(basis);
-        if (identifier.Length > 0)
-            identifier = char.ToLowerInvariant(identifier[0]) + identifier[1..];
-        return identifier + "Typed";
+        return "typed" + identifier;
     }
 
     public static DataTypeInferenceResult? Generate(

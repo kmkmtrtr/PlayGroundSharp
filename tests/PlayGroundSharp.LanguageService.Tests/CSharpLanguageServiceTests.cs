@@ -648,6 +648,23 @@ public sealed class CSharpLanguageServiceTests
         var inheritedClass = Assert.Single(entries, static entry =>
             entry.Namespace == "(session)" && entry.Name == "Customer" && entry.Kind == "class");
         Assert.Equal(["EntityBase", "IEntity"], inheritedClass.InheritedTypes);
+        Assert.NotNull(inheritedClass.SymbolId);
+        var entityBase = Assert.Single(entries, static entry =>
+            entry.Namespace == "(session)" && entry.Name == "EntityBase" && entry.Kind == "class");
+        var entityInterface = Assert.Single(entries, static entry =>
+            entry.Namespace == "(session)" && entry.Name == "IEntity" && entry.Kind == "interface");
+        Assert.Collection(
+            inheritedClass.InheritedTypeRelations,
+            relation =>
+            {
+                Assert.Equal(entityBase.SymbolId, relation.SymbolId);
+                Assert.Equal("class", relation.Kind);
+            },
+            relation =>
+            {
+                Assert.Equal(entityInterface.SymbolId, relation.SymbolId);
+                Assert.Equal("interface", relation.Kind);
+            });
         Assert.Contains(entries, static entry =>
             entry.Namespace == "PlayGroundSharp.TestFixture" && entry.Name == "Greeter");
         var dynamicEnumMember = Assert.Single(entries, static entry =>

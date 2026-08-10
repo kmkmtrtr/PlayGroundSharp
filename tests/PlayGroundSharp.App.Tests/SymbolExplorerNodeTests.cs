@@ -1,3 +1,5 @@
+using PlayGroundSharp.LanguageService;
+
 namespace PlayGroundSharp.App.Tests;
 
 public sealed class SymbolExplorerNodeTests
@@ -29,4 +31,84 @@ public sealed class SymbolExplorerNodeTests
         Assert.Equal("Ready = 5 — Enum value", node.AccessibleLabel);
         Assert.Empty(node.AccessibleHelpText);
     }
+
+    [Fact]
+    public void BuildsBidirectionalNavigableTypeRelationships()
+    {
+        var baseType = Entry("BaseWidget", "base-id", "class");
+        var sameNamedBaseType = Entry("BaseWidget", "other-base-id", "class");
+        var contract = Entry("IWidget", "interface-id", "interface");
+        var widget = Entry(
+            "Widget",
+            "widget-id",
+            "class",
+            [
+                new("base-id", "BaseWidget", "class"),
+                new("interface-id", "IWidget", "interface")
+            ]);
+        var externalChild = Entry(
+            "ExternalChild",
+            "external-child-id",
+            "class",
+            [new("missing-id", "MissingBase", "class")]);
+
+        var roots = MainViewModel.BuildTypeExplorerItems([widget, contract, externalChild, sameNamedBaseType, baseType]);
+        var widgetNode = SymbolExplorerNode.FindPathBySymbolId(roots, "widget-id")!.Last();
+        var baseNode = SymbolExplorerNode.FindPathBySymbolId(roots, "base-id")!.Last();
+        var interfaceNode = SymbolExplorerNode.FindPathBySymbolId(roots, "interface-id")!.Last();
+        var externalNode = SymbolExplorerNode.FindPathBySymbolId(roots, "external-child-id")!.Last();
+        var sameNamedBaseNode = SymbolExplorerNode.FindPathBySymbolId(roots, "other-base-id")!.Last();
+
+        Assert.Collection(
+            widgetNode.ParentRelationItems,
+            relation =>
+            {
+                Assert.Equal("base-id", relation.SymbolId);
+                Assert.Equal("base", relation.RelationKind);
+                Assert.True(relation.CanNavigate);
+            },
+            relation =>
+            {
+                Assert.Equal("interface-id", relation.SymbolId);
+                Assert.Equal("interface", relation.RelationKind);
+                Assert.True(relation.CanNavigate);
+            });
+        Assert.Equal("widget-id", Assert.Single(baseNode.DerivedRelationItems).SymbolId);
+        Assert.Equal("derived", Assert.Single(baseNode.DerivedRelationItems).RelationKind);
+        Assert.Empty(sameNamedBaseNode.DerivedRelationItems);
+        Assert.Equal("widget-id", Assert.Single(interfaceNode.DerivedRelationItems).SymbolId);
+        Assert.Equal("implementation", Assert.Single(interfaceNode.DerivedRelationItems).RelationKind);
+        Assert.False(Assert.Single(externalNode.ParentRelationItems).CanNavigate);
+    }
+
+    [Fact]
+    public void FindsTheFullNamespacePathForARelatedType()
+    {
+        var target = new SymbolExplorerNode("Widget", "class", "C", "", [], SymbolId: "widget-id");
+        var typeNamespace = new SymbolExplorerNode("Types", "namespace", "N", "", [target]);
+        var rootNamespace = new SymbolExplorerNode("Example", "namespace", "N", "", [typeNamespace]);
+
+        var path = SymbolExplorerNode.FindPathBySymbolId([rootNamespace], "widget-id");
+
+        Assert.Equal([rootNamespace, typeNamespace, target], path);
+    }
+
+    private static SymbolExplorerEntry Entry(
+        string name,
+        string symbolId,
+        string kind,
+        IReadOnlyList<ExplorerTypeRelation>? parents = null) =>
+        new(
+            "Example.Types",
+            name,
+            name,
+            kind,
+            "Example",
+            null,
+            name,
+            string.Empty,
+            [],
+            string.Empty,
+            symbolId,
+            parents ?? []);
 }

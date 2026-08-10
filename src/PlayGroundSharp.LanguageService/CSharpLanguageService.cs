@@ -100,6 +100,9 @@ public sealed record SignatureHelpResult(IReadOnlyList<SignatureInformation> Sig
 /// <summary>Describes one documented parameter on an explorer method.</summary>
 public sealed record ExplorerParameterInfo(string Name, string TypeName, string Summary);
 
+/// <summary>Identifies one direct base type or implemented interface.</summary>
+public sealed record ExplorerTypeRelation(string SymbolId, string DisplayName, string Kind);
+
 /// <summary>Describes a type or method shown in the session-aware symbol explorer.</summary>
 public sealed record SymbolExplorerEntry(
     string Namespace,
@@ -112,8 +115,11 @@ public sealed record SymbolExplorerEntry(
     string Summary,
     IReadOnlyList<ExplorerParameterInfo> Parameters,
     string Returns,
-    IReadOnlyList<string> InheritedTypes)
+    string? SymbolId,
+    IReadOnlyList<ExplorerTypeRelation> InheritedTypeRelations)
 {
+    public IReadOnlyList<string> InheritedTypes =>
+        InheritedTypeRelations.Select(static relation => relation.DisplayName).ToArray();
     public string FullName => string.Join('.', new[] { Namespace == "(session)" ? null : Namespace, ContainingType, Name }
         .Where(static part => !string.IsNullOrEmpty(part)));
 }
@@ -1229,7 +1235,8 @@ public sealed class CSharpLanguageService
             documentation.Summary,
             [],
             string.Empty,
-            GetInheritedTypes(type)));
+            GetTypeSymbolId(type),
+            GetInheritedTypeRelations(type)));
 
         foreach (var method in type.GetMembers().OfType<IMethodSymbol>()
                      .Where(static method =>
@@ -1270,6 +1277,7 @@ public sealed class CSharpLanguageService
             documentation.Summary,
             [],
             string.Empty,
+            null,
             []);
     }
 
@@ -1299,17 +1307,37 @@ public sealed class CSharpLanguageService
             documentation.Summary,
             parameters,
             documentation.Returns,
+            null,
             []);
     }
 
-    private static IReadOnlyList<string> GetInheritedTypes(INamedTypeSymbol type)
+    private static IReadOnlyList<ExplorerTypeRelation> GetInheritedTypeRelations(INamedTypeSymbol type)
     {
-        var inheritedTypes = new List<string>();
+        var relations = new List<ExplorerTypeRelation>();
         if (type.TypeKind == TypeKind.Class && type.BaseType is { SpecialType: not SpecialType.System_Object } baseType)
-            inheritedTypes.Add(baseType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-        inheritedTypes.AddRange(type.Interfaces.Select(static @interface =>
-            @interface.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
-        return inheritedTypes.Distinct(StringComparer.Ordinal).ToArray();
+            relations.Add(CreateTypeRelation(baseType));
+        relations.AddRange(type.Interfaces
+            .Select(CreateTypeRelation)
+            .OrderBy(static relation => relation.DisplayName, StringComparer.OrdinalIgnoreCase));
+        return relations.DistinctBy(static relation => relation.SymbolId, StringComparer.Ordinal).ToArray();
+    }
+
+    private static ExplorerTypeRelation CreateTypeRelation(INamedTypeSymbol type)
+    {
+        var definition = type.OriginalDefinition;
+        return new(
+            GetTypeSymbolId(definition),
+            type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            GetTypeKind(definition));
+    }
+
+    private static string GetTypeSymbolId(INamedTypeSymbol type)
+    {
+        var definition = type.OriginalDefinition;
+        var assemblyIdentity = definition.ContainingAssembly?.Identity.ToString() ?? "(session)";
+        var documentationId = definition.GetDocumentationCommentId() ??
+                              definition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        return $"{assemblyIdentity}|{documentationId}";
     }
 
     private static string GetMethodDisplayName(IMethodSymbol method)

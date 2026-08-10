@@ -772,6 +772,8 @@
                                             <MenuItem x:Name="NameRetainedResultMenuItem" Header="{DynamicResource Variables.NameResult}" Click="NameRetainedResult_Click" />
                                             <MenuItem x:Name="ReleaseRetainedResultMenuItem" Header="{DynamicResource Variables.ReleaseResult}" Click="ReleaseRetainedResult_Click" />
                                             <Separator x:Name="RetainedResultMenuSeparator" />
+                                            <MenuItem x:Name="InferDataTypeMenuItem" Header="{DynamicResource Variables.InferDataType}" Click="InferDataType_Click" />
+                                            <Separator />
                                             <MenuItem Header="{DynamicResource Ui.Copy}" Click="CopyVariable_Click" />
                                             <MenuItem Header="{DynamicResource Ui.Inspect}" Click="InspectVariable_Click" />
                                         </ContextMenu>

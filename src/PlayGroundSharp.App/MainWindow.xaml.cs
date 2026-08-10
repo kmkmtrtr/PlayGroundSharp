@@ -1499,6 +1499,7 @@ public partial class MainWindow : Window
         NameRetainedResultMenuItem.Visibility = visibility;
         ReleaseRetainedResultMenuItem.Visibility = visibility;
         RetainedResultMenuSeparator.Visibility = visibility;
+        InferDataTypeMenuItem.IsEnabled = viewModel.CanChangeSession && DataTypeInference.CanInfer(item.Snapshot);
     }
 
     private void NameRetainedResult_Click(object sender, RoutedEventArgs e)
@@ -1511,6 +1512,32 @@ public partial class MainWindow : Window
     {
         if (VariableList.SelectedItem is not VariableItem { SubmissionIndex: { } index }) return;
         await viewModel.ReleaseRetainedResultAsync(index);
+    }
+
+    private async void InferDataType_Click(object sender, RoutedEventArgs e)
+    {
+        if (VariableList.SelectedItem is not VariableItem item || !DataTypeInference.CanInfer(item.Snapshot))
+        {
+            viewModel.ShowStatusNotification("DataInference.Unsupported");
+            return;
+        }
+        var dialog = new DataTypeInferenceDialog(
+            item.Snapshot,
+            item.SourceExpression,
+            DataTypeInference.SuggestTypeName(item.SourceExpression, item.Snapshot),
+            DataTypeInference.SuggestVariableName(item.SourceExpression),
+            viewModel.LanguageMode,
+            name => viewModel.VariableItems.Any(candidate =>
+                !candidate.IsUnnamedResult &&
+                RetainedResultStatement.RepresentsSameIdentifier(candidate.Name, name)))
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true || dialog.Result is not { } result) return;
+        if (await viewModel.ExecuteGeneratedSubmissionAsync(result.GeneratedCode))
+            viewModel.ShowStatusNotification("DataInference.Generated", result.RootTypeName, result.VariableName);
+        else
+            viewModel.ShowStatusNotification("DataInference.ExecutionFailed");
     }
 
     private void BeginNamingResult(VariableItem item, string? initialName = null)

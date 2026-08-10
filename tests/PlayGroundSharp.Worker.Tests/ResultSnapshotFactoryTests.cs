@@ -2,6 +2,7 @@ using System.Collections;
 using System.Data;
 using System.Dynamic;
 using System.Numerics;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using PlayGroundSharp.Core;
@@ -100,6 +101,22 @@ public sealed class ResultSnapshotFactoryTests
         Assert.Equal("Ada", rows[0].Properties![1].Value.Display);
         Assert.Equal(SnapshotKind.Null, rows[1].Properties![1].Value.Kind);
         Assert.Equal("null", rows[1].Properties![1].Value.Display);
+        Assert.Equal("string", rows[1].Properties![1].DeclaredTypeExpression);
+        Assert.True(rows[1].Properties![1].DeclaredTypeIsReferenceType);
+    }
+
+    [Fact]
+    public void CapturesReferenceableRuntimeTypesAndMarksThrowingGettersUnreadable()
+    {
+        var snapshot = factory.Create(IPAddress.Loopback);
+
+        Assert.Equal("global::System.Net.IPAddress", snapshot.TypeExpression);
+        Assert.True(snapshot.IsReferenceType);
+        var failedProperties = snapshot.Properties!
+            .Where(static property => property.Value.Kind == SnapshotKind.Exception)
+            .ToArray();
+        Assert.NotEmpty(failedProperties);
+        Assert.All(failedProperties, static property => Assert.False(property.IsReadable));
     }
 
     [Fact]

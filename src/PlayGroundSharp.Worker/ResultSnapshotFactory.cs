@@ -60,6 +60,19 @@ public sealed class ResultSnapshotFactory
 
     private ResultSnapshot Create(object? value, int depth, HashSet<object> path, SnapshotBudget budget)
     {
+        var snapshot = CreateCore(value, depth, path, budget);
+        if (value is null) return snapshot;
+
+        var type = value.GetType();
+        return snapshot with
+        {
+            TypeExpression = CSharpTypeExpression.TryCreate(type),
+            IsReferenceType = !type.IsValueType
+        };
+    }
+
+    private ResultSnapshot CreateCore(object? value, int depth, HashSet<object> path, SnapshotBudget budget)
+    {
         if (!budget.TryTakeNode())
             return new(SnapshotKind.MaxDepth, "… snapshot limit reached", null, IsTruncated: true);
         if (value is null)
@@ -255,22 +268,35 @@ public sealed class ResultSnapshotFactory
                 {
                     if (TryReadPropertyWithoutSubmittedCode(value, property, out var propertyValue))
                     {
-                        properties.Add(new(property.Name, Create(propertyValue, depth + 1, path, budget)));
+                        properties.Add(new(
+                            property.Name,
+                            Create(propertyValue, depth + 1, path, budget),
+                            CSharpTypeExpression.TryCreate(property.PropertyType),
+                            !property.PropertyType.IsValueType));
                     }
                     else if (budget.TryTakeNode())
                     {
-                        properties.Add(new(property.Name, new(
-                            SnapshotKind.String,
-                            "getter not evaluated",
-                            property.PropertyType.FullName,
-                            IsTruncated: true)));
+                        properties.Add(new(
+                            property.Name,
+                            new(
+                                SnapshotKind.String,
+                                "getter not evaluated",
+                                property.PropertyType.FullName,
+                                IsTruncated: true),
+                            CSharpTypeExpression.TryCreate(property.PropertyType),
+                            !property.PropertyType.IsValueType,
+                            IsReadable: false));
                     }
                 }
                 catch (Exception error)
                 {
                     if (budget.TryTakeNode())
-                        properties.Add(new(property.Name,
-                            CreateExceptionSnapshot(error, property.PropertyType.FullName, budget)));
+                        properties.Add(new(
+                            property.Name,
+                            CreateExceptionSnapshot(error, property.PropertyType.FullName, budget),
+                            CSharpTypeExpression.TryCreate(property.PropertyType),
+                            !property.PropertyType.IsValueType,
+                            IsReadable: false));
                 }
             }
             foreach (var field in readableFields)
@@ -278,13 +304,21 @@ public sealed class ResultSnapshotFactory
                 if (!budget.CanTakeNode) break;
                 try
                 {
-                    properties.Add(new(field.Name, Create(field.GetValue(value), depth + 1, path, budget)));
+                    properties.Add(new(
+                        field.Name,
+                        Create(field.GetValue(value), depth + 1, path, budget),
+                        CSharpTypeExpression.TryCreate(field.FieldType),
+                        !field.FieldType.IsValueType));
                 }
                 catch (Exception error)
                 {
                     if (budget.TryTakeNode())
-                        properties.Add(new(field.Name,
-                            CreateExceptionSnapshot(error, field.FieldType.FullName, budget)));
+                        properties.Add(new(
+                            field.Name,
+                            CreateExceptionSnapshot(error, field.FieldType.FullName, budget),
+                            CSharpTypeExpression.TryCreate(field.FieldType),
+                            !field.FieldType.IsValueType,
+                            IsReadable: false));
                 }
             }
 
@@ -394,12 +428,21 @@ public sealed class ResultSnapshotFactory
                 if (!budget.CanTakeNode) break;
                 try
                 {
-                    properties.Add(new(column.ColumnName, Create(row[column], depth + 1, path, budget)));
+                    properties.Add(new(
+                        column.ColumnName,
+                        Create(row[column], depth + 1, path, budget),
+                        CSharpTypeExpression.TryCreate(column.DataType),
+                        !column.DataType.IsValueType));
                 }
                 catch (Exception error)
                 {
                     if (budget.TryTakeNode())
-                        properties.Add(new(column.ColumnName, CreateExceptionSnapshot(error, column.DataType.FullName, budget)));
+                        properties.Add(new(
+                            column.ColumnName,
+                            CreateExceptionSnapshot(error, column.DataType.FullName, budget),
+                            CSharpTypeExpression.TryCreate(column.DataType),
+                            !column.DataType.IsValueType,
+                            IsReadable: false));
                 }
             }
             return new(
@@ -1054,5 +1097,77 @@ public sealed class ResultSnapshotFactory
             truncated = length < value.Length;
             return length == value.Length ? value : value[..length];
         }
+    }
+}
+
+internal static class CSharpTypeExpression
+{
+    private static readonly IReadOnlyDictionary<Type, string> Aliases = new Dictionary<Type, string>
+    {
+        [typeof(bool)] = "bool",
+        [typeof(byte)] = "byte",
+        [typeof(sbyte)] = "sbyte",
+        [typeof(short)] = "short",
+        [typeof(ushort)] = "ushort",
+        [typeof(int)] = "int",
+        [typeof(uint)] = "uint",
+        [typeof(long)] = "long",
+        [typeof(ulong)] = "ulong",
+        [typeof(float)] = "float",
+        [typeof(double)] = "double",
+        [typeof(decimal)] = "decimal",
+        [typeof(char)] = "char",
+        [typeof(string)] = "string",
+        [typeof(object)] = "object",
+        [typeof(void)] = "void",
+        [typeof(nint)] = "nint",
+        [typeof(nuint)] = "nuint"
+    };
+
+    public static string? TryCreate(Type type)
+    {
+        if (type.IsByRef || type.IsPointer || type.IsFunctionPointer || type.ContainsGenericParameters)
+            return null;
+        if (Aliases.TryGetValue(type, out var alias)) return alias;
+
+        var nullable = Nullable.GetUnderlyingType(type);
+        if (nullable is not null)
+        {
+            var valueType = TryCreate(nullable);
+            return valueType is null ? null : valueType + "?";
+        }
+
+        if (type.IsArray)
+        {
+            var elementType = TryCreate(type.GetElementType()!);
+            return elementType is null
+                ? null
+                : elementType + "[" + new string(',', type.GetArrayRank() - 1) + "]";
+        }
+
+        // Runtime values can be private framework/provider implementations (for example
+        // IPAddress.Loopback). Preserve the nearest public CLR contract in that case.
+        if (!type.IsVisible || type.IsNested || string.IsNullOrWhiteSpace(type.Namespace))
+        {
+            for (var baseType = type.BaseType; baseType is not null && baseType != typeof(object); baseType = baseType.BaseType)
+            {
+                var baseExpression = TryCreate(baseType);
+                if (baseExpression is not null) return baseExpression;
+            }
+            return null;
+        }
+
+        var name = type.Name;
+        var tick = name.IndexOf('`');
+        if (tick >= 0) name = name[..tick];
+        var qualifiedName = $"global::{type.Namespace}.{name}";
+        if (!type.IsGenericType) return qualifiedName;
+
+        var arguments = type.GetGenericArguments()
+            .Select(TryCreate)
+            .ToArray();
+        return arguments.Any(static argument => argument is null)
+            ? null
+            : $"{qualifiedName}<{string.Join(", ", arguments!)}>";
     }
 }

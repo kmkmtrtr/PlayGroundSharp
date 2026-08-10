@@ -157,6 +157,36 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void ResultSnapshotClrTypeMetadataRoundTrips()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Object,
+            "1 member",
+            "Row",
+            Properties:
+            [
+                new(
+                    "Address",
+                    new(
+                        SnapshotKind.Object,
+                        "value",
+                        "System.Net.IPAddress",
+                        TypeExpression: "global::System.Net.IPAddress",
+                        IsReferenceType: true),
+                    "global::System.Net.IPAddress",
+                    true)
+            ]);
+
+        var envelope = PipeEnvelope.Create(MessageKinds.Result, Guid.NewGuid(), new ResultEvent(1, snapshot));
+        var property = Assert.Single(envelope.ReadPayload<ResultEvent>().Snapshot.Properties!);
+
+        Assert.Equal("global::System.Net.IPAddress", property.Value.TypeExpression);
+        Assert.True(property.Value.IsReferenceType);
+        Assert.Equal("global::System.Net.IPAddress", property.DeclaredTypeExpression);
+        Assert.True(property.IsReadable);
+    }
+
+    [Fact]
     public void SnapshotJsonExportIsValidAndMarksTruncatedCollections()
     {
         var snapshot = new ResultSnapshot(

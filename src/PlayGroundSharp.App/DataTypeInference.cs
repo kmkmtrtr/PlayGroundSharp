@@ -9,7 +9,8 @@ internal enum DataTypeInferenceWarning
 {
     TruncatedSnapshot,
     FallbackType,
-    EmptyCollection
+    EmptyCollection,
+    UnreadableProperty
 }
 
 internal sealed record DataTypeInferenceResult(
@@ -40,7 +41,12 @@ internal static class DataTypeInference
     };
 
     public static bool CanInfer(ResultSnapshot snapshot) =>
-        TryInferRoot(snapshot, new HashSet<DataTypeInferenceWarning>(), out _, out _);
+        TryInferRoot(
+            snapshot,
+            new HashSet<DataTypeInferenceWarning>(),
+            snapshot.Kind != SnapshotKind.Json,
+            out _,
+            out _);
 
     public static string SuggestTypeName(string sourceName, ResultSnapshot snapshot)
     {
@@ -67,7 +73,13 @@ internal static class DataTypeInference
         if (!IsIdentifier(rootTypeName) || !RetainedResultStatement.IsValidVariableName(variableName)) return null;
 
         var warnings = new HashSet<DataTypeInferenceWarning>();
-        if (!TryInferRoot(snapshot, warnings, out var rootObject, out var rootIsSequence)) return null;
+        var useDirectClrProjection = snapshot.Kind != SnapshotKind.Json;
+        if (!TryInferRoot(
+                snapshot,
+                warnings,
+                useDirectClrProjection,
+                out var rootObject,
+                out var rootIsSequence)) return null;
 
         var renderer = new ModelRenderer(rootTypeName.TrimStart('@'));
         var definitions = renderer.Render(rootObject!);
@@ -78,23 +90,32 @@ internal static class DataTypeInference
         var codeTargetType = rootIsSequence
             ? $"global::System.Collections.Generic.List<{itemType}{(rootObject!.Nullable ? "?" : string.Empty)}>"
             : itemType;
-        var code = new StringBuilder()
-            .Append("var ").Append(variableName).Append(" = global::System.Text.Json.JsonSerializer.Deserialize<")
-            .Append(codeTargetType).AppendLine(">(")
-            .Append("    global::System.Text.Json.JsonSerializer.Serialize(").Append(sourceExpression).AppendLine("))!;")
-            .AppendLine()
-            .Append(definitions)
-            .ToString();
+        var code = useDirectClrProjection
+            ? DirectProjectionRenderer.Render(
+                renderer,
+                rootObject!,
+                rootIsSequence,
+                sourceExpression,
+                variableName,
+                definitions)
+            : new StringBuilder()
+                .Append("var ").Append(variableName).Append(" = global::System.Text.Json.JsonSerializer.Deserialize<")
+                .Append(codeTargetType).AppendLine(">(")
+                .Append("    global::System.Text.Json.JsonSerializer.Serialize(").Append(sourceExpression).AppendLine("))!;")
+                .AppendLine()
+                .Append(definitions)
+                .ToString();
         return new(rootTypeName, variableName, targetType, code, warnings.Order().ToArray());
     }
 
     private static bool TryInferRoot(
         ResultSnapshot snapshot,
         HashSet<DataTypeInferenceWarning> warnings,
+        bool preserveClrTypes,
         out Shape? rootObject,
         out bool rootIsSequence)
     {
-        var root = Infer(snapshot, warnings);
+        var root = Infer(snapshot, warnings, preserveClrTypes, expandObject: true);
         if (ContainsUnresolvedNull(root)) warnings.Add(DataTypeInferenceWarning.FallbackType);
         rootIsSequence = root.Kind == ShapeKind.Array;
         rootObject = rootIsSequence ? root.Element : root;
@@ -106,19 +127,57 @@ internal static class DataTypeInference
         shape.Properties?.Any(property => ContainsUnresolvedNull(property.Type)) == true ||
         shape.Element is not null && ContainsUnresolvedNull(shape.Element);
 
-    private static Shape Infer(ResultSnapshot snapshot, HashSet<DataTypeInferenceWarning> warnings)
+    private static Shape Infer(
+        ResultSnapshot snapshot,
+        HashSet<DataTypeInferenceWarning> warnings,
+        bool preserveClrTypes,
+        bool expandObject)
     {
         if (snapshot.IsTruncated)
             warnings.Add(DataTypeInferenceWarning.TruncatedSnapshot);
         if (snapshot.Kind is SnapshotKind.MaxDepth or SnapshotKind.Circular or SnapshotKind.Exception)
         {
             warnings.Add(DataTypeInferenceWarning.FallbackType);
-            return Shape.Fallback();
+            return preserveClrTypes ? Shape.Scalar("object", isReferenceType: true).WithNullable() : Shape.Fallback();
         }
         if (snapshot.Kind == SnapshotKind.Null) return Shape.Null();
+        if (preserveClrTypes && !expandObject && snapshot.TypeExpression is { Length: > 0 } runtimeType)
+            return Shape.Scalar(runtimeType, snapshot.IsReferenceType ?? true);
         if (snapshot.Properties is not null && snapshot.Kind is SnapshotKind.Json or SnapshotKind.Object)
-            return Shape.Object(snapshot.Properties.Select(property =>
-                new ShapeProperty(property.Name, Infer(property.Value, warnings))).ToArray());
+        {
+            var properties = new List<ShapeProperty>();
+            foreach (var property in snapshot.Properties)
+            {
+                if (preserveClrTypes && (!property.IsReadable || property.Value.Kind == SnapshotKind.Exception))
+                {
+                    warnings.Add(DataTypeInferenceWarning.UnreadableProperty);
+                    continue;
+                }
+
+                Shape propertyShape;
+                if (preserveClrTypes &&
+                    property.Value.Kind == SnapshotKind.Null &&
+                    property.DeclaredTypeExpression is { Length: > 0 } declaredType)
+                {
+                    propertyShape = Shape
+                        .Scalar(declaredType, property.DeclaredTypeIsReferenceType ?? true)
+                        .WithNullable();
+                }
+                else if (preserveClrTypes &&
+                         (property.Value.TypeExpression ?? property.DeclaredTypeExpression) is { Length: > 0 } clrType)
+                {
+                    propertyShape = Shape.Scalar(
+                        clrType,
+                        property.Value.IsReferenceType ?? property.DeclaredTypeIsReferenceType ?? true);
+                }
+                else
+                {
+                    propertyShape = Infer(property.Value, warnings, preserveClrTypes, expandObject: false);
+                }
+                properties.Add(new(property.Name, propertyShape));
+            }
+            return Shape.Object(properties);
+        }
         if (snapshot.Items is not null && snapshot.Kind is SnapshotKind.Json or SnapshotKind.Sequence)
         {
             if (snapshot.Items.Count == 0)
@@ -127,7 +186,7 @@ internal static class DataTypeInference
                 return Shape.Array(Shape.Unknown());
             }
             var element = snapshot.Items
-                .Select(item => Infer(item, warnings))
+                .Select(item => Infer(item, warnings, preserveClrTypes, expandObject))
                 .Aggregate((left, right) => Merge(left, right, warnings));
             return Shape.Array(element);
         }
@@ -135,7 +194,7 @@ internal static class DataTypeInference
         return snapshot.Kind switch
         {
             SnapshotKind.Boolean => Shape.Scalar("bool"),
-            SnapshotKind.String => Shape.Scalar("string"),
+            SnapshotKind.String => Shape.Scalar("string", isReferenceType: true),
             SnapshotKind.DateTime => Shape.Scalar("DateTime"),
             SnapshotKind.Guid => Shape.Scalar("Guid"),
             SnapshotKind.Number => Shape.Scalar(InferNumberType(snapshot)),
@@ -164,7 +223,7 @@ internal static class DataTypeInference
         if (left.Kind == ShapeKind.Scalar && right.Kind == ShapeKind.Scalar)
         {
             if (left.ScalarType == right.ScalarType)
-                return Shape.Scalar(left.ScalarType!).WithNullable(nullable);
+                return Shape.Scalar(left.ScalarType!, left.IsReferenceType).WithNullable(nullable);
             if (TryMergeNumbers(left.ScalarType!, right.ScalarType!, out var numberType))
                 return Shape.Scalar(numberType).WithNullable(nullable);
             return Shape.Fallback(nullable, warnings);
@@ -288,13 +347,15 @@ internal static class DataTypeInference
             string? scalarType = null,
             IReadOnlyList<ShapeProperty>? properties = null,
             Shape? element = null,
-            bool nullable = false)
+            bool nullable = false,
+            bool isReferenceType = false)
         {
             Kind = kind;
             ScalarType = scalarType;
             Properties = properties;
             Element = element;
             Nullable = nullable;
+            IsReferenceType = isReferenceType;
         }
 
         public ShapeKind Kind { get; }
@@ -302,10 +363,12 @@ internal static class DataTypeInference
         public IReadOnlyList<ShapeProperty>? Properties { get; }
         public Shape? Element { get; }
         public bool Nullable { get; }
+        public bool IsReferenceType { get; }
 
         public static Shape Null() => new(ShapeKind.Null, nullable: true);
         public static Shape Unknown() => new(ShapeKind.Unknown, nullable: true);
-        public static Shape Scalar(string type) => new(ShapeKind.Scalar, scalarType: type);
+        public static Shape Scalar(string type, bool isReferenceType = false) =>
+            new(ShapeKind.Scalar, scalarType: type, isReferenceType: isReferenceType);
         public static Shape Object(IEnumerable<ShapeProperty> properties) =>
             new(ShapeKind.Object, properties: properties.ToArray());
         public static Shape Array(Shape element) => new(ShapeKind.Array, element: element);
@@ -318,7 +381,7 @@ internal static class DataTypeInference
 
         public Shape WithNullable(bool nullable = true) => nullable == Nullable
             ? this
-            : new(Kind, ScalarType, Properties, Element, nullable);
+            : new(Kind, ScalarType, Properties, Element, nullable, IsReferenceType);
     }
 
     private sealed record ShapeProperty(string JsonName, Shape Type);
@@ -327,11 +390,14 @@ internal static class DataTypeInference
     {
         private readonly string rootTypeName;
         private readonly Dictionary<Shape, string> typeNames = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<ShapeProperty, string> propertyNames = new(ReferenceEqualityComparer.Instance);
         private readonly HashSet<string> usedTypeNames = new(StringComparer.Ordinal);
 
         public ModelRenderer(string rootTypeName) => this.rootTypeName = rootTypeName;
 
         public string GetTypeName(Shape shape) => typeNames[shape];
+        public string GetPropertyName(ShapeProperty property) => propertyNames[property];
+        public IEnumerable<Shape> ObjectShapes => typeNames.Keys;
 
         public string Render(Shape root)
         {
@@ -345,6 +411,7 @@ internal static class DataTypeInference
                 foreach (var property in shape.Properties!)
                 {
                     var propertyName = MakeUnique(CreateIdentifier(property.JsonName), usedProperties);
+                    propertyNames[property] = propertyName;
                     if (!string.Equals(property.JsonName, propertyName, StringComparison.Ordinal))
                         result.Append("    [global::System.Text.Json.Serialization.JsonPropertyName(")
                             .Append(EscapeString(property.JsonName)).AppendLine(")]");
@@ -371,7 +438,7 @@ internal static class DataTypeInference
             }
         }
 
-        private string RenderType(Shape shape)
+        public string RenderType(Shape shape)
         {
             var baseType = shape.Kind switch
             {
@@ -380,15 +447,16 @@ internal static class DataTypeInference
                 ShapeKind.Array => $"global::System.Collections.Generic.List<{RenderType(shape.Element!)}>",
                 _ => "global::System.Text.Json.Nodes.JsonNode"
             };
-            return shape.Nullable ? baseType + "?" : baseType;
+            return shape.Nullable && !baseType.EndsWith("?", StringComparison.Ordinal) ? baseType + "?" : baseType;
         }
 
         private static string GetInitializer(Shape shape)
         {
-            if (shape.Nullable || shape.Kind == ShapeKind.Scalar && shape.ScalarType != "string") return string.Empty;
+            if (shape.Nullable || shape.Kind == ShapeKind.Scalar && !shape.IsReferenceType) return string.Empty;
             return shape.Kind switch
             {
-                ShapeKind.Scalar => " = string.Empty;",
+                ShapeKind.Scalar when shape.ScalarType == "string" => " = string.Empty;",
+                ShapeKind.Scalar => " = null!;",
                 ShapeKind.Object or ShapeKind.Array => " = new();",
                 _ => " = null!;"
             };
@@ -401,5 +469,110 @@ internal static class DataTypeInference
             while (!used.Add(value)) value = proposed + suffix++;
             return value;
         }
+    }
+
+    private static class DirectProjectionRenderer
+    {
+        public static string Render(
+            ModelRenderer renderer,
+            Shape root,
+            bool rootIsSequence,
+            string sourceExpression,
+            string variableName,
+            string definitions)
+        {
+            var suffix = CreateIdentifier(renderer.GetTypeName(root));
+            var mapName = $"__Map{suffix}";
+            var mapSequenceName = $"__Map{suffix}Sequence";
+            var readName = $"__Read{suffix}Member";
+            var convertName = $"__Convert{suffix}Value";
+            var result = new StringBuilder()
+                .Append("var ").Append(variableName).Append(" = ");
+            if (rootIsSequence)
+            {
+                result.Append(mapSequenceName).Append("<").Append(renderer.RenderType(root)).Append(">((object?)(")
+                    .Append(sourceExpression).Append("), static item => ").Append(mapName).AppendLine("(item));");
+            }
+            else
+            {
+                result.Append(mapName).Append("((object?)(").Append(sourceExpression).AppendLine("));");
+            }
+            result.AppendLine();
+
+            foreach (var shape in renderer.ObjectShapes)
+            {
+                var currentMapName = $"__Map{CreateIdentifier(renderer.GetTypeName(shape))}";
+                result.Append("static ").Append(renderer.GetTypeName(shape)).Append(' ').Append(currentMapName)
+                    .AppendLine("(object? source) => new()")
+                    .AppendLine("{");
+                foreach (var property in shape.Properties!)
+                {
+                    result.Append("    ").Append(renderer.GetPropertyName(property)).Append(" = ")
+                        .Append(RenderValue(
+                            renderer,
+                            property.Type,
+                            $"{readName}(source, {EscapeString(property.JsonName)})",
+                            mapSequenceName,
+                            convertName))
+                        .AppendLine(",");
+                }
+                result.AppendLine("};").AppendLine();
+            }
+
+            result.Append("static object? ").Append(readName).AppendLine("(object? source, string name)")
+                .AppendLine("{")
+                .AppendLine("    if (source is null) return null;")
+                .AppendLine("    try")
+                .AppendLine("    {")
+                .AppendLine("        if (source is global::System.Collections.Generic.IDictionary<string, object?> values)")
+                .AppendLine("            return values.TryGetValue(name, out var value) ? value : null;")
+                .AppendLine("        if (source is global::System.Collections.Generic.IReadOnlyDictionary<string, object?> readOnlyValues)")
+                .AppendLine("            return readOnlyValues.TryGetValue(name, out var value) ? value : null;")
+                .AppendLine("        if (source is global::System.Collections.IDictionary dictionary)")
+                .AppendLine("            return dictionary.Contains(name) ? dictionary[name] : null;")
+                .AppendLine("        var type = source.GetType();")
+                .AppendLine("        var property = type.GetProperty(name, global::System.Reflection.BindingFlags.Instance | global::System.Reflection.BindingFlags.Public);")
+                .AppendLine("        if (property is not null && property.GetIndexParameters().Length == 0) return property.GetValue(source);")
+                .AppendLine("        var field = type.GetField(name, global::System.Reflection.BindingFlags.Instance | global::System.Reflection.BindingFlags.Public);")
+                .AppendLine("        if (field is not null) return field.GetValue(source);")
+                .AppendLine("        var indexer = type.GetProperty(\"Item\", [typeof(string)]);")
+                .AppendLine("        return indexer?.GetValue(source, [name]);")
+                .AppendLine("    }")
+                .AppendLine("    catch")
+                .AppendLine("    {")
+                .AppendLine("        return null;")
+                .AppendLine("    }")
+                .AppendLine("}")
+                .AppendLine()
+                .Append("static T ").Append(convertName).AppendLine("<T>(object? value)")
+                .AppendLine("{")
+                .AppendLine("    if (value is null or global::System.DBNull) return default!;")
+                .AppendLine("    return value is T typed ? typed : (T)value;")
+                .AppendLine("}")
+                .AppendLine()
+                .Append("static global::System.Collections.Generic.List<T> ").Append(mapSequenceName)
+                .AppendLine("<T>(object? source, global::System.Func<object?, T> map)")
+                .AppendLine("{")
+                .AppendLine("    if (source is not global::System.Collections.IEnumerable values) return [];")
+                .AppendLine("    return global::System.Linq.Enumerable.ToList(")
+                .AppendLine("        global::System.Linq.Enumerable.Select(")
+                .AppendLine("            global::System.Linq.Enumerable.Cast<object?>(values), map));")
+                .AppendLine("}")
+                .AppendLine()
+                .Append(definitions);
+            return result.ToString();
+        }
+
+        private static string RenderValue(
+            ModelRenderer renderer,
+            Shape shape,
+            string source,
+            string mapSequenceName,
+            string convertName) => shape.Kind switch
+        {
+            ShapeKind.Object => $"__Map{CreateIdentifier(renderer.GetTypeName(shape))}({source})",
+            ShapeKind.Array => $"{mapSequenceName}<{renderer.RenderType(shape.Element!)}>({source}, static item => {RenderValue(renderer, shape.Element!, "item", mapSequenceName, convertName)})",
+            _ => $"{convertName}<{renderer.RenderType(shape)}>({source})"
+        };
     }
 }

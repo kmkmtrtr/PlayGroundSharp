@@ -2000,6 +2000,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         "delegate" => "D",
         "method" => "M",
         "constructor" => "M",
+        "property" => "P",
         _ => "T"
     };
 

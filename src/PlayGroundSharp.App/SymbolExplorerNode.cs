@@ -49,6 +49,7 @@ public sealed record SymbolExplorerNode(
         "delegate" => "Delegate",
         "method" => "Method",
         "constructor" => "Constructor",
+        "property" => "Property",
         _ => "Type"
     };
     public string InheritanceDisplay => string.Join(", ", InheritedTypeItems);

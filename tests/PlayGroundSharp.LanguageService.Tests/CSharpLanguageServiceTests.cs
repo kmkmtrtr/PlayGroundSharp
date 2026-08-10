@@ -632,6 +632,19 @@ public sealed class CSharpLanguageServiceTests
                 "delegate int Transformer(int value)",
                 "/// <summary>Describes a local state.</summary>\nenum LocalState\n{\n    /// <summary>The initial state.</summary>\n    Ready = 4,\n    Busy = 8\n}",
                 "interface IEntity { }\nclass EntityBase { }\nclass Customer : EntityBase, IEntity { }",
+                """
+                class PropertySample
+                {
+                    /// <summary>Gets or initializes the display name.</summary>
+                    public string Name { get; init; } = string.Empty;
+
+                    public int Count { get; private set; }
+
+                    /// <summary>Gets the value at an index.</summary>
+                    /// <param name="index">The requested index.</param>
+                    public string this[int index] => index.ToString();
+                }
+                """,
                 "/// <summary>Checks whether a user is an adult.</summary>\n/// <param name=\"user\">The user to inspect.</param>\nbool IsAdult(User user) => true"
             ],
             SessionContext.DefaultImports,
@@ -645,8 +658,17 @@ public sealed class CSharpLanguageServiceTests
             Assert.Single(entries, static entry =>
                 entry.Namespace == "System.Collections.Generic" && entry.Name == "List<T>" &&
                 entry.Kind == "class").DocumentationPath);
+        var frameworkProperty = Assert.Single(entries, static entry =>
+            entry.Namespace == "System" && entry.ContainingType == "String" &&
+            entry.Name == "Length" && entry.Kind == "property");
+        Assert.Equal("Length : int", frameworkProperty.DisplayName);
+        Assert.Equal("int String.Length { get; }", frameworkProperty.Signature);
+        Assert.Equal("system.string.length", frameworkProperty.DocumentationPath);
         Assert.Contains(entries, static entry => entry.Namespace == "System.Linq" && entry.Name == "Enumerable" && entry.Kind == "class");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "User" && entry.Kind == "record");
+        Assert.Contains(entries, static entry =>
+            entry.Namespace == "(session)" && entry.ContainingType == "User" &&
+            entry.Name == "Name" && entry.Kind == "property");
         Assert.Contains(entries, static entry => entry.Namespace == "(session)" && entry.Name == "Transformer" && entry.Kind == "delegate");
         var sessionEnumMember = Assert.Single(entries, static entry =>
             entry.Namespace == "(session)" && entry.ContainingType == "LocalState" &&
@@ -675,6 +697,11 @@ public sealed class CSharpLanguageServiceTests
             });
         Assert.Contains(entries, static entry =>
             entry.Namespace == "PlayGroundSharp.TestFixture" && entry.Name == "Greeter");
+        var dynamicProperty = Assert.Single(entries, static entry =>
+            entry.Namespace == "PlayGroundSharp.TestFixture" && entry.ContainingType == "Greeter" &&
+            entry.Name == "Message" && entry.Kind == "property");
+        Assert.Equal("static string Greeter.Message { get; }", dynamicProperty.Signature);
+        Assert.Contains("greeting", dynamicProperty.Summary, StringComparison.OrdinalIgnoreCase);
         var dynamicEnumMember = Assert.Single(entries, static entry =>
             entry.Namespace == "PlayGroundSharp.TestFixture" && entry.ContainingType == "WorkflowState" &&
             entry.Name == "Running" && entry.Kind == "enum member");
@@ -688,6 +715,23 @@ public sealed class CSharpLanguageServiceTests
             entry.Namespace == "(session)" && entry.Name == "IsAdult" && entry.Kind == "method");
         Assert.Contains("adult", sessionMethod.Summary, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("The user to inspect.", Assert.Single(sessionMethod.Parameters).Summary);
+
+        var initProperty = Assert.Single(entries, static entry =>
+            entry.Namespace == "(session)" && entry.ContainingType == "PropertySample" &&
+            entry.Name == "Name" && entry.Kind == "property");
+        Assert.Equal("string PropertySample.Name { get; init; }", initProperty.Signature);
+        Assert.Contains("display name", initProperty.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            "int PropertySample.Count { get; private set; }",
+            Assert.Single(entries, static entry =>
+                entry.Namespace == "(session)" && entry.ContainingType == "PropertySample" &&
+                entry.Name == "Count" && entry.Kind == "property").Signature);
+        var indexer = Assert.Single(entries, static entry =>
+            entry.Namespace == "(session)" && entry.ContainingType == "PropertySample" &&
+            entry.Name == "this" && entry.Kind == "property");
+        Assert.Equal("this[int index] : string", indexer.DisplayName);
+        Assert.Equal("string PropertySample.this[int index] { get; }", indexer.Signature);
+        Assert.Equal("The requested index.", Assert.Single(indexer.Parameters).Summary);
 
         var frameworkMethod = Assert.Single(entries, static entry =>
             entry.Namespace == "System" && entry.ContainingType == "String" &&

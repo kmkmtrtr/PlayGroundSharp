@@ -821,7 +821,7 @@ public sealed class CSharpLanguageService
             if (@namespace is null) continue;
             foreach (var type in @namespace.GetTypeMembers()
                          .Where(static type => type.DeclaredAccessibility == Accessibility.Public))
-                AddTypeAndMethods(entries, type, import, cancellationToken);
+                AddTypeAndMembers(entries, type, import, cancellationToken);
         }
 
         var root = await workspaceDocument.Document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -833,7 +833,7 @@ public sealed class CSharpLanguageService
                 .OfType<INamedTypeSymbol>()
                 .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default);
             foreach (var type in sessionTypes)
-                AddTypeAndMethods(entries, type, "(session)", cancellationToken);
+                AddTypeAndMembers(entries, type, "(session)", cancellationToken);
 
             var sessionMethods = root.DescendantNodes()
                 .Where(static node => node is MethodDeclarationSyntax or LocalFunctionStatementSyntax)
@@ -857,7 +857,7 @@ public sealed class CSharpLanguageService
             string? documentationPath = Path.ChangeExtension(reference.FilePath, ".xml");
             if (!File.Exists(documentationPath)) documentationPath = null;
             foreach (var type in EnumeratePublicTypes(assembly.GlobalNamespace))
-                AddTypeAndMethods(entries, type, type.ContainingNamespace.ToDisplayString(), cancellationToken, documentationPath);
+                AddTypeAndMembers(entries, type, type.ContainingNamespace.ToDisplayString(), cancellationToken, documentationPath);
         }
 
         return entries
@@ -1258,7 +1258,7 @@ public sealed class CSharpLanguageService
         }
     }
 
-    private static void AddTypeAndMethods(
+    private static void AddTypeAndMembers(
         ICollection<SymbolExplorerEntry> entries,
         INamedTypeSymbol type,
         string namespaceName,
@@ -1290,6 +1290,17 @@ public sealed class CSharpLanguageService
                          !method.IsImplicitlyDeclared &&
                          method.MethodKind is MethodKind.Ordinary or MethodKind.Constructor))
             entries.Add(CreateMethodEntry(method, namespaceName, typeName, cancellationToken, documentationPath));
+
+        foreach (var property in type.GetMembers().OfType<IPropertySymbol>()
+                     .Where(static property =>
+                         property.DeclaredAccessibility == Accessibility.Public &&
+                         !property.IsImplicitlyDeclared))
+            entries.Add(CreatePropertyEntry(
+                property,
+                namespaceName,
+                typeName,
+                cancellationToken,
+                documentationPath));
 
         if (type.TypeKind == TypeKind.Enum)
             foreach (var field in type.GetMembers().OfType<IFieldSymbol>()
@@ -1358,6 +1369,86 @@ public sealed class CSharpLanguageService
             [],
             CreateMicrosoftLearnDocumentationPath(method));
     }
+
+    private static SymbolExplorerEntry CreatePropertyEntry(
+        IPropertySymbol property,
+        string namespaceName,
+        string containingType,
+        CancellationToken cancellationToken,
+        string? documentationPath)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var documentation = GetDocumentation(property, cancellationToken, documentationPath);
+        var assemblyName = namespaceName == "(session)" ? "Session" : property.ContainingAssembly?.Name ?? string.Empty;
+        var parameters = property.Parameters.Select(parameter => new ExplorerParameterInfo(
+            parameter.Name,
+            parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            documentation.Parameters.GetValueOrDefault(parameter.Name) ?? string.Empty)).ToArray();
+        var typeName = property.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var displayName = property.IsIndexer
+            ? $"this[{FormatPropertyParameters(property)}] : {typeName}"
+            : $"{property.Name} : {typeName}";
+        return new(
+            namespaceName,
+            property.IsIndexer ? "this" : property.Name,
+            displayName,
+            "property",
+            assemblyName,
+            containingType,
+            FormatPropertySignature(property, containingType),
+            documentation.Summary,
+            parameters,
+            documentation.Returns,
+            null,
+            [],
+            CreateMicrosoftLearnDocumentationPath(property));
+    }
+
+    private static string FormatPropertySignature(IPropertySymbol property, string containingType)
+    {
+        var typeName = property.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var memberName = property.IsIndexer
+            ? $"this[{FormatPropertyParameters(property)}]"
+            : property.Name;
+        var accessors = new List<string>(2);
+        if (property.GetMethod is { } getter)
+            accessors.Add(FormatPropertyAccessor(getter, "get", property.DeclaredAccessibility));
+        if (property.SetMethod is { } setter)
+            accessors.Add(FormatPropertyAccessor(
+                setter,
+                setter.IsInitOnly ? "init" : "set",
+                property.DeclaredAccessibility));
+        var staticPrefix = property.IsStatic ? "static " : string.Empty;
+        return $"{staticPrefix}{typeName} {containingType}.{memberName} {{ {string.Join(' ', accessors)} }}";
+    }
+
+    private static string FormatPropertyParameters(IPropertySymbol property) => string.Join(", ",
+        property.Parameters.Select(static parameter =>
+            $"{GetRefKindPrefix(parameter.RefKind)}{parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)} {parameter.Name}"));
+
+    private static string FormatPropertyAccessor(
+        IMethodSymbol accessor,
+        string keyword,
+        Accessibility propertyAccessibility)
+    {
+        var accessibilityKeyword = GetAccessibilityKeyword(accessor.DeclaredAccessibility);
+        var accessibility = accessor.DeclaredAccessibility != propertyAccessibility &&
+                            accessibilityKeyword.Length > 0
+            ? accessibilityKeyword + " "
+            : string.Empty;
+        return $"{accessibility}{keyword};";
+    }
+
+    private static string GetAccessibilityKeyword(Accessibility accessibility) => accessibility switch
+    {
+        Accessibility.Public => "public",
+        Accessibility.Protected => "protected",
+        Accessibility.Internal => "internal",
+        Accessibility.ProtectedOrInternal => "protected internal",
+        Accessibility.ProtectedAndInternal => "private protected",
+        Accessibility.Private => "private",
+        _ => string.Empty
+    };
 
     private static string? CreateMicrosoftLearnDocumentationPath(ISymbol? symbol)
     {

@@ -33,6 +33,36 @@ public sealed class SymbolExplorerNodeTests
     }
 
     [Fact]
+    public void BuildsAndSearchesPropertyNodesWithDedicatedGlyph()
+    {
+        var type = Entry("Widget", "widget-id", "class");
+        var property = new SymbolExplorerEntry(
+            "Example.Types",
+            "CreatedAt",
+            "CreatedAt : DateTime",
+            "property",
+            "Example",
+            "Widget",
+            "DateTime Widget.CreatedAt { get; init; }",
+            "Gets the creation time.",
+            [],
+            string.Empty,
+            null,
+            []);
+
+        var roots = MainViewModel.BuildTypeExplorerItems([type, property], "DateTime");
+        var propertyNode = Assert.Single(
+            Assert.Single(
+                Assert.Single(
+                    Assert.Single(roots).Children).Children).Children);
+
+        Assert.Equal("CreatedAt : DateTime", propertyNode.Name);
+        Assert.Equal("property", propertyNode.Kind);
+        Assert.Equal("P", propertyNode.Glyph);
+        Assert.Equal("Property", propertyNode.KindLabel);
+    }
+
+    [Fact]
     public void BuildsBidirectionalNavigableTypeRelationships()
     {
         var baseType = Entry("BaseWidget", "base-id", "class");

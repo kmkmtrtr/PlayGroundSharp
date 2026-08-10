@@ -366,6 +366,40 @@ public partial class MainWindow : Window
         SymbolDetailPopup.IsOpen = true;
     }
 
+    private async void NavigateSymbolRelation_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement
+            {
+                DataContext: SymbolExplorerRelation { CanNavigate: true, SymbolId: { } symbolId }
+            }) return;
+        e.Handled = true;
+        if (await viewModel.NavigateToExplorerSymbolAsync(symbolId) is not { } target) return;
+        await Dispatcher.InvokeAsync(() => FocusExplorerNode(target), DispatcherPriority.Loaded);
+    }
+
+    private void FocusExplorerNode(SymbolExplorerNode target)
+    {
+        if (SymbolExplorerNode.FindPathBySymbolId(TypeExplorerTree.Items.Cast<SymbolExplorerNode>(), target.SymbolId!)
+            is not { } path) return;
+        ItemsControl parent = TypeExplorerTree;
+        TreeViewItem? targetContainer = null;
+        foreach (var node in path)
+        {
+            parent.UpdateLayout();
+            if (parent.ItemContainerGenerator.ContainerFromItem(node) is not TreeViewItem container) return;
+            container.IsExpanded = true;
+            container.UpdateLayout();
+            targetContainer = container;
+            parent = container;
+        }
+        if (targetContainer is null) return;
+        targetContainer.IsSelected = true;
+        targetContainer.BringIntoView();
+        targetContainer.Focus();
+        viewModel.SelectedExplorerNode = target;
+        SymbolDetailPopup.IsOpen = true;
+    }
+
     private void TypeExplorerPane_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.NewValue is true)

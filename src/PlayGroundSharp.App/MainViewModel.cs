@@ -1063,6 +1063,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         return await RebuildTypeExplorerAsync(rebuild.Token);
     }
 
+    internal async Task<SymbolExplorerNode?> NavigateToExplorerSymbolAsync(string symbolId)
+    {
+        var target = typeExplorerEntries.FirstOrDefault(entry => entry.SymbolId == symbolId);
+        if (target is null) return null;
+        TypeExplorerSearchText = target.FullName;
+        if (!await ApplyTypeExplorerFilterNowAsync()) return null;
+        return SymbolExplorerNode.FindPathBySymbolId(TypeExplorerItems, symbolId)?.LastOrDefault();
+    }
+
     partial void OnVariableFilterTextChanged(string value) => ScheduleVariableFilterRefresh();
 
     internal void ApplyVariableFilterNow()
@@ -1939,6 +1948,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 .ToArray();
         }
 
+        var relationships = ExplorerRelationshipIndex.Create(entries);
         var root = new ExplorerNodeBuilder(string.Empty, string.Empty);
         foreach (var entry in filtered)
         {
@@ -1957,10 +1967,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var items = root.Namespaces.Values
                      .OrderBy(static item => item.FullName == "Session" ? 0 : 1)
                      .ThenBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(item => item.Build(!string.IsNullOrEmpty(query), cancellationToken))
+            .Select(item => item.Build(!string.IsNullOrEmpty(query), relationships, cancellationToken))
             .ToArray();
         return new(items);
     }
+
+    internal static IReadOnlyList<SymbolExplorerNode> BuildTypeExplorerItems(
+        IReadOnlyList<SymbolExplorerEntry> entries,
+        string query = "") =>
+        BuildTypeExplorer(entries, query, CancellationToken.None).Items;
 
     private static bool MatchesExplorerQuery(SymbolExplorerEntry entry, string query) =>
         entry.FullName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -1987,6 +2002,67 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _ => "T"
     };
 
+    private sealed class ExplorerRelationshipIndex(
+        IReadOnlyDictionary<string, SymbolExplorerEntry> typesById,
+        IReadOnlyDictionary<string, IReadOnlyList<SymbolExplorerEntry>> derivedByParentId)
+    {
+        public static ExplorerRelationshipIndex Create(IReadOnlyList<SymbolExplorerEntry> entries)
+        {
+            var types = entries
+                .Where(static entry => entry.ContainingType is null && entry.SymbolId is not null)
+                .GroupBy(static entry => entry.SymbolId!, StringComparer.Ordinal)
+                .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+            var derived = new Dictionary<string, List<SymbolExplorerEntry>>(StringComparer.Ordinal);
+            foreach (var entry in types.Values)
+                foreach (var relation in entry.InheritedTypeRelations)
+                {
+                    if (!derived.TryGetValue(relation.SymbolId, out var values))
+                    {
+                        values = [];
+                        derived.Add(relation.SymbolId, values);
+                    }
+                    if (values.All(candidate => candidate.SymbolId != entry.SymbolId)) values.Add(entry);
+                }
+            return new(
+                types,
+                derived.ToDictionary(
+                    static pair => pair.Key,
+                    static pair => (IReadOnlyList<SymbolExplorerEntry>)pair.Value
+                        .OrderBy(static entry => entry.FullName, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(static entry => entry.AssemblyName, StringComparer.OrdinalIgnoreCase)
+                        .ToArray(),
+                    StringComparer.Ordinal));
+        }
+
+        public IReadOnlyList<SymbolExplorerRelation> GetParents(SymbolExplorerEntry entry) =>
+            entry.InheritedTypeRelations.Select(relation =>
+            {
+                typesById.TryGetValue(relation.SymbolId, out var target);
+                return new SymbolExplorerRelation(
+                    relation.SymbolId,
+                    relation.DisplayName,
+                    relation.Kind,
+                    relation.Kind == "interface" ? "interface" : "base",
+                    target is not null,
+                    target?.FullName,
+                    target?.AssemblyName ?? string.Empty);
+            }).ToArray();
+
+        public IReadOnlyList<SymbolExplorerRelation> GetDerived(SymbolExplorerEntry entry)
+        {
+            if (entry.SymbolId is null || !derivedByParentId.TryGetValue(entry.SymbolId, out var derived)) return [];
+            var relationKind = entry.Kind == "interface" ? "implementation" : "derived";
+            return derived.Select(target => new SymbolExplorerRelation(
+                target.SymbolId!,
+                target.DisplayName,
+                target.Kind,
+                relationKind,
+                true,
+                target.FullName,
+                target.AssemblyName)).ToArray();
+        }
+    }
+
     private sealed class ExplorerNodeBuilder(string name, string fullName)
     {
         public string Name { get; } = name;
@@ -2002,12 +2078,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return created;
         }
 
-        public SymbolExplorerNode Build(bool expand, CancellationToken cancellationToken)
+        public SymbolExplorerNode Build(
+            bool expand,
+            ExplorerRelationshipIndex relationships,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var namespaceNodes = Namespaces.Values
                 .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(item => item.Build(expand, cancellationToken));
+                .Select(item => item.Build(expand, relationships, cancellationToken));
             var membersByType = Symbols
                 .Where(static item => item.ContainingType is not null)
                 .ToLookup(static item => (item.ContainingType!, item.AssemblyName));
@@ -2017,13 +2096,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 .Select(type => CreateSymbolNode(type, membersByType[(type.Name, type.AssemblyName)]
                     .OrderBy(static method => method.Name, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(static method => method.DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .Select(static method => CreateSymbolNode(method, []))
-                    .ToArray(), expand));
+                    .Select(method => CreateSymbolNode(method, [], relationships))
+                    .ToArray(), relationships, expand));
             var sessionMethods = Symbols
                 .Where(static item => item.ContainingType is null && item.Kind is "method" or "constructor")
                 .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(static item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
-                .Select(static item => CreateSymbolNode(item, []));
+                .Select(item => CreateSymbolNode(item, [], relationships));
             var children = namespaceNodes.Concat(typeNodes).Concat(sessionMethods).ToArray();
             return new SymbolExplorerNode(Name, "namespace", "N", FullName, children, expand || FullName == "Session");
         }
@@ -2031,6 +2110,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         private static SymbolExplorerNode CreateSymbolNode(
             SymbolExplorerEntry entry,
             IReadOnlyList<SymbolExplorerNode> children,
+            ExplorerRelationshipIndex relationships,
             bool isExpanded = false) => new(
                 entry.DisplayName,
                 entry.Kind,
@@ -2045,7 +2125,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 entry.Returns,
                 entry.AssemblyName,
                 entry.DocumentationPath,
-                entry.InheritedTypes);
+                entry.InheritedTypes,
+                entry.SymbolId,
+                relationships.GetParents(entry),
+                relationships.GetDerived(entry));
     }
 
     private sealed record ExplorerBuildResult(IReadOnlyList<SymbolExplorerNode> Items);

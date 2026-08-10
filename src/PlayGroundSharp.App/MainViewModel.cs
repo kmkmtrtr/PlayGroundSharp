@@ -662,7 +662,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     internal Task<bool> ReleaseRetainedResultAsync(int submissionIndex) =>
         ExecuteGeneratedSubmissionAsync(RetainedResultStatement.Release(submissionIndex));
 
-    private async Task<bool> ExecuteGeneratedSubmissionAsync(string code)
+    internal async Task<bool> ExecuteGeneratedSubmissionAsync(string code)
     {
         if (IsRunning || IsPreparingExecution || HasPendingSessionMutation || !IsWorkerConnected)
             return false;
@@ -673,6 +673,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             await ExecuteAsync();
+            if (executionCompletion?.Task is { } completion) await completion;
             return submissions.Count == previousSubmissionCount + 1;
         }
         finally

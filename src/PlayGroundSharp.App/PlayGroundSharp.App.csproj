@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <StartupObject>PlayGroundSharp.App.Program</StartupObject>
+    <ApplicationIcon>Assets\PlayGroundSharp.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -19,6 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\PlayGroundSharp.ico" />
     <ProjectReference Include="..\PlayGroundSharp.Core\PlayGroundSharp.Core.csproj" />
     <ProjectReference Include="..\PlayGroundSharp.LanguageService\PlayGroundSharp.LanguageService.csproj" />
     <ProjectReference Include="..\PlayGroundSharp.Worker\PlayGroundSharp.Worker.csproj" />

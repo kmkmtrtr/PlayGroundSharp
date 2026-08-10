@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:ClassModifier="internal"
         Title="{DynamicResource Inspector.FilterColumnTitle}"
+        Icon="Assets/PlayGroundSharp.ico"
         Width="460" Height="270" MinWidth="420" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <Grid Margin="18">

@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
         Title="{DynamicResource DataInference.Title}"
+        Icon="Assets/PlayGroundSharp.ico"
         Width="800" Height="610" MinWidth="620" MinHeight="480"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <Grid Margin="18">

@@ -2124,22 +2124,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     new SymbolExplorerParameter(parameter.Name, parameter.TypeName, parameter.Summary)).ToArray(),
                 entry.Returns,
                 entry.AssemblyName,
-                CreateDocumentationPath(entry),
+                entry.DocumentationPath,
                 entry.InheritedTypes,
                 entry.SymbolId,
                 relationships.GetParents(entry),
                 relationships.GetDerived(entry));
-
-        private static string? CreateDocumentationPath(SymbolExplorerEntry entry)
-        {
-            if (entry.AssemblyName == "Session" ||
-                !entry.AssemblyName.StartsWith("System", StringComparison.Ordinal) &&
-                !entry.AssemblyName.StartsWith("Microsoft", StringComparison.Ordinal)) return null;
-            var fullName = entry.Kind == "constructor"
-                ? string.Join('.', new[] { entry.Namespace, entry.ContainingType }.Where(static part => !string.IsNullOrEmpty(part)))
-                : entry.FullName;
-            return Regex.Replace(fullName, "<[^>]+>", string.Empty).ToLowerInvariant();
-        }
     }
 
     private sealed record ExplorerBuildResult(IReadOnlyList<SymbolExplorerNode> Items);

@@ -671,8 +671,15 @@
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <local:DocumentationView x:Name="QuickInfoDocumentation" />
                             </ScrollViewer>
-                            <TextBlock Grid.Row="1" Text="{DynamicResource QuickInfo.Hint}"
-                                       Foreground="{DynamicResource MutedBrush}" FontSize="10.5" Margin="0,9,0,0" />
+                            <DockPanel Grid.Row="1" Margin="0,7,0,0" LastChildFill="True">
+                                <Button x:Name="QuickInfoLearnButton" DockPanel.Dock="Right"
+                                        Content="{DynamicResource Docs.OpenJapanese}" Style="{StaticResource MiniButtonStyle}"
+                                        Margin="12,0,-6,0" Visibility="Collapsed"
+                                        Click="OpenQuickInfoDocumentation_Click" />
+                                <TextBlock Text="{DynamicResource QuickInfo.Hint}"
+                                           Foreground="{DynamicResource MutedBrush}" FontSize="10.5"
+                                           VerticalAlignment="Center" />
+                            </DockPanel>
                         </Grid>
                     </Border>
                 </Popup>
@@ -682,10 +689,21 @@
                        StaysOpen="True" AllowsTransparency="False" Focusable="False">
                     <Border x:Name="HoverQuickInfoBorder" Width="560" MaxWidth="680" MaxHeight="420"
                             Background="{DynamicResource OverlayBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1" CornerRadius="7" Padding="14,11">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <local:DocumentationView x:Name="HoverQuickInfoDocumentation" />
-                        </ScrollViewer>
+                            BorderThickness="1" CornerRadius="7" Padding="14,11"
+                            MouseEnter="HoverQuickInfoBorder_MouseEnter" MouseLeave="HoverQuickInfoBorder_MouseLeave">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <local:DocumentationView x:Name="HoverQuickInfoDocumentation" />
+                            </ScrollViewer>
+                            <Button x:Name="HoverQuickInfoLearnButton" Grid.Row="1"
+                                    Content="{DynamicResource Docs.OpenJapanese}" Style="{StaticResource MiniButtonStyle}"
+                                    HorizontalAlignment="Left" Margin="-6,9,0,0"
+                                    Visibility="Collapsed" Click="OpenQuickInfoDocumentation_Click" />
+                        </Grid>
                     </Border>
                 </Popup>
                   </Grid>

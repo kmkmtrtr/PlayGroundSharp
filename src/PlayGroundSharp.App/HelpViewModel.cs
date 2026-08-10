@@ -37,8 +37,8 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("シンボル", "名前空間、型、メソッドとドキュメントを探索します。",
         [
-            new("ホバーと詳細表示", "項目へマウスを置くと署名と概要をすばやく確認できます。enumは展開すると各メンバーと定数値を表示します。クリックするとパラメーター、戻り値、継承元、実装インターフェース、派生型、実装型を右側のフライアウトへ表示し、型関係をクリックして対象へ移動できます。Explorer右端をドラッグすると一覧幅を変更できます。深い階層は横スクロールホイール、またはShift+ホイールで横移動できます。"),
-            new("日本語ドキュメント", "アセンブリ付属のXMLコメントは通常英語です。内容を不正確に自動翻訳せず、.NET APIでは固定詳細からMicrosoft Learnの日本語ページを開けます。"),
+            new("ホバーと詳細表示", "項目へマウスを置くと署名と概要をすばやく確認し、そのままポップアップへ移動して.NET APIのMicrosoft Learnを開けます。enumは展開すると各メンバーと定数値を表示します。クリックするとパラメーター、戻り値、継承元、実装インターフェース、派生型、実装型を右側のフライアウトへ表示し、型関係をクリックして対象へ移動できます。Explorer右端をドラッグすると一覧幅を変更できます。深い階層は横スクロールホイール、またはShift+ホイールで横移動できます。"),
+            new("日本語ドキュメント", "アセンブリ付属のXMLコメントは通常英語です。内容を不正確に自動翻訳せず、.NET APIではホバーのクイック情報やシンボル エクスプローラーからMicrosoft Learnの日本語ページを開けます。"),
             new("検索", "名前空間、型、メソッド、コメント、アセンブリ名を横断検索します。Ctrl+Fで検索欄へ移動し、Enterまたは↓で先頭の一致項目へ移動します。")
         ]),
         new("ワークスペース", "セッションを保存し、後から再構築できます。",
@@ -82,7 +82,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Symbol explorer", "Browse namespaces, types, methods, and XML documentation.",
         [
-            new("Hover and details", "Hover for a compact signature and summary. Expand an enum to inspect every member and its constant value. Click for documentation and navigable base, interface, derived, and implementing type relationships in a right-side flyout. Ctrl+F focuses search; Enter or Down moves to the first match. Drag the Explorer edge to resize it. Use a horizontal wheel or Shift+wheel to move through deep hierarchies."),
+            new("Hover and details", "Hover for a compact signature and summary, then move into the popup to open Microsoft Learn for .NET APIs. Expand an enum to inspect every member and its constant value. Click for documentation and navigable base, interface, derived, and implementing type relationships in a right-side flyout. Ctrl+F focuses search; Enter or Down moves to the first match. Drag the Explorer edge to resize it. Use a horizontal wheel or Shift+wheel to move through deep hierarchies."),
             new("Localized docs", "Assembly XML documentation is commonly English. Framework symbols link to the localized Microsoft Learn API page rather than applying an unreliable automatic translation.")
         ]),
         new("Workspaces", "Save and reconstruct a session later.",

@@ -24,6 +24,8 @@ public sealed class LargeDataAccessTests : IDisposable
 
         var info = data.Inspect(textPath);
         var preview = data.PreviewText(textPath, 5);
+        var completeText = await data.ReadAllTextAsync(textPath);
+        var completeBytes = await data.ReadAllBytesAsync(textPath);
         var lines = data.ReadLines(textPath).Take(2).ToArray();
         var array = await data.ReadJsonArrayAsync(jsonPath, 2);
         var jsonArray = Assert.IsType<JsonArray>(await data.ReadJsonAsync(jsonPath));
@@ -34,6 +36,8 @@ public sealed class LargeDataAccessTests : IDisposable
 
         Assert.Equal(new FileInfo(textPath).Length, info.Length);
         Assert.Equal("alpha", preview);
+        Assert.Equal("alpha\nbeta\ngamma", completeText);
+        Assert.Equal(await File.ReadAllBytesAsync(textPath), completeBytes);
         Assert.Equal(["alpha", "beta"], lines);
         Assert.Equal([1, 2], array.Select(static item => item!["id"]!.GetValue<int>()));
         Assert.True(Assert.IsAssignableFrom<IBoundedSequenceResult>(array).HasMoreItems);
@@ -100,6 +104,9 @@ public sealed class LargeDataAccessTests : IDisposable
         var array = DataSnippetBuilder.CreatePathArray(["C:\\one.txt", "D:\\two.json"]);
         var jsonLines = DataSnippetBuilder.CreateJsonLines("C:\\data\\a\"b.jsonl");
         var allJsonLines = DataSnippetBuilder.CreateAllJsonLines("C:\\data\\a\"b.jsonl");
+        var allText = DataSnippetBuilder.CreateAllText("C:\\data\\a\"b.jsonl");
+        var lineStream = DataSnippetBuilder.CreateLineStream("C:\\data\\a\"b.jsonl");
+        var allBytes = DataSnippetBuilder.CreateAllBytes("C:\\data\\a\"b.jsonl");
         var jsonArray = DataSnippetBuilder.CreateJsonArray("C:\\data\\items.json");
         var inspections = DataSnippetBuilder.CreateFileInspection(["C:\\one.txt", "D:\\two.json"]);
         var jsonBatch = DataSnippetBuilder.CreateJsonBatch(["C:\\one.json", "D:\\two.json"]);
@@ -108,6 +115,10 @@ public sealed class LargeDataAccessTests : IDisposable
         var allMixedJsonBatch = DataSnippetBuilder.CreateJsonFilesBatch(
             ["C:\\one.json", "D:\\two.jsonl"],
             jsonLinesTake: null);
+        var jsonLinesBatch = DataSnippetBuilder.CreateJsonLinesBatch(["C:\\one.data", "D:\\two.data"]);
+        var textBatch = DataSnippetBuilder.CreateTextBatch(["C:\\one.data", "D:\\two.data"]);
+        var lineStreams = DataSnippetBuilder.CreateLineStreams(["C:\\one.data", "D:\\two.data"]);
+        var bytesBatch = DataSnippetBuilder.CreateBytesBatch(["C:\\one.data", "D:\\two.data"]);
 
         Assert.Equal("@\"C:\\data\\a\"\"b.jsonl\"", literal);
         Assert.Contains("@\"C:\\one.txt\"", array, StringComparison.Ordinal);
@@ -115,6 +126,9 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Equal($"await Data.ReadJsonLinesAsync({literal}, 1000, ExecutionCancellation)", jsonLines);
         Assert.DoesNotContain("await foreach", jsonLines, StringComparison.Ordinal);
         Assert.Equal($"await Data.ReadAllJsonLinesAsync({literal}, ExecutionCancellation)", allJsonLines);
+        Assert.Equal($"await Data.ReadAllTextAsync({literal}, ExecutionCancellation)", allText);
+        Assert.Equal($"Data.ReadLines({literal})", lineStream);
+        Assert.Equal($"await Data.ReadAllBytesAsync({literal}, ExecutionCancellation)", allBytes);
         Assert.Contains("ReadJsonArrayAsync(@\"C:\\data\\items.json\", 1000", jsonArray, StringComparison.Ordinal);
         Assert.Contains("Select(path => Data.Inspect(path))", inspections, StringComparison.Ordinal);
         Assert.Contains("@\"C:\\one.txt\"", inspections, StringComparison.Ordinal);
@@ -126,6 +140,10 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Contains("jsonValues.AddRange(await Data.ReadJsonLinesAsync(@\"D:\\two.jsonl\", 1000, ExecutionCancellation))", mixedJsonBatch, StringComparison.Ordinal);
         Assert.Contains("jsonValues.AddRange(await Data.ReadJsonLinesAsync(@\"E:\\three.ndjson\", 1000, ExecutionCancellation))", mixedJsonBatch, StringComparison.Ordinal);
         Assert.Contains("jsonValues.AddRange(await Data.ReadAllJsonLinesAsync(@\"D:\\two.jsonl\", ExecutionCancellation))", allMixedJsonBatch, StringComparison.Ordinal);
+        Assert.Contains("jsonLineFiles.Add(await Data.ReadAllJsonLinesAsync(path, ExecutionCancellation))", jsonLinesBatch, StringComparison.Ordinal);
+        Assert.Contains("textFiles.Add(await Data.ReadAllTextAsync(path, ExecutionCancellation))", textBatch, StringComparison.Ordinal);
+        Assert.Contains("new { Path = path, Lines = Data.ReadLines(path) }", lineStreams, StringComparison.Ordinal);
+        Assert.Contains("binaryFiles.Add(await Data.ReadAllBytesAsync(path, ExecutionCancellation))", bytesBatch, StringComparison.Ordinal);
     }
 
     public void Dispose()

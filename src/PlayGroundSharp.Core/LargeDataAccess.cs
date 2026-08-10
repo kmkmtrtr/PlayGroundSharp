@@ -59,6 +59,26 @@ public sealed class LargeDataAccess
         return File.ReadLines(file.FullName);
     }
 
+    /// <summary>Reads the complete file as UTF-8 text.</summary>
+    /// <remarks>Use <see cref="ReadLines"/> or <see cref="PreviewText"/> when the complete content need not be retained.</remarks>
+    public async Task<string> ReadAllTextAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        var file = GetFile(path);
+        return await File.ReadAllTextAsync(file.FullName, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Reads the complete file as a byte array.</summary>
+    /// <remarks>Use <see cref="ReadBytes"/> when only a bounded range is needed.</remarks>
+    public async Task<byte[]> ReadAllBytesAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        var file = GetFile(path);
+        return await File.ReadAllBytesAsync(file.FullName, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Reads only the beginning of a text file, bounded to one MiB of characters.</summary>
     public string PreviewText(string path, int maxCharacters = 65_536, Encoding? encoding = null)
     {

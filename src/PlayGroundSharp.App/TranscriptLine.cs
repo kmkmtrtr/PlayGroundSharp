@@ -16,7 +16,6 @@ public sealed record TranscriptLine(
     IReadOnlyList<object?>? LocalizationArguments = null,
     string? ResultExpression = null)
 {
-    private const int MaximumConsolePreviewLength = 8 * 1024;
     public bool IsInspectable => Snapshot is not null;
     public bool IsStructured => SnapshotRoots is not null;
     public bool IsInput => InputCode is not null;
@@ -35,13 +34,9 @@ public sealed record TranscriptLine(
                 ? [ConsoleSnapshotNode.CreateRoot(snapshot)]
                 : null,
             ResultExpression: resultExpression);
-    public static TranscriptLine Console(string text, bool error, string previewLimitedMessage)
+    public static TranscriptLine Console(string text, bool error)
     {
-        var displaySource = text.TrimEnd('\r', '\n');
-        var displayText = displaySource.Length <= MaximumConsolePreviewLength
-            ? displaySource
-            : displaySource[..MaximumConsolePreviewLength] + Environment.NewLine + previewLimitedMessage;
-        return new(error ? "!" : "│", displayText,
+        return new(error ? "!" : "│", text.TrimEnd('\r', '\n'),
             Resource(error ? "ErrorBrush" : "MutedBrush"), Resource(error ? "ErrorBrush" : "MutedBrush"),
             CopyValue: text);
     }

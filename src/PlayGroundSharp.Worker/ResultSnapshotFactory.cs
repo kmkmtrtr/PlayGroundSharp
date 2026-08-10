@@ -261,20 +261,25 @@ public sealed class ResultSnapshotFactory
                 .Where(static property => property.GetIndexParameters().Length == 0)
                 .ToArray();
             var readableFields = type.GetFields(BindingFlags.Instance | BindingFlags.Public);
+            var memberCount = readableProperties.Length + readableFields.Length;
+            var memberIndex = 0;
             foreach (var property in readableProperties)
             {
                 if (!budget.CanTakeNode) break;
+                var remainingSiblings = memberCount - ++memberIndex;
                 try
                 {
                     if (TryReadPropertyWithoutSubmittedCode(value, property, out var propertyValue))
                     {
                         properties.Add(new(
                             property.Name,
-                            Create(propertyValue, depth + 1, path, budget),
+                            budget.CapturePreservingNodes(
+                                remainingSiblings,
+                                () => Create(propertyValue, depth + 1, path, budget)),
                             CSharpTypeExpression.TryCreate(property.PropertyType),
                             !property.PropertyType.IsValueType));
                     }
-                    else if (budget.TryTakeNode())
+                    else if (budget.CapturePreservingNodes(remainingSiblings, budget.TryTakeNode))
                     {
                         properties.Add(new(
                             property.Name,
@@ -290,7 +295,7 @@ public sealed class ResultSnapshotFactory
                 }
                 catch (Exception error)
                 {
-                    if (budget.TryTakeNode())
+                    if (budget.CapturePreservingNodes(remainingSiblings, budget.TryTakeNode))
                         properties.Add(new(
                             property.Name,
                             CreateExceptionSnapshot(error, property.PropertyType.FullName, budget),
@@ -302,17 +307,20 @@ public sealed class ResultSnapshotFactory
             foreach (var field in readableFields)
             {
                 if (!budget.CanTakeNode) break;
+                var remainingSiblings = memberCount - ++memberIndex;
                 try
                 {
                     properties.Add(new(
                         field.Name,
-                        Create(field.GetValue(value), depth + 1, path, budget),
+                        budget.CapturePreservingNodes(
+                            remainingSiblings,
+                            () => Create(field.GetValue(value), depth + 1, path, budget)),
                         CSharpTypeExpression.TryCreate(field.FieldType),
                         !field.FieldType.IsValueType));
                 }
                 catch (Exception error)
                 {
-                    if (budget.TryTakeNode())
+                    if (budget.CapturePreservingNodes(remainingSiblings, budget.TryTakeNode))
                         properties.Add(new(
                             field.Name,
                             CreateExceptionSnapshot(error, field.FieldType.FullName, budget),
@@ -321,8 +329,6 @@ public sealed class ResultSnapshotFactory
                             IsReadable: false));
                 }
             }
-
-            var memberCount = readableProperties.Length + readableFields.Length;
 
             return new(
                 SnapshotKind.Object,
@@ -962,13 +968,16 @@ public sealed class ResultSnapshotFactory
                         reservedTextCharacters,
                         remainingSiblings,
                         MinimumJsonSiblingTextCharacters);
-                    properties.Add(new(property.Name,
-                        CreateJsonElement(
-                            property.Value,
-                            typeName,
-                            depth + 1,
-                            budget,
-                            reservedTextCharacters: childReservation)));
+                    properties.Add(budget.CapturePreservingNodes(
+                        remainingSiblings,
+                        () => new ResultProperty(
+                            property.Name,
+                            CreateJsonElement(
+                                property.Value,
+                                typeName,
+                                depth + 1,
+                                budget,
+                                reservedTextCharacters: childReservation))));
                 }
                 return new(
                     SnapshotKind.Json,
@@ -991,12 +1000,14 @@ public sealed class ResultSnapshotFactory
                         reservedTextCharacters,
                         remainingSiblings,
                         MinimumJsonSiblingTextCharacters);
-                    items.Add(CreateJsonElement(
-                        item,
-                        typeName,
-                        depth + 1,
-                        budget,
-                        reservedTextCharacters: childReservation));
+                    items.Add(budget.CapturePreservingNodes(
+                        remainingSiblings,
+                        () => CreateJsonElement(
+                            item,
+                            typeName,
+                            depth + 1,
+                            budget,
+                            reservedTextCharacters: childReservation)));
                 }
                 return new(
                     SnapshotKind.Json,
@@ -1049,15 +1060,35 @@ public sealed class ResultSnapshotFactory
         int remainingTextCharacters,
         CancellationToken cancellationToken)
     {
-        public bool CanTakeNode => remainingNodes > 0;
+        private int reservedNodes;
+
+        public bool CanTakeNode => remainingNodes > reservedNodes;
         public int RemainingTextCharacters => remainingTextCharacters;
 
         public bool TryTakeNode()
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (remainingNodes <= 0) return false;
+            if (remainingNodes <= reservedNodes) return false;
             remainingNodes--;
             return true;
+        }
+
+        public T CapturePreservingNodes<T>(int remainingSiblingCount, Func<T> capture)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var previousReservation = reservedNodes;
+            var requestedReservation = Math.Min(
+                Math.Max(0, remainingNodes - 1),
+                (int)Math.Min(int.MaxValue, (long)previousReservation + Math.Max(0, remainingSiblingCount)));
+            reservedNodes = Math.Max(previousReservation, requestedReservation);
+            try
+            {
+                return capture();
+            }
+            finally
+            {
+                reservedNodes = previousReservation;
+            }
         }
 
         public int ReserveTextForSiblings(

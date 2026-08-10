@@ -5,7 +5,6 @@ namespace PlayGroundSharp.App;
 
 public sealed partial class SnapshotTreeNode : ObservableObject
 {
-    private const int MaximumLabelLength = 200;
     private const int MaximumFilteredMatches = 250;
     private const int DirectChildLimit = 120;
     private const int GroupSize = 100;
@@ -36,7 +35,6 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         IsSearchMatch = isSearchMatch;
         this.isExpanded = isExpanded;
         var compact = SnapshotTextFormatter.FormatCompact(snapshot).ReplaceLineEndings(" ");
-        if (compact.Length > MaximumLabelLength) compact = compact[..MaximumLabelLength] + "…";
         Label = $"{name} = {compact}";
         Detail = BuildDetail();
     }

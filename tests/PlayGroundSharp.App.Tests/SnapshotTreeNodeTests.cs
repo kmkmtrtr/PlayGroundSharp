@@ -166,6 +166,18 @@ public sealed class SnapshotTreeNodeTests
         Assert.EndsWith(".ElementAt(0)", order.Expression, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void LongScalarLabelsKeepTheCompleteCapturedValue()
+    {
+        var value = new string('x', 2_000);
+        var root = SnapshotTreeNode.CreateRoot(
+            new ResultSnapshot(SnapshotKind.String, value, "System.String"),
+            AppLanguageMode.English);
+
+        Assert.Contains(value, root.Label, StringComparison.Ordinal);
+        Assert.DoesNotContain('…', root.Label);
+    }
+
     private static int CountNodes(SnapshotTreeNode node) =>
         1 + node.Children.Sum(CountNodes);
 

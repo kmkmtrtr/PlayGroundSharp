@@ -9,31 +9,22 @@ internal sealed record SnapshotFormatResult(string Text, bool IsLimited);
 /// <summary>Formats process-neutral snapshots as readable, copyable structured text.</summary>
 internal static class SnapshotTextFormatter
 {
-    private const int PreviewCharacterLimit = 20_000;
     private const int PreviewItemLimit = 200;
     private const int CompactMaximumDepth = 3;
     private const int CompactRootMemberLimit = 6;
     private const int CompactNestedMemberLimit = 4;
-    private const int CompactScalarLength = 80;
-    private const int CompactMaximumLength = 500;
     private static readonly JsonSerializerOptions DisplayJsonOptions = new()
     {
         Encoder = ReadableJsonEncoder.Instance
     };
 
     public static SnapshotFormatResult FormatPreview(ResultSnapshot snapshot) =>
-        Format(snapshot, PreviewCharacterLimit, PreviewItemLimit);
+        Format(snapshot, int.MaxValue, PreviewItemLimit);
 
     public static string FormatFull(ResultSnapshot snapshot) =>
         Format(snapshot, int.MaxValue, int.MaxValue).Text;
 
-    public static string FormatCompact(ResultSnapshot snapshot)
-    {
-        var compact = FormatCompact(snapshot, 0);
-        return compact.Length <= CompactMaximumLength
-            ? compact
-            : compact[..(CompactMaximumLength - 1)] + "…";
-    }
+    public static string FormatCompact(ResultSnapshot snapshot) => FormatCompact(snapshot, 0);
 
     internal static string QuoteJsonString(string value) => JsonSerializer.Serialize(value, DisplayJsonOptions);
 
@@ -122,14 +113,12 @@ internal static class SnapshotTextFormatter
     private static string FormatCompactScalar(ResultSnapshot snapshot)
     {
         var display = snapshot.Display ?? snapshot.Kind.ToString();
-        var labelTruncated = display.Length > CompactScalarLength;
-        if (labelTruncated) display = display[..CompactScalarLength];
         var value = snapshot.TypeName == typeof(char).FullName
             ? QuoteCharacter(display)
             : snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid
                 ? QuoteJsonString(display)
                 : display;
-        return labelTruncated || snapshot.IsTruncated ? value + "…" : value;
+        return snapshot.IsTruncated ? value + "…" : value;
     }
 
     private static string FormatPropertyName(string value) =>

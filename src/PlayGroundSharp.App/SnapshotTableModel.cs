@@ -63,7 +63,6 @@ internal sealed class SnapshotTableModel
 {
     private const int MaximumRows = 10_000;
     private const int MaximumColumns = 200;
-    private const int MaximumCellPreviewLength = 240;
 
     private SnapshotTableModel(
         ResultSnapshot sourceSnapshot,
@@ -380,8 +379,6 @@ internal sealed class SnapshotTableModel
             .Replace('\r', '↵')
             .Replace('\n', '↵')
             .Replace('\t', '⇥');
-        if (display.Length > MaximumCellPreviewLength)
-            display = display[..(MaximumCellPreviewLength - 1)] + "…";
         return new(display, exportValue, snapshot);
     }
 

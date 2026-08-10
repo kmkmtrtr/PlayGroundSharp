@@ -407,7 +407,9 @@ internal static class DataTypeInference
             {
                 result.Append("public sealed class ").AppendLine(typeName)
                     .AppendLine("{");
-                var usedProperties = new HashSet<string>(StringComparer.Ordinal);
+                // C# forbids a member whose name is the same as its containing type
+                // (CS0542). Reserve the generated type name before assigning members.
+                var usedProperties = new HashSet<string>(StringComparer.Ordinal) { typeName };
                 foreach (var property in shape.Properties!)
                 {
                     var propertyName = MakeUnique(CreateIdentifier(property.JsonName), usedProperties);

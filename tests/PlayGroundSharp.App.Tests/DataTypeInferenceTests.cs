@@ -48,6 +48,26 @@ public sealed class DataTypeInferenceTests
     }
 
     [Fact]
+    public async Task AvoidsPropertyNamesMatchingTheirContainingType()
+    {
+        var snapshot = JsonObject(("a", JsonObject(("a", Number("1")))));
+
+        var result = DataTypeInference.Generate(snapshot, "json", "RootModel", "typedJson")!;
+        var service = new CSharpLanguageService();
+        var diagnostics = await service.GetDiagnosticsAsync(
+            SessionContext.Empty with
+            {
+                Submissions = ["JsonNode json = JsonNode.Parse(\"{\\\"a\\\":{\\\"a\\\":1}}\")!;"]
+            },
+            result.GeneratedCode);
+
+        Assert.Contains("public sealed class A", result.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains("JsonPropertyName(\"a\")", result.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains("public int A2", result.GeneratedCode, StringComparison.Ordinal);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public void InfersClrQueryRowsUsingRuntimeNumberTypes()
     {
         var row = new ResultSnapshot(

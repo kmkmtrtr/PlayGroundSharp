@@ -835,8 +835,7 @@ public sealed class ScriptSessionTests
         {
             var session = new ScriptSession();
 
-            var json = await session.ExecuteAsync(1,
-                $"await Data.ReadJsonAsync({DataSnippetBuilder.ToVerbatimStringLiteral(jsonPath)}, ExecutionCancellation)");
+            var json = await session.ExecuteAsync(1, DataSnippetBuilder.CreateJson(jsonPath));
             var jsonLines = await session.ExecuteAsync(2, DataSnippetBuilder.CreateAllJsonLines(jsonLinesPath));
             var text = await session.ExecuteAsync(3, DataSnippetBuilder.CreateAllText(textPath));
             var lines = await session.ExecuteAsync(4, DataSnippetBuilder.CreateLineStream(textPath));

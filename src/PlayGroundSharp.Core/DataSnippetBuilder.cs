@@ -18,6 +18,12 @@ public static class DataSnippetBuilder
                Environment.NewLine + "}";
     }
 
+    public static string CreateFileInspection(string path) =>
+        $"Data.Inspect({ToVerbatimStringLiteral(path)})";
+
+    public static string CreateJson(string path) =>
+        $"await Data.ReadJsonAsync({ToVerbatimStringLiteral(path)}, ExecutionCancellation)";
+
     public static string CreateJsonLines(
         string path,
         int take = LargeDataAccess.DefaultJsonPreviewItemCount)

@@ -102,6 +102,8 @@ public sealed class LargeDataAccessTests : IDisposable
     {
         var literal = DataSnippetBuilder.ToVerbatimStringLiteral("C:\\data\\a\"b.jsonl");
         var array = DataSnippetBuilder.CreatePathArray(["C:\\one.txt", "D:\\two.json"]);
+        var inspection = DataSnippetBuilder.CreateFileInspection("C:\\data\\a\"b.jsonl");
+        var json = DataSnippetBuilder.CreateJson("C:\\data\\a\"b.jsonl");
         var jsonLines = DataSnippetBuilder.CreateJsonLines("C:\\data\\a\"b.jsonl");
         var allJsonLines = DataSnippetBuilder.CreateAllJsonLines("C:\\data\\a\"b.jsonl");
         var allText = DataSnippetBuilder.CreateAllText("C:\\data\\a\"b.jsonl");
@@ -123,6 +125,8 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Equal("@\"C:\\data\\a\"\"b.jsonl\"", literal);
         Assert.Contains("@\"C:\\one.txt\"", array, StringComparison.Ordinal);
         Assert.Contains("@\"D:\\two.json\"", array, StringComparison.Ordinal);
+        Assert.Equal($"Data.Inspect({literal})", inspection);
+        Assert.Equal($"await Data.ReadJsonAsync({literal}, ExecutionCancellation)", json);
         Assert.Equal($"await Data.ReadJsonLinesAsync({literal}, 1000, ExecutionCancellation)", jsonLines);
         Assert.DoesNotContain("await foreach", jsonLines, StringComparison.Ordinal);
         Assert.Equal($"await Data.ReadAllJsonLinesAsync({literal}, ExecutionCancellation)", allJsonLines);

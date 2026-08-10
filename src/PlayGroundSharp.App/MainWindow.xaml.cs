@@ -769,14 +769,14 @@ public partial class MainWindow : Window
             FocusEditor();
             return;
         }
-        var literal = DataSnippetBuilder.ToVerbatimStringLiteral(dialog.FileName);
         var snippet = operation switch
         {
-            "Inspect" => $"Data.Inspect({literal})",
-            "Preview" => $"Data.PreviewText({literal}, 65536)",
-            "Lines" => $"Data.ReadLines({literal}).Take(100)",
-            "Json" => $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)",
-            "JsonLines" => DataSnippetBuilder.CreateJsonLines(dialog.FileName),
+            "Inspect" => DataSnippetBuilder.CreateFileInspection(dialog.FileName),
+            "Json" => DataSnippetBuilder.CreateJson(dialog.FileName),
+            "JsonLinesAll" => DataSnippetBuilder.CreateAllJsonLines(dialog.FileName),
+            "TextAll" => DataSnippetBuilder.CreateAllText(dialog.FileName),
+            "Lines" => DataSnippetBuilder.CreateLineStream(dialog.FileName),
+            "BytesAll" => DataSnippetBuilder.CreateAllBytes(dialog.FileName),
             _ => null
         };
         if (snippet is null) return;
@@ -898,12 +898,12 @@ public partial class MainWindow : Window
                 menu.Items.Add(CreateDropWorkspaceAction(path));
                 menu.Items.Add(new Separator());
             }
-            menu.Items.Add(CreateDropAction("Drop.FileInfo", $"Data.Inspect({literal})"));
+            menu.Items.Add(CreateDropAction("Drop.FileInfo", DataSnippetBuilder.CreateFileInspection(path)));
             if (extension.Equals(".dll", StringComparison.OrdinalIgnoreCase))
                 menu.Items.Add(CreateDropReferenceAction(path));
             menu.Items.Add(CreateDropAction(
                 "Drop.ReadJson",
-                $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)"));
+                DataSnippetBuilder.CreateJson(path)));
             menu.Items.Add(CreateDropAction(
                 "Drop.ReadJsonLinesAll",
                 DataSnippetBuilder.CreateAllJsonLines(path)));

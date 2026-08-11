@@ -313,7 +313,7 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
-    public async Task ReportsRetainedVariablesWithBoundedSnapshots()
+    public async Task ReportsRetainedVariablesWithoutShorteningCapturedStrings()
     {
         var session = new ScriptSession();
         await session.ExecuteAsync(1, "var number = 42; const string label = \"answer\"; var longText = new string('x', 600); var values = Enumerable.Range(1, 10).ToArray();");
@@ -329,8 +329,8 @@ public sealed class ScriptSessionTests
         Assert.Equal("answer", label.Value.Display);
         Assert.True(label.IsReadOnly);
         var longText = Assert.Single(variables, static variable => variable.Name == "longText");
-        Assert.Equal(512, longText.Value.Display?.Length);
-        Assert.True(longText.Value.IsTruncated);
+        Assert.Equal(600, longText.Value.Display?.Length);
+        Assert.False(longText.Value.IsTruncated);
         var values = Assert.Single(variables, static variable => variable.Name == "values");
         Assert.Equal(10, values.Value.Items?.Count);
         Assert.Equal("10", values.Value.Items?[9].Display);

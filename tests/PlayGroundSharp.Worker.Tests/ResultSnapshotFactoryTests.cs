@@ -412,6 +412,37 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public void NestedMemberDoesNotConsumeNodeBudgetNeededByLaterSiblings()
+    {
+        var deep = new Node();
+        var current = deep;
+        for (var index = 0; index < 20; index++)
+        {
+            current.Next = new Node();
+            current = current.Next;
+        }
+
+        var snapshot = factory.Create(
+            new BudgetHungryObject(deep),
+            maximumNodes: 6,
+            maximumTextCharacters: 1_000);
+
+        var after = Assert.Single(snapshot.Properties!, static property => property.Name == "After");
+        Assert.Equal("visible", after.Value.Display);
+        Assert.False(snapshot.IsTruncated);
+    }
+
+    [Fact]
+    public void AssemblySnapshotKeepsEveryTopLevelMember()
+    {
+        var snapshot = factory.Create(typeof(ResultSnapshotFactoryTests).Assembly);
+
+        Assert.NotNull(snapshot.Properties);
+        Assert.Equal(snapshot.TotalCount, snapshot.Properties.Count);
+        Assert.False(snapshot.IsTruncated);
+    }
+
+    [Fact]
     public void SnapshotsExceptions()
     {
         var snapshot = factory.Create(new InvalidOperationException("boom"));
@@ -465,6 +496,12 @@ public sealed class ResultSnapshotFactoryTests
     private sealed class Node
     {
         public Node? Next { get; set; }
+    }
+
+    private sealed class BudgetHungryObject(Node deep)
+    {
+        public Node Deep { get; } = deep;
+        public string After { get; } = "visible";
     }
 
     private sealed class PublicFieldContainer

@@ -97,6 +97,22 @@ public sealed class SnapshotTableModelTests
     }
 
     [Fact]
+    public void LongScalarCellsKeepTheCompleteCapturedValue()
+    {
+        var value = new string('x', 2_000);
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "1 item",
+            "System.String[]",
+            Items: [Text(value)],
+            TotalCount: 1);
+
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(snapshot));
+
+        Assert.Equal(value, Assert.Single(table.Rows).Cells[0].Display);
+    }
+
+    [Fact]
     public void StructuredCellsRetainTheirSourceForNestedTableNavigation()
     {
         var orders = new ResultSnapshot(

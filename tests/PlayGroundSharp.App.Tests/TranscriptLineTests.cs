@@ -35,6 +35,32 @@ public sealed class TranscriptLineTests
     }
 
     [Fact]
+    public void ConsoleRowsDisplayTheCompleteText()
+    {
+        var text = new string('x', 10_000) + Environment.NewLine;
+
+        var line = TranscriptLine.Console(text, error: false);
+
+        Assert.Equal(text.TrimEnd('\r', '\n'), line.Text);
+        Assert.Equal(text, line.CopyText);
+    }
+
+    [Fact]
+    public void ScalarPreviewsKeepTheCompleteCapturedText()
+    {
+        var value = new string('x', 25_000);
+        var snapshot = new PlayGroundSharp.Core.ResultSnapshot(
+            PlayGroundSharp.Core.SnapshotKind.String,
+            value,
+            "System.String");
+
+        var preview = SnapshotTextFormatter.FormatPreview(snapshot);
+
+        Assert.Equal($"\"{value}\"", preview.Text);
+        Assert.False(preview.IsLimited);
+    }
+
+    [Fact]
     public void OutputKeepsItsResultExpressionForInspection()
     {
         var snapshot = new PlayGroundSharp.Core.ResultSnapshot(

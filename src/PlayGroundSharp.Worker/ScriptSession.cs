@@ -27,7 +27,6 @@ public sealed record ScriptInspectionResult(
 public sealed class ScriptSession
 {
     private const int MaximumTransferredDiagnostics = 100;
-    private const int MaximumVariableDisplayLength = 512;
     private const int MaximumVariableSnapshotNodes = 512;
     private const int MaximumVariableSnapshotTextCharacters = 256 * 1024;
     private const int MaximumVariableSnapshotTotalNodes = 50_000;
@@ -462,18 +461,11 @@ public sealed class ScriptSession
     {
         try
         {
-            var snapshot = snapshots.Create(
+            return snapshots.Create(
                 variable.Value,
                 maximumNodes,
                 maximumTextCharacters,
                 cancellationToken);
-            var display = snapshot.Display;
-            var truncated = display?.Length > MaximumVariableDisplayLength;
-            return snapshot with
-            {
-                Display = truncated ? display![..MaximumVariableDisplayLength] : display,
-                IsTruncated = snapshot.IsTruncated || truncated
-            };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

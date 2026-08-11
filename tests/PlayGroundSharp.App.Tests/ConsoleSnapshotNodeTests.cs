@@ -116,4 +116,17 @@ public sealed class ConsoleSnapshotNodeTests
         Assert.DoesNotContain("\\u3000", root.Preview, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\\u3000", root.CopyText, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void LongScalarPreviewsKeepTheCompleteCapturedValue()
+    {
+        var value = new string('x', 2_000);
+        var root = ConsoleSnapshotNode.CreateRoot(new ResultSnapshot(
+            SnapshotKind.String,
+            value,
+            "System.String"));
+
+        Assert.Equal($"\"{value}\"", root.Preview);
+        Assert.DoesNotContain('…', root.Preview);
+    }
 }

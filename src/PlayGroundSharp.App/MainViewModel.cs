@@ -2166,10 +2166,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         return SnapshotTextFormatter.FormatCompact(snapshot);
     }
 
-    private TranscriptLine CreateConsoleLine(string text, bool error) => TranscriptLine.Console(
-        text,
-        error,
-        Localize("Output.ConsolePreviewLimited", text.Length));
+    private static TranscriptLine CreateConsoleLine(string text, bool error) => TranscriptLine.Console(text, error);
 
     private TranscriptLine LocalizedSystemLine(string key, params object?[] arguments) =>
         TranscriptLine.LocalizedSystem(LanguageMode, key, arguments);

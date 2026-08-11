@@ -182,6 +182,25 @@ public sealed class DataTypeInferenceTests
     }
 
     [Fact]
+    public async Task ClrProjectionConvertsJsonValuesToInferredScalarTypes()
+    {
+        var session = new ScriptSession();
+        var source = await session.ExecuteAsync(
+            1,
+            "var rows = new[] { JsonNode.Parse(\"{\\\"name\\\":\\\"Ada\\\",\\\"age\\\":42}\")! }; rows");
+        var generated = DataTypeInference.Generate(source.Snapshot!, "rows", "Person", "typedRows")!;
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var verification = await session.ExecuteAsync(3, "typedRows[0].Name + \"!\" + typedRows[0].Age");
+
+        Assert.True(source.StateAccepted);
+        Assert.True(projection.StateAccepted);
+        Assert.DoesNotContain(projection.Diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.True(verification.StateAccepted);
+        Assert.Equal("Ada!42", verification.Snapshot?.Display);
+    }
+
+    [Fact]
     public void ClrProjectionOmitsUnreadableProperties()
     {
         var row = new ResultSnapshot(

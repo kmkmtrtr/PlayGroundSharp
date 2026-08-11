@@ -14,8 +14,8 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="28" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="3*" MinWidth="110" />
+                    <ColumnDefinition Width="2*" MinWidth="64" MaxWidth="190" />
                 </Grid.ColumnDefinitions>
                 <Border Width="20" Height="20" CornerRadius="3" VerticalAlignment="Center"
                         Background="{DynamicResource SelectionBrush}">
@@ -24,8 +24,13 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <TextBlock Grid.Column="1" Text="{Binding DisplayText}" VerticalAlignment="Center"
-                           TextWrapping="Wrap" LineHeight="18" />
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,2,0">
+                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding DisplayText}" />
+                <Grid Grid.Column="2" Margin="8,0,2,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
                     <Border Visibility="{Binding HasNamespaceHint, Converter={StaticResource BooleanToVisibilityConverter}}"
                             ToolTip="{Binding NamespaceDisplayText}" CornerRadius="3" Padding="4,1" Margin="0,0,6,0">
                         <Border.Style>
@@ -39,14 +44,15 @@
                             </Style>
                         </Border.Style>
                         <TextBlock Text="{Binding NamespaceDisplayText}" Foreground="{DynamicResource MutedBrush}"
-                                   FontSize="10" MaxWidth="190" TextTrimming="CharacterEllipsis"
+                                   FontSize="10" TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Center" />
                     </Border>
-                    <Border Visibility="{Binding IsExtensionMethod, Converter={StaticResource BooleanToVisibilityConverter}}"
+                    <Border Grid.Column="1"
+                            Visibility="{Binding IsExtensionMethod, Converter={StaticResource BooleanToVisibilityConverter}}"
                             Background="{DynamicResource SelectionBrush}" CornerRadius="3" Padding="4,1">
                         <TextBlock Text="ext" Foreground="{DynamicResource MutedBrush}" FontSize="9" />
                     </Border>
-                </StackPanel>
+                </Grid>
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="SignatureItemTemplate">

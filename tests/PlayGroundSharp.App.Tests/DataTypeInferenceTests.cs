@@ -201,6 +201,73 @@ public sealed class DataTypeInferenceTests
     }
 
     [Fact]
+    public async Task ClrProjectionReadsMembersFromJsonElements()
+    {
+        var session = new ScriptSession();
+        var source = await session.ExecuteAsync(
+            1,
+            "var rows = new[] { JsonDocument.Parse(\"{\\\"name\\\":\\\"Ada\\\",\\\"age\\\":42}\").RootElement.Clone() }; rows");
+        var generated = DataTypeInference.Generate(source.Snapshot!, "rows", "Person", "typedRows")!;
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var verification = await session.ExecuteAsync(3, "typedRows[0].Name + \"/\" + typedRows[0].Age");
+
+        Assert.True(source.StateAccepted);
+        Assert.True(projection.StateAccepted);
+        Assert.DoesNotContain(projection.Diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.True(verification.StateAccepted);
+        Assert.Equal("Ada/42", verification.Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task JsonInferenceMergesDuplicatePropertiesWithoutNameCollisions()
+    {
+        var session = new ScriptSession();
+        var source = await session.ExecuteAsync(
+            1,
+            "var json = JsonDocument.Parse(\"{\\\"value\\\":\\\"first\\\",\\\"value\\\":2}\").RootElement.Clone(); json");
+        var generated = DataTypeInference.Generate(source.Snapshot!, "json", "Model", "typed")!;
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var verification = await session.ExecuteAsync(3, "typed.Value!.GetValue<int>()");
+
+        Assert.True(source.StateAccepted);
+        Assert.Equal(1, generated.GeneratedCode.Split(" Value { get; init; }", StringSplitOptions.None).Length - 1);
+        Assert.Contains("JsonNode Value", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains(DataTypeInferenceWarning.FallbackType, generated.Warnings);
+        Assert.True(projection.StateAccepted);
+        Assert.DoesNotContain(projection.Diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.True(verification.StateAccepted);
+        Assert.Equal("2", verification.Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task ClrProjectionEnumeratesDataTableRows()
+    {
+        var session = new ScriptSession();
+        session.AddReference(typeof(System.Data.DataTable).Assembly.Location);
+        var source = await session.ExecuteAsync(
+            1,
+            "var table = new global::System.Data.DataTable(); " +
+            "table.Columns.Add(\"Address\", typeof(global::System.Net.IPAddress)); " +
+            "table.Columns.Add(\"Count\", typeof(int)); " +
+            "table.Rows.Add(global::System.Net.IPAddress.Parse(\"192.0.2.42\"), 7); table");
+        var generated = DataTypeInference.Generate(source.Snapshot!, "table", "Endpoint", "typedRows")!;
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var verification = await session.ExecuteAsync(
+            3,
+            "typedRows.Count + \"/\" + typedRows[0].Address + \"/\" + typedRows[0].Count");
+
+        Assert.True(source.StateAccepted);
+        Assert.Contains("source is global::System.Data.DataTable table", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.True(projection.StateAccepted);
+        Assert.DoesNotContain(projection.Diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.True(verification.StateAccepted);
+        Assert.Equal("1/192.0.2.42/7", verification.Snapshot?.Display);
+    }
+
+    [Fact]
     public void ClrProjectionOmitsUnreadableProperties()
     {
         var row = new ResultSnapshot(

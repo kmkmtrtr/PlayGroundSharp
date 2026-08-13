@@ -146,6 +146,7 @@ internal static class DataTypeInference
         if (snapshot.Properties is not null && snapshot.Kind is SnapshotKind.Json or SnapshotKind.Object)
         {
             var properties = new List<ShapeProperty>();
+            var propertyIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var property in snapshot.Properties)
             {
                 if (preserveClrTypes && (!property.IsReadable || property.Value.Kind == SnapshotKind.Exception))
@@ -174,7 +175,16 @@ internal static class DataTypeInference
                 {
                     propertyShape = Infer(property.Value, warnings, preserveClrTypes, expandObject: false);
                 }
-                properties.Add(new(property.Name, propertyShape));
+                var inferredProperty = new ShapeProperty(property.Name, propertyShape);
+                if (propertyIndexes.TryGetValue(property.Name, out var existingIndex))
+                    properties[existingIndex] = new(
+                        property.Name,
+                        Merge(properties[existingIndex].Type, propertyShape, warnings));
+                else
+                {
+                    propertyIndexes.Add(property.Name, properties.Count);
+                    properties.Add(inferredProperty);
+                }
             }
             return Shape.Object(properties);
         }
@@ -526,6 +536,8 @@ internal static class DataTypeInference
                 .AppendLine("    if (source is null) return null;")
                 .AppendLine("    try")
                 .AppendLine("    {")
+                .AppendLine("        if (source is global::System.Text.Json.JsonElement element)")
+                .AppendLine("            return element.ValueKind == global::System.Text.Json.JsonValueKind.Object && element.TryGetProperty(name, out var jsonValue) ? jsonValue : null;")
                 .AppendLine("        if (source is global::System.Collections.Generic.IDictionary<string, object?> values)")
                 .AppendLine("            return values.TryGetValue(name, out var value) ? value : null;")
                 .AppendLine("        if (source is global::System.Collections.Generic.IReadOnlyDictionary<string, object?> readOnlyValues)")
@@ -560,6 +572,7 @@ internal static class DataTypeInference
                 .Append("static global::System.Collections.Generic.List<T> ").Append(mapSequenceName)
                 .AppendLine("<T>(object? source, global::System.Func<object?, T> map)")
                 .AppendLine("{")
+                .AppendLine("    if (source is global::System.Data.DataTable table) source = table.Rows;")
                 .AppendLine("    if (source is not global::System.Collections.IEnumerable values) return [];")
                 .AppendLine("    return global::System.Linq.Enumerable.ToList(")
                 .AppendLine("        global::System.Linq.Enumerable.Select(")

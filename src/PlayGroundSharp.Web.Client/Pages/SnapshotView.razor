@@ -25,8 +25,11 @@
                 @for (var index = 0; index < Snapshot.Items.Count; index++)
                 {
                     var item = Snapshot.Items[index];
+                    var itemIndex = Snapshot.ItemIndexes is { } indexes && index < indexes.Count
+                        ? indexes[index]
+                        : index;
                     <div class="snapshot-row" @key="index">
-                        <span class="snapshot-key">[@index]</span>
+                        <span class="snapshot-key">[@itemIndex]</span>
                         <SnapshotView Snapshot="item" Depth="@(Depth + 1)" />
                     </div>
                 }

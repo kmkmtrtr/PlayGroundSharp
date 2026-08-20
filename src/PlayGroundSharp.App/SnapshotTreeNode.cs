@@ -115,8 +115,9 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         {
             for (var index = 0; index < snapshot.Items.Count; index++)
             {
-                var childName = $"[{index}]";
-                var childExpression = ResultExpressionBuilder.ForItem(expression, snapshot, index);
+                var itemIndex = GetItemIndex(snapshot, index);
+                var childName = $"[{itemIndex}]";
+                var childExpression = ResultExpressionBuilder.ForItem(expression, snapshot, itemIndex);
                 if (CreateFilteredNode(childName, path + childName, snapshot.Items[index], languageMode, childExpression, query,
                         ref matchCount, ref displayedMatchCount, cancellationToken) is { } child)
                     (matchingChildren ??= []).Add(child);
@@ -175,12 +176,15 @@ public sealed partial class SnapshotTreeNode : ObservableObject
             if (snapshot.Items.Count > DirectChildLimit)
                 return CreateItemGroups(snapshot.Items);
             result.AddRange(snapshot.Items.Select((item, index) =>
-                new SnapshotTreeNode(
-                    $"[{index}]",
-                    $"{Path}[{index}]",
+            {
+                var itemIndex = GetItemIndex(snapshot, index);
+                return new SnapshotTreeNode(
+                    $"[{itemIndex}]",
+                    $"{Path}[{itemIndex}]",
                     item,
                     languageMode,
-                    ResultExpressionBuilder.ForItem(Expression, snapshot, index))));
+                    ResultExpressionBuilder.ForItem(Expression, snapshot, itemIndex));
+            }));
         }
         return result;
     }
@@ -224,6 +228,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         {
             var start = offset;
             var groupItems = items.Skip(start).Take(Math.Min(GroupSize, items.Count - start)).ToArray();
+            var groupIndexes = snapshot.ItemIndexes?.Skip(start).Take(groupItems.Length).ToArray();
             var end = start + groupItems.Length - 1;
             var groupSnapshot = snapshot with
             {
@@ -231,7 +236,8 @@ public sealed partial class SnapshotTreeNode : ObservableObject
                 Properties = null,
                 Items = groupItems,
                 IsTruncated = false,
-                TotalCount = groupItems.Length
+                TotalCount = groupItems.Length,
+                ItemIndexes = groupIndexes
             };
             groups.Add(new(
                 Text("Inspector.ItemRange", start, end),
@@ -240,12 +246,15 @@ public sealed partial class SnapshotTreeNode : ObservableObject
                 languageMode,
                 ResultExpressionBuilder.ForSlice(Expression, snapshot, start, groupItems.Length),
                 childrenFactory: () => groupItems.Select((item, index) =>
-                    new SnapshotTreeNode(
-                        $"[{start + index}]",
-                        $"{Path}[{start + index}]",
+                {
+                    var itemIndex = groupIndexes?[index] ?? start + index;
+                    return new SnapshotTreeNode(
+                        $"[{itemIndex}]",
+                        $"{Path}[{itemIndex}]",
                         item,
                         languageMode,
-                        ResultExpressionBuilder.ForItem(Expression, snapshot, start + index))).ToArray()));
+                        ResultExpressionBuilder.ForItem(Expression, snapshot, itemIndex));
+                }).ToArray()));
         }
         return groups;
     }
@@ -302,6 +311,11 @@ public sealed partial class SnapshotTreeNode : ObservableObject
 
     private static bool Contains(string? value, string query) =>
         value?.Contains(query, StringComparison.CurrentCultureIgnoreCase) == true;
+
+    private static int GetItemIndex(ResultSnapshot snapshot, int position) =>
+        snapshot.ItemIndexes is { } indexes && position < indexes.Count
+            ? indexes[position]
+            : position;
 
     private string Text(string key, params object?[] arguments) =>
         AppLocalization.Text(languageMode, key, arguments);

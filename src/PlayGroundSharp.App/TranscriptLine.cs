@@ -14,7 +14,8 @@ public sealed record TranscriptLine(
     IReadOnlyList<ConsoleSnapshotNode>? SnapshotRoots = null,
     string? LocalizationKey = null,
     IReadOnlyList<object?>? LocalizationArguments = null,
-    string? ResultExpression = null)
+    string? ResultExpression = null,
+    int? StreamingSubmissionIndex = null)
 {
     public bool IsInspectable => Snapshot is not null;
     public bool IsStructured => SnapshotRoots is not null;
@@ -34,11 +35,12 @@ public sealed record TranscriptLine(
                 ? [ConsoleSnapshotNode.CreateRoot(snapshot)]
                 : null,
             ResultExpression: resultExpression);
-    public static TranscriptLine StreamedOutput(int sourceIndex, string text, ResultSnapshot snapshot) =>
-        new($"[{sourceIndex}]", text, Resource("AccentBrush"), Resource("ForegroundBrush"), Snapshot: snapshot,
+    public static TranscriptLine StreamedOutput(int submissionIndex, string text, ResultSnapshot snapshot) =>
+        new(string.Empty, text, Brushes.Transparent, Resource("ForegroundBrush"), Snapshot: snapshot,
             SnapshotRoots: snapshot.Properties is not null || snapshot.Items is not null
                 ? [ConsoleSnapshotNode.CreateRoot(snapshot)]
-                : null);
+                : null,
+            StreamingSubmissionIndex: submissionIndex);
     public static TranscriptLine Console(string text, bool error)
     {
         return new(error ? "!" : "│", text.TrimEnd('\r', '\n'),

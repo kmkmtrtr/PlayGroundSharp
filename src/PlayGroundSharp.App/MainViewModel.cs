@@ -160,6 +160,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private string historyDraft = string.Empty;
     private string? executingCode;
     private TaskCompletionSource? executionCompletion;
+    private int? streamedResultSubmissionIndex;
+    private int streamedResultTranscriptIndex = -1;
+    private List<ResultSnapshot>? streamedResultSnapshots;
+    private List<int>? streamedResultIndexes;
 
     [ObservableProperty] private string inputText = string.Empty;
     [ObservableProperty] private string status = "Starting Worker";
@@ -275,7 +279,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SetPackageSearchMessage("Package.SearchPrompt");
         ResetCommand = new AsyncRelayCommand(ResetAsync);
         RestartWorkerCommand = new AsyncRelayCommand(RestartWorkerAsync);
-        ClearCommand = new RelayCommand(Transcript.Clear);
+        ClearCommand = new RelayCommand(ClearTranscript);
         ToggleReferenceDrawerCommand = new RelayCommand(() => IsReferenceDrawerOpen = !IsReferenceDrawerOpen);
         ToggleTypeExplorerCommand = new RelayCommand(() => IsTypeExplorerOpen = !IsTypeExplorerOpen);
         SearchPackagesCommand = new AsyncRelayCommand(SearchPackagesAsync);
@@ -288,6 +292,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             IsWorkerConnected = false;
             SetLocalizedStatus("Status.WorkerDisconnected");
             IsRunning = false;
+            ResetStreamedResultGroup();
             SignalExecutionFinished();
             VariableItems.Clear();
             ScheduleDiagnostics(InputText);
@@ -1332,6 +1337,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         switch (envelope.Kind)
         {
             case MessageKinds.Started:
+                ResetStreamedResultGroup();
                 SetLocalizedStatus("Status.Running");
                 break;
             case MessageKinds.ConsoleOut:
@@ -1353,11 +1359,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     SubmissionResultExpression.ForResult(executingCode, result.SubmissionIndex)));
                 break;
             case MessageKinds.StreamedResult:
-                var streamedResult = envelope.ReadPayload<StreamedResultEvent>();
-                Transcript.Add(TranscriptLine.StreamedOutput(
-                    streamedResult.SourceIndex,
-                    FormatResultSnapshot(streamedResult.Snapshot),
-                    streamedResult.Snapshot));
+                ApplyStreamedResult(envelope.ReadPayload<StreamedResultEvent>());
                 break;
             case MessageKinds.RuntimeError:
                 var exception = envelope.ReadPayload<RuntimeErrorEvent>().Exception;
@@ -1378,6 +1380,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 if (completed.StateAccepted) executingCode = null;
                 else RestoreExecutingInput();
                 IsRunning = false;
+                ResetStreamedResultGroup();
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 SetSessionStatus("Session.Memory", submissions.Count, completed.WorkerMemoryBytes / 1024 / 1024);
@@ -1391,6 +1394,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 }
                 RestoreExecutingInput();
                 IsRunning = false;
+                ResetStreamedResultGroup();
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 Transcript.Add(LocalizedSystemLine("Message.ExecutionCancelled"));
@@ -1400,6 +1404,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Transcript.Add(TranscriptLine.Diagnostic(envelope.ReadPayload<WorkerErrorEvent>().Message));
                 if (IsRunning) RestoreExecutingInput();
                 IsRunning = false;
+                ResetStreamedResultGroup();
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 ScheduleDiagnostics(InputText);
@@ -1490,6 +1495,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             if (envelope.Kind is MessageKinds.Completed or MessageKinds.Cancelled or MessageKinds.Error)
             {
                 IsRunning = false;
+                ResetStreamedResultGroup();
                 SignalExecutionFinished();
                 SetLocalizedStatus("Status.Ready");
                 ScheduleDiagnostics(InputText);
@@ -1512,6 +1518,62 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 result.Value,
                 result.SubmissionIndex,
                 result.TypeExpression)))];
+
+    internal void ApplyStreamedResult(StreamedResultEvent result)
+    {
+        if (streamedResultSubmissionIndex != result.SubmissionIndex ||
+            streamedResultSnapshots is null || streamedResultIndexes is null)
+        {
+            ResetStreamedResultGroup();
+            streamedResultSubmissionIndex = result.SubmissionIndex;
+            streamedResultSnapshots = [];
+            streamedResultIndexes = [];
+        }
+
+        streamedResultSnapshots.Add(result.Snapshot);
+        streamedResultIndexes.Add(result.SourceIndex);
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            $"{streamedResultSnapshots.Count:N0} items",
+            null,
+            Items: streamedResultSnapshots,
+            TotalCount: streamedResultSnapshots.Count,
+            ItemIndexes: streamedResultIndexes);
+        var line = TranscriptLine.StreamedOutput(
+            result.SubmissionIndex,
+            FormatResultSnapshot(snapshot),
+            snapshot);
+
+        if (streamedResultTranscriptIndex >= 0 &&
+            streamedResultTranscriptIndex < Transcript.Count &&
+            Transcript[streamedResultTranscriptIndex].StreamingSubmissionIndex == result.SubmissionIndex)
+        {
+            var wasExpanded = Transcript[streamedResultTranscriptIndex]
+                .SnapshotRoots?.FirstOrDefault()?.IsExpanded;
+            if (wasExpanded is not null && line.SnapshotRoots?.FirstOrDefault() is { } root)
+                root.IsExpanded = wasExpanded.Value;
+            Transcript[streamedResultTranscriptIndex] = line;
+        }
+        else
+        {
+            streamedResultTranscriptIndex = Transcript.Count;
+            Transcript.Add(line);
+        }
+    }
+
+    private void ResetStreamedResultGroup()
+    {
+        streamedResultSubmissionIndex = null;
+        streamedResultTranscriptIndex = -1;
+        streamedResultSnapshots = null;
+        streamedResultIndexes = null;
+    }
+
+    private void ClearTranscript()
+    {
+        Transcript.Clear();
+        ResetStreamedResultGroup();
+    }
 
     private async Task ResetAsync()
     {

@@ -665,6 +665,15 @@ public partial class Home
         public int DiagnosticTotalCount { get; set; }
         public ResultSnapshot? Result { get; set; }
         public List<StreamedResultEvent> StreamedResults { get; } = [];
+        public ResultSnapshot? StreamedResult => StreamedResults.Count == 0
+            ? null
+            : new(
+                SnapshotKind.Sequence,
+                $"{StreamedResults.Count:N0} items",
+                null,
+                Items: StreamedResults.Select(static result => result.Snapshot).ToArray(),
+                TotalCount: StreamedResults.Count,
+                ItemIndexes: StreamedResults.Select(static result => result.SourceIndex).ToArray());
         public ExceptionInfo? Error { get; set; }
         public bool StateAccepted { get; set; }
     }

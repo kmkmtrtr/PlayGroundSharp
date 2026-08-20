@@ -74,18 +74,25 @@ public sealed class TranscriptLineTests
     }
 
     [Fact]
-    public void StreamedOutputShowsItsZeroBasedSourceIndex()
+    public void StreamedOutputUsesAGroupedSequenceRow()
     {
+        var value = new PlayGroundSharp.Core.ResultSnapshot(
+            PlayGroundSharp.Core.SnapshotKind.Number, "42", "System.Int32");
         var snapshot = new PlayGroundSharp.Core.ResultSnapshot(
-            PlayGroundSharp.Core.SnapshotKind.Number,
-            "42",
-            "System.Int32");
+            PlayGroundSharp.Core.SnapshotKind.Sequence,
+            "1 item",
+            null,
+            Items: [value],
+            TotalCount: 1,
+            ItemIndexes: [7]);
 
-        var line = TranscriptLine.StreamedOutput(7, "42", snapshot);
+        var line = TranscriptLine.StreamedOutput(3, "(1) [42]", snapshot);
 
-        Assert.Equal("[7]", line.Prefix);
-        Assert.Equal("42", line.Text);
+        Assert.Equal(string.Empty, line.Prefix);
+        Assert.Equal("(1) [42]", line.Text);
         Assert.Same(snapshot, line.Snapshot);
+        Assert.Equal(3, line.StreamingSubmissionIndex);
+        Assert.Equal("[7]: 42", Assert.Single(Assert.Single(line.SnapshotRoots!).Children).AccessibleLabel);
     }
 
     [Fact]

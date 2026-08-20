@@ -253,21 +253,29 @@ public sealed class ScriptSession
                 return new(true, false, null, null, [], ResultSnapshotFactory.CreateException(candidate.Exception));
             }
 
-            var hasReturnValue = HasTrailingValueExpression(candidate.Script.GetCompilation());
+            var compilation = candidate.Script.GetCompilation();
+            var hasReturnValue = HasTrailingValueExpression(compilation);
+            var resultType = hasReturnValue ? GetTrailingResultType(compilation) : null;
             var resultTypeExpression = hasReturnValue
-                ? GetTrailingResultTypeExpression(candidate.Script.GetCompilation(), candidate.ReturnValue)
+                ? GetTrailingResultTypeExpression(compilation, candidate.ReturnValue)
                 : null;
             ResultSnapshot? snapshot = null;
             if (hasReturnValue)
             {
                 try
                 {
+                    var streamedResultType = TupleElementNameMapper.GetAsyncSequenceResultType(resultType);
                     var streamed = streamedResult is not null && candidate.ReturnValue is not null &&
                                    await asyncSequences.TryEvaluateAsync(
                                        candidate.ReturnValue,
-                                       streamedResult,
+                                       (sourceIndex, streamedSnapshot) => streamedResult(
+                                           sourceIndex,
+                                           TupleElementNameMapper.Apply(streamedSnapshot, streamedResultType)),
                                        cancellationToken).ConfigureAwait(false);
-                    if (!streamed) snapshot = snapshots.Create(candidate.ReturnValue, cancellationToken);
+                    if (!streamed)
+                        snapshot = TupleElementNameMapper.Apply(
+                            snapshots.Create(candidate.ReturnValue, cancellationToken),
+                            resultType);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -353,12 +361,18 @@ public sealed class ScriptSession
                 throw cancelled;
             if (candidate.Exception is not null)
                 return new(null, [], ResultSnapshotFactory.CreateException(candidate.Exception));
-            if (!HasTrailingValueExpression(candidate.Script.GetCompilation()))
+            var compilation = candidate.Script.GetCompilation();
+            if (!HasTrailingValueExpression(compilation))
                 return new(null, [], null);
 
             try
             {
-                return new(snapshots.Create(candidate.ReturnValue, cancellationToken), [], null);
+                return new(
+                    TupleElementNameMapper.Apply(
+                        snapshots.Create(candidate.ReturnValue, cancellationToken),
+                        GetTrailingResultType(compilation)),
+                    [],
+                    null);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -588,6 +602,19 @@ public sealed class ScriptSession
             SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions |
             SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
         return type.ToDisplayString(format);
+    }
+
+    private static ITypeSymbol? GetTrailingResultType(Compilation compilation)
+    {
+        var tree = compilation.SyntaxTrees.Last();
+        var root = tree.GetCompilationUnitRoot();
+        if (root.Members.LastOrDefault() is not GlobalStatementSyntax
+            {
+                Statement: ExpressionStatementSyntax expression
+            })
+            return null;
+
+        return compilation.GetSemanticModel(tree).GetTypeInfo(expression.Expression).ConvertedType;
     }
 
     private static string? GetTrailingIdentifier(Compilation compilation)

@@ -42,7 +42,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("結果と変数", "実行結果を調べ、後から名前を付けて再利用できます。",
         [
-            new("実行結果", "結果行から詳細表示、コピー、保存ができます。Task／ValueTaskの列挙結果には、元の0始まり位置が［0］のように表示されます。現在の結果はLast、過去の結果はOut[index]で元のオブジェクトを参照できます。"),
+            new("実行結果", "結果行から詳細表示、コピー、保存ができます。名前付きValueTupleはItem1ではなく宣言時の要素名を表示します。Task／ValueTaskの列挙結果には、元の0始まり位置が［0］のように表示されます。現在の結果はLast、過去の結果はOut[index]で元のオブジェクトを参照できます。"),
             new("変数", "［ワークスペース］の［変数］には宣言済み変数と名前のない結果が表示されます。変数をダブルクリックするかEnterを押すと名前を入力欄へ挿入し、Ctrl+Cで値をコピーできます。"),
             new("名前のない結果", "名前のない行をダブルクリックするかEnterを押すと変数名を付けられます。元の型を利用できる場合はその型で、利用できない場合はdynamicとして扱います。不要な結果は右クリックして保持を解除できます。"),
             new("データ型を推論", "JSON、オブジェクト、またはオブジェクト列を右クリックして［データ型を推論］を選ぶと、現在値からC#型と型付き変数を生成します。元の変数は残り、生成した変数では補完を利用できます。")
@@ -102,7 +102,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Results and variables", "Inspect results, name them later, and reuse them.",
         [
-            new("Results", "A result row can be inspected, copied, or saved. Enumerated Task and ValueTask results show their original zero-based position as [0], for example. Last refers to the current result, and Out[index] refers to an earlier original result object."),
+            new("Results", "A result row can be inspected, copied, or saved. Named ValueTuple elements use their declared names instead of Item1. Enumerated Task and ValueTask results show their original zero-based position as [0], for example. Last refers to the current result, and Out[index] refers to an earlier original result object."),
             new("Variables", "Workspace > Variables shows declared variables and unnamed results. Double-click a variable or press Enter to insert its name into the editor; press Ctrl+C to copy its value."),
             new("Unnamed results", "Double-click an unnamed row or press Enter to give it a variable name. Its original type is used when available, with dynamic as the fallback. Right-click and choose Release when the object no longer needs to be retained."),
             new("Infer data type", "Right-click JSON, an object, or a sequence of objects and choose Infer data type to generate C# models and a typed variable from the current value. The original variable remains available.")

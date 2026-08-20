@@ -157,6 +157,22 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void StreamedResultPreservesItsSourceIndex()
+    {
+        var payload = new StreamedResultEvent(
+            3,
+            7,
+            new(SnapshotKind.Number, "42", "System.Int32"));
+
+        var envelope = PipeEnvelope.Create(MessageKinds.StreamedResult, Guid.NewGuid(), payload);
+        var restored = envelope.ReadPayload<StreamedResultEvent>();
+
+        Assert.Equal(3, restored.SubmissionIndex);
+        Assert.Equal(7, restored.SourceIndex);
+        Assert.Equal("42", restored.Snapshot.Display);
+    }
+
+    [Fact]
     public void ResultSnapshotClrTypeMetadataRoundTrips()
     {
         var snapshot = new ResultSnapshot(

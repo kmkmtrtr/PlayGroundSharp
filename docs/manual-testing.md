@@ -39,6 +39,7 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 33 | Declare several variables, open Variables and filter by part of a name, type or value | only matching rows remain; Escape clears the filter |
 | 34 | Enter a two-line draft, move to its first line and press Up, then press Down | the previous submission is recalled and the complete two-line draft is restored |
 | 35 | Paste `using System.Globalization;` into the Usings input and press Enter | `System.Globalization` is added and the input is cleared |
+| 36 | Execute `Enumerable.Range(1, 10).Select(async x => { await Task.Delay(x * x * 10); return x; })` | values appear individually as their tasks complete; another submission cannot start until the sequence finishes |
 | 36 | Create session state, click Restart or Reset, then cancel the confirmation | the warning explains the retained/lost state and the current submission state remains intact |
 | 37 | After at least one successful submission, type invalid two-line code, then press `F8` and `Shift+F8` | diagnostics use lines/columns relative to the current input; the corresponding source spans are selected forward and backward |
 | 38 | Place the caret on a known symbol and press `Ctrl+K`, `Ctrl+I`; then use `F6` and `Shift+F6` | Quick Info remains visible until dismissed; focus cycles through only the currently visible Explorer, console and Workspace panes |

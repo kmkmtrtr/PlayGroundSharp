@@ -5,7 +5,7 @@ namespace PlayGroundSharp.Core;
 /// <summary>Defines compatibility information for the named-pipe protocol.</summary>
 public static class ProtocolConstants
 {
-    public const int Version = 3;
+    public const int Version = 4;
 }
 
 /// <summary>A serialized, versioned message exchanged between App and Worker.</summary>
@@ -44,6 +44,7 @@ public static class MessageKinds
     public const string ConsoleError = "console.error";
     public const string Diagnostics = "diagnostics";
     public const string Result = "result";
+    public const string StreamedResult = "result.streamed";
     public const string InspectionResult = "expression.inspection.result";
     public const string RuntimeError = "runtime.error";
     public const string Variables = "session.variables";
@@ -69,6 +70,7 @@ public sealed record ExecutionStartedEvent(int SubmissionIndex);
 public sealed record ConsoleEvent(string Text);
 public sealed record DiagnosticsEvent(IReadOnlyList<DiagnosticInfo> Diagnostics, int? TotalCount = null);
 public sealed record ResultEvent(int SubmissionIndex, ResultSnapshot Snapshot);
+public sealed record StreamedResultEvent(int SubmissionIndex, int SourceIndex, ResultSnapshot Snapshot);
 public sealed record InspectionResultEvent(
     ResultSnapshot? Snapshot,
     IReadOnlyList<DiagnosticInfo> Diagnostics,

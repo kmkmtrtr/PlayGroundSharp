@@ -177,6 +177,100 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task StreamsTaskSequenceValuesInCompletionOrder()
+    {
+        var streamed = new List<(int SourceIndex, ResultSnapshot Snapshot)>();
+        var session = new ScriptSession();
+        var firstResult = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var execution = session.ExecuteAsync(
+            1,
+            """
+            new[]
+            {
+                Task.Run(async () => { await Task.Delay(400); return "slow"; }),
+                Task.Run(async () => { await Task.Delay(20); return "fast"; }),
+                Task.Run(async () => { await Task.Delay(150); return "middle"; })
+            }
+            """,
+            streamedResult: (sourceIndex, snapshot) =>
+            {
+                streamed.Add((sourceIndex, snapshot));
+                firstResult.TrySetResult();
+            });
+
+        await firstResult.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(execution.IsCompleted);
+        var result = await execution;
+
+        Assert.True(result.StateAccepted);
+        Assert.Null(result.Snapshot);
+        Assert.Equal([1, 2, 0], streamed.Select(static item => item.SourceIndex));
+        Assert.Equal(["fast", "middle", "slow"], streamed.Select(static item => item.Snapshot.Display));
+        Assert.Single(session.Context.Submissions);
+    }
+
+    [Fact]
+    public async Task StreamsGenericValueTaskSequenceValues()
+    {
+        var streamed = new List<(int SourceIndex, ResultSnapshot Snapshot)>();
+
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            """
+            async ValueTask<int> Evaluate(int value, int delay)
+            {
+                await Task.Delay(delay);
+                return value;
+            }
+            new[] { Evaluate(1, 200), Evaluate(2, 20) }
+            """,
+            streamedResult: (sourceIndex, snapshot) => streamed.Add((sourceIndex, snapshot)));
+
+        Assert.True(result.StateAccepted);
+        Assert.Null(result.Snapshot);
+        Assert.Equal([1, 0], streamed.Select(static item => item.SourceIndex));
+        Assert.Equal(["2", "1"], streamed.Select(static item => item.Snapshot.Display));
+    }
+
+    [Fact]
+    public async Task StreamsFailedTaskElementsWithoutRejectingTheSubmission()
+    {
+        var streamed = new List<ResultSnapshot>();
+        var session = new ScriptSession();
+
+        var result = await session.ExecuteAsync(
+            1,
+            "new[] { Task.FromException<int>(new InvalidOperationException(\"boom\")), Task.FromResult(42) }",
+            streamedResult: (_, snapshot) => streamed.Add(snapshot));
+        var next = await session.ExecuteAsync(2, "40 + 2");
+
+        Assert.True(result.StateAccepted);
+        Assert.Contains(streamed, static snapshot =>
+            snapshot.Kind == SnapshotKind.Exception &&
+            snapshot.Display!.Contains("boom", StringComparison.Ordinal));
+        Assert.Contains(streamed, static snapshot => snapshot.Display == "42");
+        Assert.Equal("42", next.Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task CancellingTaskSequenceEvaluationDoesNotAcceptTheSubmission()
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        var session = new ScriptSession();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.ExecuteAsync(
+            1,
+            "new[] { Task.Run(async () => { await Task.Delay(10_000); return 1; }) }",
+            cancellationToken: cancellation.Token,
+            streamedResult: static (_, _) => { }));
+        var next = await session.ExecuteAsync(1, "40 + 2");
+
+        Assert.Equal(["40 + 2"], session.Context.Submissions);
+        Assert.Equal("42", next.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task ReturnsUnevaluatedLazyValuesWithoutRunningTheirFactory()
     {
         var session = new ScriptSession();

@@ -1352,6 +1352,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     result.Snapshot,
                     SubmissionResultExpression.ForResult(executingCode, result.SubmissionIndex)));
                 break;
+            case MessageKinds.StreamedResult:
+                var streamedResult = envelope.ReadPayload<StreamedResultEvent>();
+                Transcript.Add(TranscriptLine.Output(
+                    streamedResult.SubmissionIndex,
+                    FormatResultSnapshot(streamedResult.Snapshot),
+                    streamedResult.Snapshot));
+                break;
             case MessageKinds.RuntimeError:
                 var exception = envelope.ReadPayload<RuntimeErrorEvent>().Exception;
                 Transcript.Add(TranscriptLine.Diagnostic($"{exception.TypeName}: {exception.Message}"));

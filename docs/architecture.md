@@ -43,7 +43,7 @@ The `.pgsworkspace` format is versioned JSON containing accepted submission text
 
 ## Result snapshots
 
-The Worker converts values into bounded `ResultSnapshot` trees. It detects cycles by reference identity and limits depth to 10, each collection to 10,000 items, the whole tree to 50,000 nodes and captured text to 10 MiB. Live arbitrary objects never reach the UI. Transcript results retain these neutral trees and present JSON, object and sequence nodes as an inline expandable tree. Collections with many captured children are grouped into 100-item ranges and materialized only when expanded. The detached Result Details window remains available for search, path-aware inspection and export without contacting the Worker again.
+The Worker converts values into bounded `ResultSnapshot` trees. It detects cycles by reference identity and limits depth to 10, each collection to 10,000 items, the whole tree to 50,000 nodes and captured text to 10 MiB. A synchronous sequence whose element type is `Task`, `Task<T>`, `ValueTask` or `ValueTask<T>` is awaited by the Worker; value-bearing elements cross IPC as bounded snapshots in completion order, while the execution remains active until every element finishes. Live arbitrary objects never reach the UI. Transcript results retain these neutral trees and present JSON, object and sequence nodes as an inline expandable tree. Collections with many captured children are grouped into 100-item ranges and materialized only when expanded. The detached Result Details window remains available for search, path-aware inspection and export without contacting the Worker again.
 
 ## NuGet strategy
 

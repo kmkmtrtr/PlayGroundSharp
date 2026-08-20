@@ -166,11 +166,26 @@ public sealed class ScriptSession
             {
                 try
                 {
-                    snapshot = snapshots.Create(
-                        result.Value,
-                        Math.Min(MaximumVariableSnapshotNodes, remainingNodes),
-                        Math.Min(MaximumVariableSnapshotTextCharacters, remainingTextCharacters),
-                        cancellationToken);
+                    if (result.PreviewSnapshot is { } preview)
+                    {
+                        var previewUsage = MeasureSnapshot(preview);
+                        snapshot = previewUsage.Nodes <= remainingNodes &&
+                                   previewUsage.TextCharacters <= remainingTextCharacters
+                            ? preview
+                            : new(
+                                SnapshotKind.MaxDepth,
+                                "… retained result snapshot limit reached",
+                                result.Value?.GetType().FullName ?? result.TypeExpression,
+                                IsTruncated: true);
+                    }
+                    else
+                    {
+                        snapshot = snapshots.Create(
+                            result.Value,
+                            Math.Min(MaximumVariableSnapshotNodes, remainingNodes),
+                            Math.Min(MaximumVariableSnapshotTextCharacters, remainingTextCharacters),
+                            cancellationToken);
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -260,19 +275,28 @@ public sealed class ScriptSession
                 ? GetTrailingResultTypeExpression(compilation, candidate.ReturnValue)
                 : null;
             ResultSnapshot? snapshot = null;
+            ResultSnapshot? retainedPreview = null;
             if (hasReturnValue)
             {
                 try
                 {
                     var streamedResultType = TupleElementNameMapper.GetAsyncSequenceResultType(resultType);
+                    var streamedEntries = new List<(int SourceIndex, ResultSnapshot Snapshot)>();
                     var streamed = streamedResult is not null && candidate.ReturnValue is not null &&
                                    await asyncSequences.TryEvaluateAsync(
                                        candidate.ReturnValue,
-                                       (sourceIndex, streamedSnapshot) => streamedResult(
-                                           sourceIndex,
-                                           TupleElementNameMapper.Apply(streamedSnapshot, streamedResultType)),
+                                       (sourceIndex, streamedSnapshot) =>
+                                       {
+                                           var mapped = TupleElementNameMapper.Apply(
+                                               streamedSnapshot,
+                                               streamedResultType);
+                                           streamedEntries.Add((sourceIndex, mapped));
+                                           streamedResult(sourceIndex, mapped);
+                                       },
                                        cancellationToken).ConfigureAwait(false);
-                    if (!streamed)
+                    if (streamed)
+                        retainedPreview = CreateRetainedStreamedSnapshot(streamedEntries);
+                    else
                         snapshot = TupleElementNameMapper.Apply(
                             snapshots.Create(candidate.ReturnValue, cancellationToken),
                             resultType);
@@ -301,7 +325,8 @@ public sealed class ScriptSession
                     candidate.ReturnValue,
                     resultTypeExpression ?? "dynamic",
                     trailingIdentifier is not null &&
-                    candidate.Variables.Any(variable => variable.Name == trailingIdentifier));
+                    candidate.Variables.Any(variable => variable.Name == trailingIdentifier),
+                    retainedPreview);
             }
 
             return new(true, hasReturnValue, candidate.ReturnValue, snapshot, [], null);
@@ -522,6 +547,35 @@ public sealed class ScriptSession
             }
         }
         return (nodes, textCharacters);
+    }
+
+    private static ResultSnapshot CreateRetainedStreamedSnapshot(
+        IReadOnlyList<(int SourceIndex, ResultSnapshot Snapshot)> entries)
+    {
+        var display = $"{entries.Count:N0} items";
+        var captured = new List<ResultSnapshot>();
+        var indexes = new List<int>();
+        var remainingNodes = MaximumVariableSnapshotNodes - 1;
+        var remainingTextCharacters = MaximumVariableSnapshotTextCharacters - display.Length;
+        foreach (var entry in entries)
+        {
+            var usage = MeasureSnapshot(entry.Snapshot);
+            if (usage.Nodes > remainingNodes || usage.TextCharacters > remainingTextCharacters)
+                break;
+            captured.Add(entry.Snapshot);
+            indexes.Add(entry.SourceIndex);
+            remainingNodes -= usage.Nodes;
+            remainingTextCharacters -= usage.TextCharacters;
+        }
+
+        return new(
+            SnapshotKind.Sequence,
+            display,
+            null,
+            Items: captured,
+            IsTruncated: captured.Count < entries.Count,
+            TotalCount: entries.Count,
+            ItemIndexes: indexes);
     }
 
     private static void ValidateNamespace(string @namespace)

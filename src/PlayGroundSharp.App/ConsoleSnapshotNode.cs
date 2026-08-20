@@ -69,7 +69,8 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
         {
             if (items.Count > DirectChildLimit)
                 return CreateItemGroups(items, snapshot);
-            var nodes = items.Select((item, index) => Create($"[{index}]", item)).ToList();
+            var nodes = items.Select((item, index) =>
+                Create($"[{GetItemIndex(snapshot, index)}]", item)).ToList();
             AddCaptureLimitNode(nodes, snapshot, items.Count);
             return nodes;
         }
@@ -107,17 +108,21 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
         {
             var start = offset;
             var count = Math.Min(GroupSize, items.Count - start);
+            var groupIndexes = snapshot.ItemIndexes?.Skip(start).Take(count).ToArray();
             groups.Add(new(
                 $"[{start:N0} … {start + count - 1:N0}]",
                 $"{count:N0} items",
                 () => items.Skip(start).Take(count)
-                    .Select((item, index) => Create($"[{start + index}]", item)).ToArray(),
+                    .Select((item, index) => Create(
+                        $"[{groupIndexes?[index] ?? start + index}]",
+                        item)).ToArray(),
                 copyTextFactory: () => SnapshotTextFormatter.FormatFull(new ResultSnapshot(
                     SnapshotKind.Sequence,
                     $"{count:N0} items",
                     snapshot.TypeName,
                     Items: items.Skip(start).Take(count).ToArray(),
-                    TotalCount: count))));
+                    TotalCount: count,
+                    ItemIndexes: groupIndexes))));
         }
         AddCaptureLimitNode(groups, snapshot, items.Count);
         return groups;
@@ -137,6 +142,11 @@ public sealed partial class ConsoleSnapshotNode : ObservableObject
 
     private static bool HasChildren(ResultSnapshot snapshot) =>
         snapshot.Properties is { Count: > 0 } || snapshot.Items is { Count: > 0 };
+
+    private static int GetItemIndex(ResultSnapshot snapshot, int position) =>
+        snapshot.ItemIndexes is { } indexes && position < indexes.Count
+            ? indexes[position]
+            : position;
 
     private static string FormatPreview(ResultSnapshot snapshot)
         => SnapshotTextFormatter.FormatCompact(snapshot);

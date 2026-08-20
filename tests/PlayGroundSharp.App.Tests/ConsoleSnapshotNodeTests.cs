@@ -36,6 +36,48 @@ public sealed class ConsoleSnapshotNodeTests
     }
 
     [Fact]
+    public void StreamedSequencesUseTheirOriginalSourceIndexes()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "2 items",
+            null,
+            Items:
+            [
+                new(SnapshotKind.String, "fast", "System.String"),
+                new(SnapshotKind.String, "slow", "System.String")
+            ],
+            TotalCount: 2,
+            ItemIndexes: [4, 1]);
+
+        var root = ConsoleSnapshotNode.CreateRoot(snapshot);
+
+        Assert.Equal(["[4]: \"fast\"", "[1]: \"slow\""],
+            root.Children.Select(static child => child.AccessibleLabel));
+    }
+
+    [Fact]
+    public void GroupedStreamedSequencesKeepTheirOriginalSourceIndexes()
+    {
+        var items = Enumerable.Range(0, 121)
+            .Select(index => new ResultSnapshot(SnapshotKind.Number, index.ToString(), "System.Int32"))
+            .ToArray();
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "121 items",
+            null,
+            Items: items,
+            TotalCount: items.Length,
+            ItemIndexes: Enumerable.Range(0, 121).Reverse().ToArray());
+
+        var groups = ConsoleSnapshotNode.CreateRoot(snapshot).Children;
+
+        Assert.Equal(2, groups.Count);
+        Assert.Equal("[120]: 0", groups[0].Children[0].AccessibleLabel);
+        Assert.Equal("[20]: 100", groups[1].Children[0].AccessibleLabel);
+    }
+
+    [Fact]
     public void CharacterArraysKeepControlAndSurrogateCodeUnitsReadable()
     {
         var snapshot = new ResultSnapshot(

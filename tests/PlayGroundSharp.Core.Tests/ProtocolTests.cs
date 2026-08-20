@@ -173,6 +173,27 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void ResultSnapshotItemIndexesRoundTrip()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "2 items",
+            null,
+            Items:
+            [
+                new(SnapshotKind.Number, "20", "System.Int32"),
+                new(SnapshotKind.Number, "10", "System.Int32")
+            ],
+            TotalCount: 2,
+            ItemIndexes: [1, 0]);
+
+        var envelope = PipeEnvelope.Create(MessageKinds.Result, Guid.NewGuid(), new ResultEvent(1, snapshot));
+        var restored = envelope.ReadPayload<ResultEvent>().Snapshot;
+
+        Assert.Equal([1, 0], restored.ItemIndexes);
+    }
+
+    [Fact]
     public void ResultSnapshotClrTypeMetadataRoundTrips()
     {
         var snapshot = new ResultSnapshot(

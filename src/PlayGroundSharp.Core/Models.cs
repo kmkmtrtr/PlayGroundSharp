@@ -27,7 +27,8 @@ public sealed record ResultSnapshot(
     bool IsTruncated = false,
     int? TotalCount = null,
     string? TypeExpression = null,
-    bool? IsReferenceType = null);
+    bool? IsReferenceType = null,
+    IReadOnlyList<int>? ItemIndexes = null);
 
 public sealed record ResultProperty(
     string Name,

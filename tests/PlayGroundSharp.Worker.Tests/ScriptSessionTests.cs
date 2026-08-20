@@ -112,6 +112,40 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task PreservesTupleElementNamesInTaskWhenAllArrays()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            """
+            var tasks = Enumerable.Range(1, 3).Select(value =>
+                Task.FromResult((index: value, delay: value * 10)));
+            await Task.WhenAll(tasks)
+            """);
+
+        var items = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(result.Snapshot?.Items);
+        Assert.Equal(3, items.Count);
+        Assert.All(items, static item => Assert.Equal(
+            ["index", "delay"],
+            item.Properties?.Select(static property => property.Name)));
+        Assert.Equal(
+            ["1", "10"],
+            items[0].Properties?.Select(static property => property.Value.Display));
+    }
+
+    [Fact]
+    public async Task PreservesTupleElementNamesInGenericSequences()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            "Enumerable.Range(1, 2).Select(value => (index: value, square: value * value)).ToList()");
+
+        var items = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(result.Snapshot?.Items);
+        Assert.All(items, static item => Assert.Equal(
+            ["index", "square"],
+            item.Properties?.Select(static property => property.Name)));
+    }
+
+    [Fact]
     public async Task FallsBackToRuntimeTupleNamesWhenCompileTimeNamesAreUnavailable()
     {
         var result = await new ScriptSession().ExecuteAsync(1, "(object)(Name: \"Ada\", Age: 30)");
@@ -309,6 +343,63 @@ public sealed class ScriptSessionTests
         var properties = Assert.Single(streamed).Properties;
         Assert.Equal(["Name", "Age"], properties?.Select(static property => property.Name));
         Assert.Equal(["Ada", "30"], properties?.Select(static property => property.Value.Display));
+    }
+
+    [Fact]
+    public async Task RetainedStreamedResultUsesTheStableCompletedPreviewWithoutReenumerating()
+    {
+        var streamed = new List<(int SourceIndex, ResultSnapshot Snapshot)>();
+        var session = new ScriptSession();
+
+        var result = await session.ExecuteAsync(
+            1,
+            """
+            var taskCreations = 0;
+            Enumerable.Range(1, 100).Select(value =>
+            {
+                taskCreations++;
+                return Task.FromResult(value);
+            })
+            """,
+            streamedResult: (sourceIndex, snapshot) => streamed.Add((sourceIndex, snapshot)));
+        var retained = Assert.Single(session.GetRetainedResults());
+        var retainedAgain = Assert.Single(session.GetRetainedResults());
+        var taskCreations = Assert.Single(
+            session.GetVariables(),
+            static variable => variable.Name == "taskCreations");
+
+        Assert.True(result.StateAccepted);
+        Assert.Equal(100, streamed.Count);
+        Assert.Equal(100, retained.Value.TotalCount);
+        Assert.Equal(100, retained.Value.Items?.Count);
+        Assert.Equal(100, retained.Value.ItemIndexes?.Distinct().Count());
+        Assert.Equal(
+            Enumerable.Range(1, 100),
+            retained.Value.Items!.Select(static item => int.Parse(item.Display!)).Order());
+        Assert.Same(retained.Value, retainedAgain.Value);
+        Assert.Equal("100", taskCreations.Value.Display);
+    }
+
+    [Fact]
+    public async Task BoundsStableStreamedPreviewWhilePreservingTheCompletedResultCount()
+    {
+        var session = new ScriptSession();
+
+        await session.ExecuteAsync(
+            1,
+            """
+            Enumerable.Range(1, 100).Select(value => Task.FromResult(
+                (A: value, B: value, C: value, D: value, E: value,
+                 F: value, G: value, H: value, I: value, J: value)))
+            """,
+            streamedResult: static (_, _) => { });
+
+        var retained = Assert.Single(session.GetRetainedResults()).Value;
+
+        Assert.Equal(100, retained.TotalCount);
+        Assert.True(retained.IsTruncated);
+        Assert.InRange(retained.Items?.Count ?? 0, 1, 99);
+        Assert.Equal(retained.Items?.Count, retained.ItemIndexes?.Count);
     }
 
     [Fact]

@@ -6,21 +6,19 @@ namespace PlayGroundSharp.Worker;
 /// <summary>Restores compile-time tuple element names that are erased from runtime ValueTuple types.</summary>
 internal static class TupleElementNameMapper
 {
-    public static ResultSnapshot Apply(ResultSnapshot snapshot, ITypeSymbol? type) =>
-        type is INamedTypeSymbol { IsTupleType: true } tuple
-            ? ApplyTuple(snapshot, tuple)
-            : snapshot;
+    public static ResultSnapshot Apply(ResultSnapshot snapshot, ITypeSymbol? type) => type switch
+    {
+        INamedTypeSymbol { IsTupleType: true } tuple => ApplyTuple(snapshot, tuple),
+        IArrayTypeSymbol array => ApplyArray(snapshot, array.ElementType, array.Rank),
+        not null when GetSequenceElementType(type) is { } elementType =>
+            ApplySequence(snapshot, elementType),
+        _ => snapshot
+    };
 
     public static ITypeSymbol? GetAsyncSequenceResultType(ITypeSymbol? type)
     {
         if (type is null) return null;
-        var sequenceType = type
-            .AllInterfaces
-            .Prepend(type)
-            .OfType<INamedTypeSymbol>()
-            .FirstOrDefault(static candidate =>
-                candidate.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T);
-        if (sequenceType?.TypeArguments.SingleOrDefault() is not INamedTypeSymbol awaitable ||
+        if (GetSequenceElementType(type) is not INamedTypeSymbol awaitable ||
             awaitable.Arity != 1 ||
             awaitable.ContainingNamespace.ToDisplayString() != "System.Threading.Tasks" ||
             awaitable.Name is not ("Task" or "ValueTask"))
@@ -28,6 +26,41 @@ internal static class TupleElementNameMapper
 
         return awaitable.TypeArguments[0];
     }
+
+    private static ResultSnapshot ApplyArray(
+        ResultSnapshot snapshot,
+        ITypeSymbol elementType,
+        int remainingRank)
+    {
+        if (snapshot.Items is null) return snapshot;
+
+        return snapshot with
+        {
+            Items = snapshot.Items
+                .Select(item => remainingRank == 1
+                    ? Apply(item, elementType)
+                    : ApplyArray(item, elementType, remainingRank - 1))
+                .ToArray()
+        };
+    }
+
+    private static ResultSnapshot ApplySequence(ResultSnapshot snapshot, ITypeSymbol elementType)
+    {
+        if (snapshot.Items is null) return snapshot;
+
+        return snapshot with
+        {
+            Items = snapshot.Items.Select(item => Apply(item, elementType)).ToArray()
+        };
+    }
+
+    private static ITypeSymbol? GetSequenceElementType(ITypeSymbol type) => type
+        .AllInterfaces
+        .Prepend(type)
+        .OfType<INamedTypeSymbol>()
+        .FirstOrDefault(static candidate =>
+            candidate.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+        ?.TypeArguments.SingleOrDefault();
 
     private static ResultSnapshot ApplyTuple(ResultSnapshot snapshot, INamedTypeSymbol tuple)
     {

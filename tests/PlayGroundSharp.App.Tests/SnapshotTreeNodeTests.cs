@@ -5,6 +5,49 @@ namespace PlayGroundSharp.App.Tests;
 public sealed class SnapshotTreeNodeTests
 {
     [Fact]
+    public void StreamedSequenceChildrenUseTheirOriginalSourceIndexes()
+    {
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "2 items",
+            null,
+            Items:
+            [
+                new(SnapshotKind.Number, "20", "System.Int32"),
+                new(SnapshotKind.Number, "10", "System.Int32")
+            ],
+            TotalCount: 2,
+            ItemIndexes: [1, 0]);
+
+        var root = SnapshotTreeNode.CreateRoot(snapshot, AppLanguageMode.English);
+
+        Assert.Equal(["[1]", "[0]"],
+            root.Children.Select(static child => child.Label.Split(" = ")[0]));
+        Assert.Equal(["$[1]", "$[0]"], root.Children.Select(static child => child.Path));
+    }
+
+    [Fact]
+    public void GroupedStreamedSequenceChildrenKeepTheirOriginalSourceIndexes()
+    {
+        var items = Enumerable.Range(0, 121)
+            .Select(index => new ResultSnapshot(SnapshotKind.Number, index.ToString(), "System.Int32"))
+            .ToArray();
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Sequence,
+            "121 items",
+            null,
+            Items: items,
+            TotalCount: items.Length,
+            ItemIndexes: Enumerable.Range(0, 121).Reverse().ToArray());
+
+        var groups = SnapshotTreeNode.CreateRoot(snapshot, AppLanguageMode.English).Children;
+
+        Assert.Equal(2, groups.Count);
+        Assert.StartsWith("[120] =", groups[0].Children[0].Label, StringComparison.Ordinal);
+        Assert.StartsWith("[20] =", groups[1].Children[0].Label, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FilterMaterializesEveryMatchBelowTheLimit()
     {
         var snapshot = new ResultSnapshot(

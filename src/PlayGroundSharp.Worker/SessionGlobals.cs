@@ -46,8 +46,13 @@ public sealed class ResultHistory
     internal IReadOnlyList<RetainedResult> UnnamedResults =>
         [.. values.Values.Where(static result => !result.IsNamed).OrderBy(static result => result.SubmissionIndex)];
 
-    internal void Set(int index, object? value, string typeExpression, bool isNamed = false) =>
-        values[index] = new(index, value, typeExpression) { IsNamed = isNamed };
+    internal void Set(
+        int index,
+        object? value,
+        string typeExpression,
+        bool isNamed = false,
+        ResultSnapshot? previewSnapshot = null) =>
+        values[index] = new(index, value, typeExpression, previewSnapshot) { IsNamed = isNamed };
     internal void Clear() => values.Clear();
 
     private RetainedResult Get(int index) => values.TryGetValue(index, out var result)
@@ -55,10 +60,15 @@ public sealed class ResultHistory
         : throw new KeyNotFoundException($"Submission {index} has no result.");
 }
 
-internal sealed class RetainedResult(int submissionIndex, object? value, string typeExpression)
+internal sealed class RetainedResult(
+    int submissionIndex,
+    object? value,
+    string typeExpression,
+    ResultSnapshot? previewSnapshot)
 {
     public int SubmissionIndex { get; } = submissionIndex;
     public object? Value { get; } = value;
     public string TypeExpression { get; } = typeExpression;
+    public ResultSnapshot? PreviewSnapshot { get; } = previewSnapshot;
     public bool IsNamed { get; set; }
 }

@@ -112,6 +112,40 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task PreservesTupleElementNamesInTaskWhenAllArrays()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            """
+            var tasks = Enumerable.Range(1, 3).Select(value =>
+                Task.FromResult((index: value, delay: value * 10)));
+            await Task.WhenAll(tasks)
+            """);
+
+        var items = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(result.Snapshot?.Items);
+        Assert.Equal(3, items.Count);
+        Assert.All(items, static item => Assert.Equal(
+            ["index", "delay"],
+            item.Properties?.Select(static property => property.Name)));
+        Assert.Equal(
+            ["1", "10"],
+            items[0].Properties?.Select(static property => property.Value.Display));
+    }
+
+    [Fact]
+    public async Task PreservesTupleElementNamesInGenericSequences()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            "Enumerable.Range(1, 2).Select(value => (index: value, square: value * value)).ToList()");
+
+        var items = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(result.Snapshot?.Items);
+        Assert.All(items, static item => Assert.Equal(
+            ["index", "square"],
+            item.Properties?.Select(static property => property.Name)));
+    }
+
+    [Fact]
     public async Task FallsBackToRuntimeTupleNamesWhenCompileTimeNamesAreUnavailable()
     {
         var result = await new ScriptSession().ExecuteAsync(1, "(object)(Name: \"Ada\", Age: 30)");

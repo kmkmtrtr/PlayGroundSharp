@@ -70,6 +70,68 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task PreservesNamedAndInferredTupleElementNamesInResultSnapshots()
+    {
+        var session = new ScriptSession();
+
+        var named = await session.ExecuteAsync(1, "(Name: \"Ada\", Age: 30)");
+        var inferred = await session.ExecuteAsync(
+            2,
+            "var name = \"Grace\"; var age = 37; var person = (name, age); person");
+
+        Assert.Equal(
+            ["Name", "Age"],
+            named.Snapshot?.Properties?.Select(static property => property.Name));
+        Assert.Equal(
+            ["Ada", "30"],
+            named.Snapshot?.Properties?.Select(static property => property.Value.Display));
+        Assert.Equal(
+            ["name", "age"],
+            inferred.Snapshot?.Properties?.Select(static property => property.Name));
+        Assert.Equal(
+            ["Grace", "37"],
+            inferred.Snapshot?.Properties?.Select(static property => property.Value.Display));
+    }
+
+    [Fact]
+    public async Task PreservesNestedAndLongTupleElementNames()
+    {
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            "(Person: (Name: \"Ada\", Age: 30), Second: 2, Third: 3, Fourth: 4, " +
+            "Fifth: 5, Sixth: 6, Seventh: 7, Eighth: 8)");
+
+        var properties = Assert.IsAssignableFrom<IReadOnlyList<ResultProperty>>(result.Snapshot?.Properties);
+        Assert.Equal(
+            ["Person", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth"],
+            properties.Select(static property => property.Name));
+        Assert.Equal("8", properties[^1].Value.Display);
+        var person = Assert.IsAssignableFrom<IReadOnlyList<ResultProperty>>(properties[0].Value.Properties);
+        Assert.Equal(["Name", "Age"], person.Select(static property => property.Name));
+        Assert.Equal(["Ada", "30"], person.Select(static property => property.Value.Display));
+    }
+
+    [Fact]
+    public async Task FallsBackToRuntimeTupleNamesWhenCompileTimeNamesAreUnavailable()
+    {
+        var result = await new ScriptSession().ExecuteAsync(1, "(object)(Name: \"Ada\", Age: 30)");
+
+        Assert.Equal(
+            ["Item1", "Item2"],
+            result.Snapshot?.Properties?.Select(static property => property.Name));
+    }
+
+    [Fact]
+    public async Task InspectionPreservesTupleElementNames()
+    {
+        var inspection = await new ScriptSession().InspectExpressionAsync("(Left: 1, Right: 2)");
+
+        Assert.Equal(
+            ["Left", "Right"],
+            inspection.Snapshot?.Properties?.Select(static property => property.Name));
+    }
+
+    [Fact]
     public async Task InspectionEvaluatesWithoutChangingSubmissionStateOrResultHistory()
     {
         var session = new ScriptSession();
@@ -231,6 +293,22 @@ public sealed class ScriptSessionTests
         Assert.Null(result.Snapshot);
         Assert.Equal([1, 0], streamed.Select(static item => item.SourceIndex));
         Assert.Equal(["2", "1"], streamed.Select(static item => item.Snapshot.Display));
+    }
+
+    [Fact]
+    public async Task PreservesTupleElementNamesInStreamedResults()
+    {
+        var streamed = new List<ResultSnapshot>();
+
+        var result = await new ScriptSession().ExecuteAsync(
+            1,
+            "new[] { Task.FromResult((Name: \"Ada\", Age: 30)) }",
+            streamedResult: (_, snapshot) => streamed.Add(snapshot));
+
+        Assert.True(result.StateAccepted);
+        var properties = Assert.Single(streamed).Properties;
+        Assert.Equal(["Name", "Age"], properties?.Select(static property => property.Name));
+        Assert.Equal(["Ada", "30"], properties?.Select(static property => property.Value.Display));
     }
 
     [Fact]

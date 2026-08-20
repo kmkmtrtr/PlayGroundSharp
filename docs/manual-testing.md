@@ -48,6 +48,7 @@ Build and start the Debug App, then execute each item in a fresh session where n
 | 42 | Start an input that spends time in pre-execution extension-import analysis, then press Stop | Stop is enabled during analysis, no submission is sent to the Worker, and the unsubmitted input returns to the editor |
 | 43 | In the first console declare `var marker = 42`, add a console with **＋**, and evaluate `marker` in the new tab; switch back and evaluate it again, then close the second tab | the new tab reports `CS0103`, the first tab returns `42`, two Worker processes exist while both tabs are open, and closing the tab terminates only its Worker |
 | 44 | Create several console tabs with `Ctrl+T`; move with `Ctrl+Tab` / `Ctrl+Shift+Tab`, close one with middle-click and another with `Ctrl+W`; select text and scroll upward before leaving a tab | shortcuts wrap across the tab list, each close terminates only its Worker, and returning to a tab restores its editor selection and Transcript position; a busy background tab shows an activity dot |
+| 45 | Execute `(Name: "Ada", Age: 30)`, inspect the result tree, then execute an eight-element named tuple | the declared element names are shown instead of `Item1` / `Item2`; nested and eighth-or-later elements keep the correct name-to-value mapping |
 
 Public-package manual verification uses `Humanizer.Core` version `3.0.10`, selected as a small stable .NET 8+/netstandard-compatible package. Automated package tests do not use public NuGet; they create and restore fixture packages through a local feed.
 

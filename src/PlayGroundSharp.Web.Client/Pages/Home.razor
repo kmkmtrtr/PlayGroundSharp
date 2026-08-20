@@ -156,7 +156,12 @@
                                 <div class="result-header"><span>result</span><code>@DisplayType(item.Result)</code></div>
                                 <SnapshotView Snapshot="item.Result" />
                             }
-                            @if (item.Result is null && item.Diagnostics.Count == 0 && item.Error is null && item.StandardOutput.Count == 0)
+                            @foreach (var streamed in item.StreamedResults)
+                            {
+                                <div class="result-header"><span>result[@streamed.SourceIndex]</span><code>@DisplayType(streamed.Snapshot)</code></div>
+                                <SnapshotView Snapshot="streamed.Snapshot" />
+                            }
+                            @if (item.Result is null && item.StreamedResults.Count == 0 && item.Diagnostics.Count == 0 && item.Error is null && item.StandardOutput.Count == 0)
                             {
                                 <span class="void-result">実行完了（戻り値なし）</span>
                             }

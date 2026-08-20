@@ -533,11 +533,11 @@
                                     </ContextMenu>
                                 </Grid.ContextMenu>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="24" />
+                                    <ColumnDefinition Width="Auto" MinWidth="24" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{Binding Prefix}" Foreground="{Binding PrefixBrush}" FontFamily="Cascadia Mono,Consolas"
-                                           FontSize="14" FontWeight="SemiBold" />
+                                           FontSize="14" FontWeight="SemiBold" Margin="0,0,8,0" />
                                 <Grid Grid.Column="1">
                                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontFamily="Cascadia Mono,Consolas"
                                                FontSize="14" LineHeight="20" Foreground="{Binding TextBrush}" MouseLeftButtonUp="TranscriptLine_MouseLeftButtonUp">
@@ -598,6 +598,29 @@
                   <Grid Grid.Row="1" Margin="0,2,0,8">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Border Grid.Row="0" Grid.Column="1" Margin="0,0,0,9" Padding="9,6"
+                        Background="{DynamicResource SelectionBrush}" CornerRadius="5"
+                        Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        AutomationProperties.Name="{Binding Status}"
+                        AutomationProperties.LiveSetting="Polite">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ProgressBar Width="52" Height="4" IsIndeterminate="True"
+                                     Foreground="{DynamicResource AccentBrush}"
+                                     Background="{DynamicResource BorderBrush}"
+                                     VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="{Binding Status}" Margin="0,0,10,0"
+                                   Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="{DynamicResource Execution.RunningHint}"
+                                   Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
                 <TextBlock Grid.Row="1" Text=">" Foreground="{DynamicResource AccentBrush}" FontSize="15" FontWeight="SemiBold"
                            FontFamily="Cascadia Mono,Consolas" VerticalAlignment="Top" Margin="0,2,0,0" />
                 <avalon:TextEditor x:Name="Editor" Grid.Row="1" Grid.Column="1" MinHeight="24" MaxHeight="280"
@@ -1080,13 +1103,28 @@
                     <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Ellipse Width="6" Height="6" VerticalAlignment="Center" Margin="0,0,7,0" ToolTip="{Binding Status}">
+                <Ellipse Width="7" Height="7" VerticalAlignment="Center" Margin="0,0,7,0" ToolTip="{Binding Status}">
                     <Ellipse.Style>
                         <Style TargetType="Ellipse">
                             <Setter Property="Fill" Value="{DynamicResource MutedBrush}" />
+                            <Setter Property="Opacity" Value="1" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsWorkerConnected}" Value="True">
                                     <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                    <Setter Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                    <DataTrigger.EnterActions>
+                                        <BeginStoryboard Name="RunningPulse">
+                                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                 From="0.3" To="1" Duration="0:0:0.65" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.EnterActions>
+                                    <DataTrigger.ExitActions>
+                                        <RemoveStoryboard BeginStoryboardName="RunningPulse" />
+                                    </DataTrigger.ExitActions>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>

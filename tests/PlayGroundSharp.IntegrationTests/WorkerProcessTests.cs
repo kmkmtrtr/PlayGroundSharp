@@ -165,6 +165,40 @@ public sealed class WorkerProcessTests
     }
 
     [Fact]
+    public async Task WorkerProcessStreamsTaskSequenceValuesBeforeCompletion()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pipeName = $"pgs-task-sequence-{Guid.NewGuid():N}";
+        using var process = StartWorker(pipeName);
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var transport = new PipeTransport(pipe);
+
+            var events = await ExecuteAsync(
+                transport,
+                1,
+                "new[] { 3, 1, 2 }.Select(async x => { await Task.Delay(x * 100); return x; })",
+                timeout.Token);
+            var streamed = events
+                .Where(static envelope => envelope.Kind == MessageKinds.StreamedResult)
+                .Select(static envelope => envelope.ReadPayload<StreamedResultEvent>())
+                .ToArray();
+
+            Assert.Equal([1, 2, 0], streamed.Select(static item => item.SourceIndex));
+            Assert.Equal(["1", "2", "3"], streamed.Select(static item => item.Snapshot.Display));
+            Assert.DoesNotContain(events, static envelope => envelope.Kind == MessageKinds.Result);
+            Assert.Equal(MessageKinds.Completed, events[^1].Kind);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public async Task WorkerExitsCleanlyWhenClientDisconnectsDuringAConsoleWrite()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));

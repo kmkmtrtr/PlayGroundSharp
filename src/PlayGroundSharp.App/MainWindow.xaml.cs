@@ -629,6 +629,15 @@ public partial class MainWindow : Window
             e.Handled = true;
             FocusExplorerSearch();
         }
+        else if (ShouldCancelExecutionWithControlC(
+                     e.Key,
+                     Keyboard.Modifiers,
+                     viewModel.IsRunning,
+                     HasFocusedCopyTarget()))
+        {
+            e.Handled = true;
+            await CancelFromUiAsync();
+        }
         else if (e.Key == Key.C && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             e.Handled = true;
@@ -664,6 +673,24 @@ public partial class MainWindow : Window
             e.Handled = true;
             await CancelFromUiAsync();
         }
+    }
+
+    internal static bool ShouldCancelExecutionWithControlC(
+        Key key,
+        ModifierKeys modifiers,
+        bool isRunning,
+        bool hasFocusedCopyTarget) =>
+        key == Key.C && modifiers == ModifierKeys.Control && isRunning && !hasFocusedCopyTarget;
+
+    private bool HasFocusedCopyTarget()
+    {
+        if (Editor.IsKeyboardFocusWithin) return Editor.SelectionLength > 0;
+        if (Keyboard.FocusedElement is not DependencyObject focused) return false;
+        if (FindAncestor<TextBox>(focused) is { } textBox) return textBox.SelectionLength > 0;
+        if (FindAncestor<TreeView>(focused) is { SelectedItem: ConsoleSnapshotNode }) return true;
+        if (FindAncestor<ListView>(focused) is { SelectedItem: VariableItem }) return true;
+        return Keyboard.FocusedElement is IInputElement input &&
+               ApplicationCommands.Copy.CanExecute(null, input);
     }
 
     private void MovePaneFocus(int delta)

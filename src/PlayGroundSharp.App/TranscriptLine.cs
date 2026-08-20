@@ -34,6 +34,11 @@ public sealed record TranscriptLine(
                 ? [ConsoleSnapshotNode.CreateRoot(snapshot)]
                 : null,
             ResultExpression: resultExpression);
+    public static TranscriptLine StreamedOutput(int sourceIndex, string text, ResultSnapshot snapshot) =>
+        new($"[{sourceIndex}]", text, Resource("AccentBrush"), Resource("ForegroundBrush"), Snapshot: snapshot,
+            SnapshotRoots: snapshot.Properties is not null || snapshot.Items is not null
+                ? [ConsoleSnapshotNode.CreateRoot(snapshot)]
+                : null);
     public static TranscriptLine Console(string text, bool error)
     {
         return new(error ? "!" : "│", text.TrimEnd('\r', '\n'),

@@ -35,6 +35,7 @@ public sealed class ScriptSession
     private readonly Type globalsType;
     private readonly ResultHistory resultHistory;
     private readonly ResultSnapshotFactory snapshots = new();
+    private readonly AsyncSequenceEvaluator asyncSequences;
     private readonly List<string> submissions = [];
     private readonly List<string> imports = [.. SessionContext.DefaultImports];
     private readonly List<string> references = [];
@@ -48,6 +49,7 @@ public sealed class ScriptSession
         IReadOnlyList<string>? platformReferencePaths = null,
         string? targetFramework = null)
     {
+        asyncSequences = new(snapshots);
         requiresReferenceAssemblyBootstrap = platformReferencePaths is { Count: > 0 };
         if (platformReferencePaths is { Count: > 0 })
         {
@@ -200,7 +202,8 @@ public sealed class ScriptSession
         string code,
         Action<string>? standardOutput = null,
         Action<string>? standardError = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<int, ResultSnapshot>? streamedResult = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
         var originalOut = Console.Out;
@@ -259,7 +262,12 @@ public sealed class ScriptSession
             {
                 try
                 {
-                    snapshot = snapshots.Create(candidate.ReturnValue, cancellationToken);
+                    var streamed = streamedResult is not null && candidate.ReturnValue is not null &&
+                                   await asyncSequences.TryEvaluateAsync(
+                                       candidate.ReturnValue,
+                                       streamedResult,
+                                       cancellationToken).ConfigureAwait(false);
+                    if (!streamed) snapshot = snapshots.Create(candidate.ReturnValue, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

@@ -280,6 +280,9 @@ public partial class Home
                 case MessageKinds.Result:
                     view.Result = envelope.ReadPayload<ResultEvent>().Snapshot;
                     break;
+                case MessageKinds.StreamedResult:
+                    view.StreamedResults.Add(envelope.ReadPayload<StreamedResultEvent>());
+                    break;
                 case MessageKinds.RuntimeError:
                     view.Error = envelope.ReadPayload<RuntimeErrorEvent>().Exception;
                     break;
@@ -575,7 +578,10 @@ public partial class Home
     private async Task CopyAsync(SubmissionView item)
     {
         if (module is null) return;
-        var result = item.Result?.Display ?? item.Error?.Message ?? string.Concat(item.StandardOutput);
+        var result = item.Result?.Display ??
+                     (item.StreamedResults.Count > 0
+                         ? string.Join(Environment.NewLine, item.StreamedResults.Select(static value => value.Snapshot.Display))
+                         : item.Error?.Message ?? string.Concat(item.StandardOutput));
         await module.InvokeVoidAsync("copyText", $"> {item.Code}\n{result}");
         ShowMessage("クリップボードへコピーしました。", "success");
     }
@@ -658,6 +664,7 @@ public partial class Home
         public List<DiagnosticInfo> Diagnostics { get; } = [];
         public int DiagnosticTotalCount { get; set; }
         public ResultSnapshot? Result { get; set; }
+        public List<StreamedResultEvent> StreamedResults { get; } = [];
         public ExceptionInfo? Error { get; set; }
         public bool StateAccepted { get; set; }
     }

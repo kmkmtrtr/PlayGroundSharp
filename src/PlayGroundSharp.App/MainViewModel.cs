@@ -1354,8 +1354,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 break;
             case MessageKinds.StreamedResult:
                 var streamedResult = envelope.ReadPayload<StreamedResultEvent>();
-                Transcript.Add(TranscriptLine.Output(
-                    streamedResult.SubmissionIndex,
+                Transcript.Add(TranscriptLine.StreamedOutput(
+                    streamedResult.SourceIndex,
                     FormatResultSnapshot(streamedResult.Snapshot),
                     streamedResult.Snapshot));
                 break;

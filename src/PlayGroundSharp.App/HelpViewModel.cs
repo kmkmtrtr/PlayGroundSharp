@@ -36,13 +36,13 @@ public sealed partial class HelpViewModel : ObservableObject
         new("入力と補完", "C#補完、シグネチャ、診断を現在のセッション状態から生成します。",
         [
             new("補完と説明", "ピリオドの入力またはCtrl+Spaceで候補を開き、Enter、Tab、またはクリックで確定します。未usingの型や拡張メソッドを選ぶと、必要なusingも追加します。シンボルへマウスを置くと署名と説明が表示され、.NET APIはポップアップ内のリンクからMicrosoft Learnを開けます。"),
-            new("診断とキー操作", "入力中のエラーと警告はその場で表示されます。F8／Shift+F8で次／前の診断、F6／Shift+F6でペイン移動、Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。Escは補完を閉じ、実行中は停止に使います。"),
+            new("診断とキー操作", "入力中のエラーと警告はその場で表示されます。F8／Shift+F8で次／前の診断、F6／Shift+F6でペイン移動、Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。Escは補完を閉じ、実行中は停止に使います。Ctrl+Cは選択内容をコピーし、コピー対象がない実行中は停止します。"),
             new("改行と履歴", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterまたはShift+Enterで改行します。一行入力で↑↓を押すと履歴を移動でき、過去の入力行をクリックすると入力欄へ戻せます。"),
             new("ファイルをドロップ", "入力欄へファイルやフォルダをドロップすると操作を選べます。パスの挿入、内容を読む式の作成、フォルダ内ファイルの列挙などがあり、自動では実行されません。複数ファイルはまとめて扱えます。")
         ]),
         new("結果と変数", "実行結果を調べ、後から名前を付けて再利用できます。",
         [
-            new("実行結果", "結果行から詳細表示、コピー、保存ができます。現在の結果はLast、過去の結果はOut[index]で元のオブジェクトを参照できます。"),
+            new("実行結果", "結果行から詳細表示、コピー、保存ができます。Task／ValueTaskの列挙結果には、元の0始まり位置が［0］のように表示されます。現在の結果はLast、過去の結果はOut[index]で元のオブジェクトを参照できます。"),
             new("変数", "［ワークスペース］の［変数］には宣言済み変数と名前のない結果が表示されます。変数をダブルクリックするかEnterを押すと名前を入力欄へ挿入し、Ctrl+Cで値をコピーできます。"),
             new("名前のない結果", "名前のない行をダブルクリックするかEnterを押すと変数名を付けられます。元の型を利用できる場合はその型で、利用できない場合はdynamicとして扱います。不要な結果は右クリックして保持を解除できます。"),
             new("データ型を推論", "JSON、オブジェクト、またはオブジェクト列を右クリックして［データ型を推論］を選ぶと、現在値からC#型と型付き変数を生成します。元の変数は残り、生成した変数では補完を利用できます。")
@@ -75,7 +75,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("停止と安全性", "Worker分離は安定性のためであり、サンドボックスではありません。",
         [
-            new("停止", "Escまたは停止ボタンで、実行前の入力解析、実行中のコード、NuGetの検索・追加を中断できます。実行前なら未実行の入力を復元します。待機や長いループにExecutionCancellationを渡すと、セッション状態を保ったまま協調停止できます。応答しないコードはWorkerを強制終了するため、Worker内の変数状態が失われます。", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
+            new("停止", "Esc、停止ボタン、またはコピー対象がないときのCtrl+Cで、実行前の入力解析、実行中のコード、NuGetの検索・追加を中断できます。実行前なら未実行の入力を復元します。待機や長いループにExecutionCancellationを渡すと、セッション状態を保ったまま協調停止できます。応答しないコードはWorkerを強制終了するため、Worker内の変数状態が失われます。", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
             new("権限", "任意のC#コードとパッケージは現在のWindowsユーザー権限で動作します。信頼できないコード、DLL、パッケージを実行しないでください。")
         ])
     ];
@@ -96,13 +96,13 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Input and IntelliSense", "Completion and diagnostics use the current session state.",
         [
             new("Completion and documentation", "Type a period or press Ctrl+Space to open completion, then accept with Enter, Tab, or a click. Selecting an unimported type or extension method also adds its using. Hover a symbol for its signature and summary; .NET APIs link to Microsoft Learn from the popup."),
-            new("Diagnostics and focus", "Errors and warnings appear while you type. F8 or Shift+F8 moves between diagnostics, F6 or Shift+F6 cycles panes, Ctrl+L focuses input, and Ctrl+F focuses symbol search. Esc closes completion and stops an active operation."),
+            new("Diagnostics and focus", "Errors and warnings appear while you type. F8 or Shift+F8 moves between diagnostics, F6 or Shift+F6 cycles panes, Ctrl+L focuses input, and Ctrl+F focuses symbol search. Esc closes completion and stops an active operation. Ctrl+C copies a selection, or stops a running submission when there is no copy target."),
             new("Lines and history", "With Enter-to-run, Shift+Enter inserts a line break. With Ctrl+Enter-to-run, Enter or Shift+Enter inserts one. Use Up and Down on a single line to browse history, or click an earlier input to restore it."),
             new("Drop a file", "Drop files or folders onto the input editor to choose an action such as inserting paths, creating a data-reading expression, or listing a folder. Nothing runs automatically, and multiple files can be handled together.")
         ]),
         new("Results and variables", "Inspect results, name them later, and reuse them.",
         [
-            new("Results", "A result row can be inspected, copied, or saved. Last refers to the current result, and Out[index] refers to an earlier original result object."),
+            new("Results", "A result row can be inspected, copied, or saved. Enumerated Task and ValueTask results show their original zero-based position as [0], for example. Last refers to the current result, and Out[index] refers to an earlier original result object."),
             new("Variables", "Workspace > Variables shows declared variables and unnamed results. Double-click a variable or press Enter to insert its name into the editor; press Ctrl+C to copy its value."),
             new("Unnamed results", "Double-click an unnamed row or press Enter to give it a variable name. Its original type is used when available, with dynamic as the fallback. Right-click and choose Release when the object no longer needs to be retained."),
             new("Infer data type", "Right-click JSON, an object, or a sequence of objects and choose Infer data type to generate C# models and a typed variable from the current value. The original variable remains available.")
@@ -135,7 +135,7 @@ public sealed partial class HelpViewModel : ObservableObject
         ]),
         new("Cancellation and security", "Worker isolation improves recovery; it is not a sandbox.",
         [
-            new("Stop", "Press Esc or Stop to cancel pre-execution analysis, running code, NuGet searches, and package installation. Cancelling analysis restores the unsubmitted input. Pass ExecutionCancellation to waits and long loops to stop cooperatively without losing session state. A non-responsive Worker is terminated, so Worker variables are lost.", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
+            new("Stop", "Press Esc, Stop, or Ctrl+C when there is no copy target to cancel pre-execution analysis, running code, NuGet searches, and package installation. Cancelling analysis restores the unsubmitted input. Pass ExecutionCancellation to waits and long loops to stop cooperatively without losing session state. A non-responsive Worker is terminated, so Worker variables are lost.", "await Task.Delay(10_000, ExecutionCancellation)\nExecutionCancellation.ThrowIfCancellationRequested()"),
             new("Permissions", "Submitted code and packages run with your current Windows user permissions. Never run untrusted code, DLLs, or packages.")
         ])
     ];

@@ -74,6 +74,21 @@ public sealed class TranscriptLineTests
     }
 
     [Fact]
+    public void StreamedOutputShowsItsZeroBasedSourceIndex()
+    {
+        var snapshot = new PlayGroundSharp.Core.ResultSnapshot(
+            PlayGroundSharp.Core.SnapshotKind.Number,
+            "42",
+            "System.Int32");
+
+        var line = TranscriptLine.StreamedOutput(7, "42", snapshot);
+
+        Assert.Equal("[7]", line.Prefix);
+        Assert.Equal("42", line.Text);
+        Assert.Same(snapshot, line.Snapshot);
+    }
+
+    [Fact]
     public void LocalizedSystemRowsCanBeRelocalizedWithoutChangingRawRows()
     {
         var localized = TranscriptLine.LocalizedSystem(

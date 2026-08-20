@@ -59,6 +59,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - `Ctrl+K`, `Ctrl+I`: pin Quick Info for the symbol at the caret
 - `Tab`: accept the selected completion; added-library types can add their required `using` automatically
 - `Esc`: close completion; while running, request cancellation
+- `Ctrl+C`: copy selected editor text or a selected result node; with no copy selection, stop a running submission
 - `F6` / `Shift+F6`: cycle focus through the visible Explorer, console and Workspace panes
 - `F8` / `Shift+F8`: move to the next / previous input diagnostic and select its source span
 - `Ctrl+Shift+C`: copy the full transcript
@@ -74,7 +75,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
 - **NuGet**: search nuget.org, review package metadata and install the displayed exact version
 - **Libraries**: add one or more local DLLs and list imported packages, assemblies, versions and sources; dropping a DLL onto the prompt also offers **Add as DLL reference**
-- **Structured results**: expand JSON, objects and arrays directly in the transcript; `IEnumerable<Task<T>>` and `IEnumerable<ValueTask<T>>` values appear one at a time in completion order. Large captured collections are grouped into index ranges. Select a node and press `Ctrl+C` to copy that value. Inspector search reports the full match count while rendering at most the first 250 matches to keep large snapshots responsive.
+- **Structured results**: expand JSON, objects and arrays directly in the transcript; `IEnumerable<Task<T>>` and `IEnumerable<ValueTask<T>>` values appear one at a time in completion order, prefixed with their zero-based source index. Large captured collections are grouped into index ranges. Select a node and press `Ctrl+C` to copy that value; with no copy selection, `Ctrl+C` stops a running submission. Inspector search reports the full match count while rendering at most the first 250 matches to keep large snapshots responsive.
 - **Inspect** on a result: open the same bounded property/item tree with search, path copy and full captured-value export in a separate window. Its size and tree/detail split are retained; `Ctrl+F`, `F3` / `Shift+F3`, `Ctrl+C`, `Ctrl+Shift+C`, `Ctrl+S` and `Esc` are available from the keyboard.
 - **File**: save or open a `.pgsworkspace` containing submissions, draft input, usings, DLL references and exact package versions; dropping one onto the prompt also offers **Open as workspace**
 - **Data**: insert bounded or streaming snippets for large text, byte, JSON-array and JSON Lines files

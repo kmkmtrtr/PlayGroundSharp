@@ -227,11 +227,14 @@ public sealed class ScriptSessionTests
         var session = new ScriptSession();
         session.AddUsing("System.Net.Http");
 
-        var result = await session.ExecuteAsync(1, "new HttpClient().GetType().Name");
+        var result = await session.ExecuteAsync(
+            1,
+            "Func<string, CancellationToken, Task<HttpResponseMessage>> getAsync = new HttpClient().GetAsync; " +
+            "getAsync.Method.Name");
 
         Assert.True(result.StateAccepted, string.Join(Environment.NewLine,
             result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
-        Assert.Equal("HttpClient", result.Snapshot?.Display);
+        Assert.Equal("GetAsync", result.Snapshot?.Display);
     }
 
     [Fact]

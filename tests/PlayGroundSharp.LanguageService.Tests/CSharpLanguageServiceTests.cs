@@ -105,9 +105,13 @@ public sealed class CSharpLanguageServiceTests
         const string code = "var client = new HttpClient(); client.";
 
         var items = await service.GetCompletionsAsync(context, code, code.Length);
+        var diagnostics = await service.GetDiagnosticsAsync(
+            context,
+            "var client = new HttpClient(); client.GetAsync(\"https://example.com\")");
 
         Assert.Contains(items, static item => item.DisplayText == "GetAsync");
         Assert.Contains(items, static item => item.DisplayText == "SendAsync");
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 
     [Fact]

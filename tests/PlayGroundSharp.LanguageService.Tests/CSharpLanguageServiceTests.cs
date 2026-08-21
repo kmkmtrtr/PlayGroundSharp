@@ -428,6 +428,10 @@ public sealed class CSharpLanguageServiceTests
     [Theory]
     [InlineData("1 + 2")]
     [InlineData("delayed + 1")]
+    [InlineData("delayed")]
+    [InlineData("delayed;")]
+    [InlineData("delayed:")]
+    [InlineData("var delayed = 43;")]
     [InlineData("var next = delayed + 1")]
     public async Task DoesNotReportErrorsForValidTrailingExpressions(string currentCode)
     {
@@ -435,7 +439,30 @@ public sealed class CSharpLanguageServiceTests
 
         var diagnostics = await service.GetDiagnosticsAsync(context, currentCode);
 
-        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public async Task KeepsUndefinedNameErrorsInTrailingExpressions()
+    {
+        var diagnostics = await service.GetDiagnosticsAsync(SessionContext.Empty, "missingValue;");
+
+        Assert.Contains(diagnostics, static diagnostic =>
+            diagnostic.Level == DiagnosticLevel.Error && diagnostic.Id == "CS0103");
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Id == "CS0201");
+    }
+
+    [Fact]
+    public async Task ReconstructsPriorTrailingValuesWithExecutionSemantics()
+    {
+        var context = new SessionContext(
+            ["var delayed = 42;", "delayed;"],
+            SessionContext.DefaultImports,
+            []);
+
+        var diagnostics = await service.GetDiagnosticsAsync(context, "delayed");
+
+        Assert.Empty(diagnostics);
     }
 
     [Fact]

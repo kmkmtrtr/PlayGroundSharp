@@ -81,6 +81,7 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - **Data**: insert bounded or streaming snippets for large text, byte, JSON-array and JSON Lines files
 - **Help** or `F1`: open the built-in guide for input, IntelliSense, symbols, workspaces, large files, dependencies and security
 - Inputs beginning with `:` use command completion and are excluded from C# diagnostics, Quick Info and signature analysis
+- Live diagnostics compile each accepted submission as a separate script continuation, matching Worker execution; terminal values such as `value`, `value;`, a trailing label colon, and variables redeclared in a later submission do not receive concatenation-only errors
 
 Examples:
 

@@ -528,6 +528,22 @@ public sealed class ScriptSessionTests
         Assert.Equal("true", result.Snapshot?.Display);
     }
 
+    [Theory]
+    [InlineData("delayed")]
+    [InlineData("delayed;")]
+    [InlineData("delayed:")]
+    [InlineData("var delayed = 43;")]
+    public async Task AcceptsInteractiveTrailingExpressionSyntax(string code)
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "var delayed = 42;");
+
+        var result = await session.ExecuteAsync(2, code);
+
+        Assert.True(result.StateAccepted, string.Join(Environment.NewLine,
+            result.Diagnostics.Select(static diagnostic => $"{diagnostic.Id}: {diagnostic.Message}")));
+    }
+
     [Fact]
     public async Task CompletesOmittedTrailingSemicolons()
     {

@@ -36,7 +36,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("入力と補完", "C#補完、シグネチャ、診断を現在のセッション状態から生成します。",
         [
             new("補完と説明", "ピリオドの入力またはCtrl+Spaceで候補を開き、Enter、Tab、またはクリックで確定します。未usingの型や拡張メソッドを選ぶと、必要なusingも追加します。シンボルへマウスを置くと署名と説明が表示され、.NET APIはポップアップ内のリンクからMicrosoft Learnを開けます。"),
-            new("診断とキー操作", "入力中のエラーと警告はその場で表示されます。F8／Shift+F8で次／前の診断、F6／Shift+F6でペイン移動、Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。Escは補完を閉じ、実行中は停止に使います。Ctrl+Cは選択内容をコピーし、コピー対象がない実行中は停止します。"),
+            new("診断とキー操作", "入力中のエラーと警告は、実行と同じSubmissionの区切りで分析してその場で表示されます。F8／Shift+F8で次／前の診断、F6／Shift+F6でペイン移動、Ctrl+Lで入力欄、Ctrl+Fでシンボル検索へ移動できます。Escは補完を閉じ、実行中は停止に使います。Ctrl+Cは選択内容をコピーし、コピー対象がない実行中は停止します。"),
             new("改行と履歴", "実行キーがEnterならShift+Enterで改行し、Ctrl+Enter設定ならEnterまたはShift+Enterで改行します。一行入力で↑↓を押すと履歴を移動でき、過去の入力行をクリックすると入力欄へ戻せます。"),
             new("ファイルをドロップ", "入力欄へファイルやフォルダをドロップすると操作を選べます。パスの挿入、内容を読む式の作成、フォルダ内ファイルの列挙などがあり、自動では実行されません。複数ファイルはまとめて扱えます。")
         ]),
@@ -96,7 +96,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Input and IntelliSense", "Completion and diagnostics use the current session state.",
         [
             new("Completion and documentation", "Type a period or press Ctrl+Space to open completion, then accept with Enter, Tab, or a click. Selecting an unimported type or extension method also adds its using. Hover a symbol for its signature and summary; .NET APIs link to Microsoft Learn from the popup."),
-            new("Diagnostics and focus", "Errors and warnings appear while you type. F8 or Shift+F8 moves between diagnostics, F6 or Shift+F6 cycles panes, Ctrl+L focuses input, and Ctrl+F focuses symbol search. Esc closes completion and stops an active operation. Ctrl+C copies a selection, or stops a running submission when there is no copy target."),
+            new("Diagnostics and focus", "Errors and warnings appear while you type and are analyzed with the same submission boundaries used for execution. F8 or Shift+F8 moves between diagnostics, F6 or Shift+F6 cycles panes, Ctrl+L focuses input, and Ctrl+F focuses symbol search. Esc closes completion and stops an active operation. Ctrl+C copies a selection, or stops a running submission when there is no copy target."),
             new("Lines and history", "With Enter-to-run, Shift+Enter inserts a line break. With Ctrl+Enter-to-run, Enter or Shift+Enter inserts one. Use Up and Down on a single line to browse history, or click an earlier input to restore it."),
             new("Drop a file", "Drop files or folders onto the input editor to choose an action such as inserting paths, creating a data-reading expression, or listing a folder. Nothing runs automatically, and multiple files can be handled together.")
         ]),

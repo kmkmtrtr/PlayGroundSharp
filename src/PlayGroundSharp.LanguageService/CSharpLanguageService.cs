@@ -785,22 +785,93 @@ public sealed class CSharpLanguageService
         ITypeSymbol ReceiverType,
         HashSet<string> Namespaces);
 
-    public async Task<IReadOnlyList<DiagnosticInfo>> GetDiagnosticsAsync(
+    public Task<IReadOnlyList<DiagnosticInfo>> GetDiagnosticsAsync(
         SessionContext context,
         string currentCode,
         CancellationToken cancellationToken = default)
     {
-        using var workspaceDocument = CreateDocument(context, currentCode);
-        var model = await workspaceDocument.Document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-        if (model is null) return [];
-        var currentStart = workspaceDocument.CurrentOffset;
-        var significantEnd = currentStart + currentCode.TrimEnd().Length;
+        var analysisCode = PrepareCurrentSubmissionForDiagnostics(currentCode);
+        var hasIncompleteTrailingLabel = HasIncompleteTrailingLabel(currentCode);
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script);
+        var compilationOptions = CreateCompilationOptions(context);
+        var references = CreateReferences(context);
+        CSharpCompilation? compilation = null;
+        SyntaxTree? currentTree = null;
+        var submissions = new[] { CreateGlobalsCode(context) }
+            .Concat(context.Submissions.Select(NormalizeHistoricalSubmission))
+            .Append(analysisCode);
+        var index = 0;
+        foreach (var submission in submissions)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            currentTree = CSharpSyntaxTree.ParseText(submission, parseOptions, cancellationToken: cancellationToken);
+            try
+            {
+                compilation = CSharpCompilation.CreateScriptCompilation(
+                    $"PlayGroundSharp.Diagnostics.{index++}",
+                    currentTree,
+                    references,
+                    compilationOptions,
+                    compilation,
+                    returnType: null);
+            }
+            catch (InvalidOperationException) when (compilation is not null)
+            {
+                // Session history contains only Worker-accepted submissions. If the analysis
+                // references cannot reconstruct one, avoid presenting diagnostics based on a
+                // partial history as though they were authoritative.
+                return Task.FromResult<IReadOnlyList<DiagnosticInfo>>([]);
+            }
+        }
+        if (compilation is null || currentTree is null)
+            return Task.FromResult<IReadOnlyList<DiagnosticInfo>>([]);
+
+        var model = compilation.GetSemanticModel(currentTree);
         var currentText = SourceText.From(currentCode);
-        return model.GetDiagnostics(new TextSpan(currentStart, currentCode.Length), cancellationToken)
+        var diagnostics = model.GetDiagnostics(cancellationToken: cancellationToken)
             .Where(static diagnostic => diagnostic.Severity != DiagnosticSeverity.Hidden)
-            .Where(diagnostic => diagnostic.Id != "CS1002" || diagnostic.Location.SourceSpan.Start < significantEnd)
-            .Select(diagnostic => ToDiagnostic(diagnostic, currentStart, currentText))
+            .Where(diagnostic => diagnostic.Id != "CS0164" || !hasIncompleteTrailingLabel)
+            .Select(diagnostic => ToDiagnostic(diagnostic, 0, currentText))
             .ToArray();
+        return Task.FromResult<IReadOnlyList<DiagnosticInfo>>(diagnostics);
+    }
+
+    private static string PrepareCurrentSubmissionForDiagnostics(string code)
+    {
+        var tree = CSharpSyntaxTree.ParseText(
+            code,
+            new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script));
+        var root = tree.GetCompilationUnitRoot();
+        if (root.Members.LastOrDefault() is GlobalStatementSyntax
+            {
+                Statement: ExpressionStatementSyntax expression
+            })
+        {
+            return expression.SemicolonToken.IsMissing
+                ? code
+                : code.Remove(expression.SemicolonToken.SpanStart, expression.SemicolonToken.Span.Length);
+        }
+
+        var insertionPosition = root.EndOfFileToken.GetPreviousToken().Span.End;
+        var memberCompletion = CompleteMemberDeclaration(code, insertionPosition);
+        if (memberCompletion is not null) return memberCompletion;
+
+        var trailingToken = root.EndOfFileToken.GetPreviousToken(includeZeroWidth: true);
+        return trailingToken.IsMissing && trailingToken.IsKind(SyntaxKind.SemicolonToken)
+            ? code.Insert(trailingToken.SpanStart, ";")
+            : code;
+    }
+
+    private static bool HasIncompleteTrailingLabel(string code)
+    {
+        var root = CSharpSyntaxTree.ParseText(
+                code,
+                new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script))
+            .GetCompilationUnitRoot();
+        return root.Members.LastOrDefault() is GlobalStatementSyntax
+        {
+            Statement: LabeledStatementSyntax label
+        } && label.ColonToken.Span.End == code.TrimEnd().Length;
     }
 
     /// <summary>Builds the documented type and member inventory available to the current session.</summary>
@@ -880,14 +951,30 @@ public sealed class CSharpLanguageService
         var workspace = new AdhocWorkspace(WorkspaceHost.Value);
         var projectId = ProjectId.CreateNewId();
         var parseOptions = new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script);
-        var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-            usings: context.Imports, nullableContextOptions: NullableContextOptions.Enable);
+        var compilationOptions = CreateCompilationOptions(context);
+        var references = CreateReferences(context);
+        var projectInfo = ProjectInfo.Create(projectId, VersionStamp.Create(), "PlayGroundSharp.Session",
+            "PlayGroundSharp.Session", LanguageNames.CSharp, parseOptions: parseOptions,
+            compilationOptions: compilationOptions, metadataReferences: references);
+        workspace.AddProject(projectInfo);
+        var usingDirectives = string.Join(Environment.NewLine, context.Imports.Select(static import => $"using {import};"));
+        var globals = CreateGlobalsCode(context);
+        var prefix = usingDirectives + Environment.NewLine + Environment.NewLine + globals + Environment.NewLine + Environment.NewLine +
+            string.Join(Environment.NewLine + Environment.NewLine, context.Submissions.Select(NormalizeHistoricalSubmission));
+        if (prefix.Length > 0) prefix += Environment.NewLine + Environment.NewLine;
+        var document = workspace.AddDocument(projectId, "Current.csx", SourceText.From(prefix + currentCode));
+        return new(workspace, document, prefix.Length);
+    }
+
+    private static CSharpCompilationOptions CreateCompilationOptions(SessionContext context) =>
+        new(OutputKind.DynamicallyLinkedLibrary,
+            usings: context.Imports,
+            nullableContextOptions: NullableContextOptions.Enable);
+
+    private static IReadOnlyList<MetadataReference> CreateReferences(SessionContext context)
+    {
         var dynamicReferencePaths = context.ReferencePaths.Where(File.Exists).Select(Path.GetFullPath).ToArray();
-        var frameworkReferencePaths = context.FrameworkReferencePaths?
-            .Where(File.Exists)
-            .Select(Path.GetFullPath)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray() ?? [];
+        var frameworkReferencePaths = GetFrameworkReferencePaths(context);
         var platformReferences = frameworkReferencePaths.Length > 0
             ? frameworkReferencePaths
                 .Select(CreateMetadataReference)
@@ -897,24 +984,24 @@ public sealed class CSharpLanguageService
         var references = platformReferences
             .Concat(dynamicReferencePaths.Select(CreateMetadataReference))
             .GroupBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
-            .Select(static group => group.First());
-        var projectInfo = ProjectInfo.Create(projectId, VersionStamp.Create(), "PlayGroundSharp.Session",
-            "PlayGroundSharp.Session", LanguageNames.CSharp, parseOptions: parseOptions,
-            compilationOptions: compilationOptions, metadataReferences: references);
-        workspace.AddProject(projectInfo);
-        var usingDirectives = string.Join(Environment.NewLine, context.Imports.Select(static import => $"using {import};"));
-        var globals = frameworkReferencePaths.Length > 0
+            .Select(static group => group.First())
+            .ToArray();
+        return references;
+    }
+
+    private static string[] GetFrameworkReferencePaths(SessionContext context) => context.FrameworkReferencePaths?
+        .Where(File.Exists)
+        .Select(Path.GetFullPath)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray() ?? [];
+
+    private static string CreateGlobalsCode(SessionContext context) =>
+        GetFrameworkReferencePaths(context).Length > 0
             ? "dynamic Last = default!; dynamic Out = default!; dynamic Data = default!; " +
               "System.Threading.CancellationToken ExecutionCancellation = default;"
             : "dynamic Last = default!; dynamic Out = default!; " +
               "var Data = new PlayGroundSharp.Core.LargeDataAccess(); " +
               "System.Threading.CancellationToken ExecutionCancellation = default;";
-        var prefix = usingDirectives + Environment.NewLine + Environment.NewLine + globals + Environment.NewLine + Environment.NewLine +
-            string.Join(Environment.NewLine + Environment.NewLine, context.Submissions.Select(NormalizeHistoricalSubmission));
-        if (prefix.Length > 0) prefix += Environment.NewLine + Environment.NewLine;
-        var document = workspace.AddDocument(projectId, "Current.csx", SourceText.From(prefix + currentCode));
-        return new(workspace, document, prefix.Length);
-    }
 
     private static IReadOnlyList<MetadataReference> CreatePlatformReferences()
     {
@@ -1085,19 +1172,8 @@ public sealed class CSharpLanguageService
         }
     }
 
-    private static string NormalizeHistoricalSubmission(string code)
-    {
-        var tree = CSharpSyntaxTree.ParseText(code, new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script));
-        var root = tree.GetCompilationUnitRoot();
-        var insertionPosition = root.EndOfFileToken.GetPreviousToken().Span.End;
-        var memberCompletion = CompleteMemberDeclaration(code, insertionPosition);
-        if (memberCompletion is not null) return memberCompletion;
-
-        var trailingToken = root.EndOfFileToken.GetPreviousToken(includeZeroWidth: true);
-        return trailingToken.IsMissing && trailingToken.IsKind(SyntaxKind.SemicolonToken)
-            ? code.Insert(trailingToken.SpanStart, ";")
-            : code;
-    }
+    private static string NormalizeHistoricalSubmission(string code) =>
+        PrepareCurrentSubmissionForDiagnostics(code);
 
     private static MemberAccessExpressionSyntax? FindMemberAccessAtPosition(SyntaxNode root, int position) =>
         root.DescendantNodes()

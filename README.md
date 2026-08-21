@@ -73,13 +73,15 @@ Tests include stateful Roslyn execution, snapshots, completion, local DLL refere
 - Drag the Explorer and Workspace dividers to resize either sidebar; their open state, width, selected Workspace tab and the main window placement are restored on restart. Use a horizontal wheel or `Shift+wheel` to scroll deep Explorer hierarchies.
 - Drag the divider inside completion to resize the candidate and documentation panes
 - **Language**: switch the application UI between Japanese and English; Japanese is the default for new settings
-- **NuGet**: search nuget.org, review package metadata and install the displayed exact version
+- **NuGet**: search nuget.org, review package metadata and install the displayed exact version; transitive dependencies that resolve to the same assembly identity reuse one canonical path
 - **Libraries**: add one or more local DLLs and list imported packages, assemblies, versions and sources; dropping a DLL onto the prompt also offers **Add as DLL reference**
 - **Structured results**: expand JSON, objects and arrays directly in the transcript; named `ValueTuple` elements retain their compile-time names, including nested and long tuples. `IEnumerable<Task<T>>` and `IEnumerable<ValueTask<T>>` values collect into one expandable sequence row as they complete; each child keeps its zero-based source index. Workspace previews reuse those completed snapshots without re-enumerating a lazy source. Large captured collections are grouped into index ranges. Select a node and press `Ctrl+C` to copy that value; with no copy selection, `Ctrl+C` stops a running submission. Inspector search reports the full match count while rendering at most the first 250 matches to keep large snapshots responsive.
 - **Inspect** on a result: open the same bounded property/item tree with search, path copy and full captured-value export in a separate window. Its size and tree/detail split are retained; `Ctrl+F`, `F3` / `Shift+F3`, `Ctrl+C`, `Ctrl+Shift+C`, `Ctrl+S` and `Esc` are available from the keyboard.
 - **File**: save or open a `.pgsworkspace` containing submissions, draft input, usings, DLL references and exact package versions; dropping one onto the prompt also offers **Open as workspace**
 - **Data**: insert bounded or streaming snippets for large text, byte, JSON-array and JSON Lines files
 - **Help** or `F1`: open the built-in guide for input, IntelliSense, symbols, workspaces, large files, dependencies and security
+- Inputs beginning with `:` use command completion and are excluded from C# diagnostics, Quick Info and signature analysis
+- Live diagnostics compile each accepted submission as a separate script continuation, matching Worker execution; terminal values such as `value`, `value;`, a trailing label colon, and variables redeclared in a later submission do not receive concatenation-only errors
 
 Examples:
 

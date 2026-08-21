@@ -87,6 +87,7 @@ public sealed class ScriptSession
                     typeof(Enumerable).Assembly,
                     typeof(SessionGlobals).Assembly,
                     typeof(JsonElement).Assembly,
+                    typeof(HttpClient).Assembly,
                     typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly,
                     typeof(System.Numerics.BigInteger).Assembly);
         }
@@ -97,6 +98,7 @@ public sealed class ScriptSession
             var separator = display.LastIndexOf(": ", StringComparison.Ordinal);
             var normalizedDisplay = separator >= 0 ? display[(separator + 2)..] : display;
             resolvedAssemblyNames.Add(Path.GetFileNameWithoutExtension(normalizedDisplay));
+            if (File.Exists(normalizedDisplay)) RegisterAssemblyIdentity(normalizedDisplay);
         }
     }
 
@@ -438,22 +440,36 @@ public sealed class ScriptSession
         var assemblyName = System.Reflection.AssemblyName.GetAssemblyName(fullPath);
         var simpleName = assemblyName.Name ?? throw new BadImageFormatException("Assembly has no simple name.");
         var identity = assemblyName.FullName ?? simpleName;
-        if (assemblyIdentities.TryGetValue(simpleName, out var loaded) &&
-            (!loaded.Identity.Equals(identity, StringComparison.OrdinalIgnoreCase) || !loaded.Path.Equals(fullPath, StringComparison.OrdinalIgnoreCase)))
+        if (assemblyIdentities.TryGetValue(simpleName, out var loaded))
         {
-            throw new InvalidOperationException($"Assembly '{simpleName}' is already loaded from another path or version. Worker reconstruction is required.");
+            if (!loaded.Identity.Equals(identity, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Assembly '{simpleName}' is already loaded with another version. Worker reconstruction is required.");
+
+            // The same assembly may arrive through a direct reference and again as a NuGet
+            // dependency. Keep one canonical metadata path so Roslyn and the runtime cannot
+            // construct distinct type identities from duplicate physical files.
+            return;
         }
-        var platformReferences = requiresReferenceAssemblyBootstrap
+        var platformReferencePaths = requiresReferenceAssemblyBootstrap
             ? []
             : PlatformReferenceResolver.ResolveRuntimeDependencies([fullPath])
                 .Where(path => resolvedAssemblyNames.Add(Path.GetFileNameWithoutExtension(path)))
-                .Select(static path => MetadataReference.CreateFromFile(path))
                 .ToArray();
-        if (platformReferences.Length > 0) options = options.AddReferences(platformReferences);
+        foreach (var dependencyPath in platformReferencePaths) RegisterAssemblyIdentity(dependencyPath);
+        if (platformReferencePaths.Length > 0)
+            options = options.AddReferences(platformReferencePaths.Select(static path => MetadataReference.CreateFromFile(path)));
         options = options.AddReferences(MetadataReference.CreateFromFile(fullPath));
         resolvedAssemblyNames.Add(simpleName);
         references.Add(fullPath);
         assemblyIdentities[simpleName] = (identity, fullPath);
+    }
+
+    private void RegisterAssemblyIdentity(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var assemblyName = System.Reflection.AssemblyName.GetAssemblyName(fullPath);
+        var simpleName = assemblyName.Name ?? throw new BadImageFormatException("Assembly has no simple name.");
+        assemblyIdentities.TryAdd(simpleName, (assemblyName.FullName ?? simpleName, fullPath));
     }
 
     public void AddUsing(string @namespace)

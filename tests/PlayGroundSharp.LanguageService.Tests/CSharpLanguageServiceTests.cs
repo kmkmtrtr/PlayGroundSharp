@@ -96,6 +96,21 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task CompletesHttpClientMembersWhenSystemNetHttpIsImported()
+    {
+        var context = SessionContext.Empty with
+        {
+            Imports = [.. SessionContext.DefaultImports, "System.Net.Http"]
+        };
+        const string code = "var client = new HttpClient(); client.";
+
+        var items = await service.GetCompletionsAsync(context, code, code.Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "GetAsync");
+        Assert.Contains(items, static item => item.DisplayText == "SendAsync");
+    }
+
+    [Fact]
     public async Task CompletesJsonNodeMembersAfterReadingJsonWithExecutionCancellation()
     {
         var context = new SessionContext(

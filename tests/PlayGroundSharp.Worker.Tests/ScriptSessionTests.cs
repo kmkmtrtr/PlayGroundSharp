@@ -222,6 +222,19 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task SupportsSystemNetHttpAfterItsNamespaceIsAdded()
+    {
+        var session = new ScriptSession();
+        session.AddUsing("System.Net.Http");
+
+        var result = await session.ExecuteAsync(1, "new HttpClient().GetType().Name");
+
+        Assert.True(result.StateAccepted, string.Join(Environment.NewLine,
+            result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.Equal("HttpClient", result.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task ExecutesExtensionsWhoseReceiverUsesAnAdditionalFrameworkReference()
     {
         var session = new ScriptSession();
@@ -882,6 +895,32 @@ public sealed class ScriptSessionTests
         session.AddReference(typeof(Greeter).Assembly.Location);
         var result = await session.ExecuteAsync(1, "PlayGroundSharp.TestFixture.Greeter.Message");
         Assert.Equal("hello from fixture", result.Snapshot?.Display);
+    }
+
+    [Fact]
+    public async Task ReusesAnIdenticalAssemblyAddedFromAnotherPhysicalPath()
+    {
+        var temporary = Path.Combine(Path.GetTempPath(), "PlayGroundSharp.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporary);
+        try
+        {
+            var original = typeof(DependencyValue).Assembly.Location;
+            var duplicate = Path.Combine(temporary, Path.GetFileName(original));
+            File.Copy(original, duplicate);
+            var session = new ScriptSession();
+
+            session.AddReference(original);
+            session.AddReference(duplicate);
+            var result = await session.ExecuteAsync(1, "PlayGroundSharp.TestDependency.DependencyValue.Text");
+
+            Assert.Single(session.Context.ReferencePaths);
+            Assert.True(result.StateAccepted);
+            Assert.Equal("fixture", result.Snapshot?.Display);
+        }
+        finally
+        {
+            Directory.Delete(temporary, recursive: true);
+        }
     }
 
     [Fact]

@@ -44,4 +44,20 @@ public sealed class DiagnosticNavigationTests
         Assert.False(viewModel.ApplyDiagnostics("previous", [diagnostic]));
         Assert.False(viewModel.HasNavigableDiagnostics);
     }
+
+    [Fact]
+    public async Task CommandInputIsNotAnalyzedAsCSharp()
+    {
+        await using var viewModel = new MainViewModel { InputText = ":using add System.Net.Http" };
+
+        for (var attempt = 0; attempt < 50 &&
+             viewModel.CurrentDiagnostics.Count == 0 &&
+             !viewModel.DiagnosticStatus.Contains('0'); attempt++)
+            await Task.Delay(100);
+
+        Assert.Empty(viewModel.CurrentDiagnostics);
+        Assert.Contains('0', viewModel.DiagnosticStatus);
+        Assert.Null(await viewModel.GetQuickInfoAsync(viewModel.InputText.Length));
+        Assert.Null(await viewModel.GetSignatureHelpAsync(viewModel.InputText.Length));
+    }
 }

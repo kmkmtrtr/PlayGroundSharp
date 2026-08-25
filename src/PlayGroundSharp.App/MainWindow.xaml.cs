@@ -980,9 +980,11 @@ public partial class MainWindow : Window
             menu.Items.Add(CreateDropAction(
                 "Drop.ReadJsonLinesAll",
                 DataSnippetBuilder.CreateAllJsonLines(path)));
-            if (extension.Equals(".csv", StringComparison.OrdinalIgnoreCase))
+            if (extension.Equals(".csv", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals(".log", StringComparison.OrdinalIgnoreCase))
                 menu.Items.Add(CreateDropAction("Drop.ReadCsv", DataSnippetBuilder.CreateCsv(path)));
-            if (extension.Equals(".tsv", StringComparison.OrdinalIgnoreCase))
+            if (extension.Equals(".tsv", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals(".log", StringComparison.OrdinalIgnoreCase))
                 menu.Items.Add(CreateDropAction("Drop.ReadTsv", DataSnippetBuilder.CreateTsv(path)));
             menu.Items.Add(CreateDropAction("Drop.ReadTextAll", DataSnippetBuilder.CreateAllText(path)));
             menu.Items.Add(CreateDropAction("Drop.ReadLines", DataSnippetBuilder.CreateLineStream(path)));

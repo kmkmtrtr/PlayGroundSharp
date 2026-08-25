@@ -1149,4 +1149,34 @@ public sealed class ScriptSessionTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task ExecutesFullDelimitedReadsGeneratedForFileDrop()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-Delimited-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var csvPath = Path.Combine(directory, "items.csv");
+        var tsvPath = Path.Combine(directory, "items.tsv");
+        await File.WriteAllTextAsync(csvPath, "id,name\n1,Ada\n2,Grace\n");
+        await File.WriteAllTextAsync(tsvPath, "id\tname\n1\tAda\n2\tGrace\n");
+        try
+        {
+            var session = new ScriptSession();
+
+            var csv = await session.ExecuteAsync(1, DataSnippetBuilder.CreateCsv(csvPath));
+            var tsv = await session.ExecuteAsync(2, DataSnippetBuilder.CreateTsv(tsvPath));
+
+            Assert.True(csv.StateAccepted,
+                string.Join(" | ", csv.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+            Assert.True(tsv.StateAccepted,
+                string.Join(" | ", tsv.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+            Assert.Equal(2, csv.Snapshot?.TotalCount);
+            Assert.Equal(2, tsv.Snapshot?.TotalCount);
+            Assert.All([csv, tsv], result => Assert.False(result.Snapshot?.IsTruncated));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 }

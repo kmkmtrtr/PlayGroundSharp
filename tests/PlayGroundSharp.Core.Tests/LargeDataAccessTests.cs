@@ -93,9 +93,12 @@ public sealed class LargeDataAccessTests : IDisposable
         var data = new LargeDataAccess();
 
         var limited = await data.ReadCsvAsync(path, hasHeader: true, take: 1);
+        var defaultRead = await data.ReadCsvAsync(path);
         var all = await data.ReadAllCsvAsync(path);
 
         Assert.True(Assert.IsAssignableFrom<IBoundedSequenceResult>(limited).HasMoreItems);
+        Assert.Equal(2, defaultRead.Count);
+        Assert.IsNotAssignableFrom<IBoundedSequenceResult>(defaultRead);
         var first = Assert.Single(limited);
         Assert.Equal("Ada", first["name"]);
         Assert.Equal("line 1\nline 2", first["note"]);
@@ -115,11 +118,16 @@ public sealed class LargeDataAccessTests : IDisposable
 
         var tsv = await data.ReadTsvAsync(tsvPath, hasHeader: false);
         var pipe = await data.ReadDelimitedAsync(pipePath, '|', hasHeader: true);
+        var csvWithCustomDelimiter = await data.ReadCsvAsync(
+            pipePath,
+            delimiter: '|',
+            hasHeader: true);
 
         Assert.Equal("a", tsv[0]["Column1"]);
         Assert.Equal("2", tsv[1]["Column2"]);
         Assert.Equal("x", Assert.Single(pipe)["left"]);
         Assert.Equal("y", Assert.Single(pipe)["right"]);
+        Assert.Equal("y", Assert.Single(csvWithCustomDelimiter)["right"]);
     }
 
     [Fact]
@@ -186,8 +194,9 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Equal($"Data.ReadLines({literal})", lineStream);
         Assert.Equal($"await Data.ReadAllBytesAsync({literal}, ExecutionCancellation)", allBytes);
         Assert.Contains("ReadJsonArrayAsync(@\"C:\\data\\items.json\", 1000", jsonArray, StringComparison.Ordinal);
-        Assert.Contains("ReadCsvAsync(@\"C:\\data\\items.csv\", hasHeader: true, take: 1000", csv, StringComparison.Ordinal);
-        Assert.Contains("ReadTsvAsync(@\"C:\\data\\items.tsv\", hasHeader: false, take: 1000", tsv, StringComparison.Ordinal);
+        Assert.Contains("ReadDelimitedAsync(@\"C:\\data\\items.csv\", ',', hasHeader: true", csv, StringComparison.Ordinal);
+        Assert.Contains("ReadDelimitedAsync(@\"C:\\data\\items.tsv\", '\\t', hasHeader: false", tsv, StringComparison.Ordinal);
+        Assert.DoesNotContain("take:", csv, StringComparison.Ordinal);
         Assert.Contains("Select(path => Data.Inspect(path))", inspections, StringComparison.Ordinal);
         Assert.Contains("@\"C:\\one.txt\"", inspections, StringComparison.Ordinal);
         Assert.Contains("foreach (var path", jsonBatch, StringComparison.Ordinal);

@@ -47,7 +47,6 @@ public sealed class LargeDataAccess
     public const int MaximumJsonItemCount = 10_000;
     public const int DefaultJsonPreviewItemCount = 1_000;
     public const int MaximumDelimitedRowCount = 10_000;
-    public const int DefaultDelimitedPreviewRowCount = 1_000;
     public const int MaximumDelimitedColumnCount = 4_096;
     public const int MaximumDelimitedFieldCharacters = 1_048_576;
 
@@ -199,43 +198,55 @@ public sealed class LargeDataAccess
         }
     }
 
-    /// <summary>Reads the leading rows of a comma-separated file.</summary>
+    /// <summary>Reads every row of a comma-separated file.</summary>
     public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadCsvAsync(
         string path,
         CancellationToken cancellationToken = default) =>
-        ReadDelimitedAsync(path, ',', hasHeader: true, DefaultDelimitedPreviewRowCount, cancellationToken);
+        ReadDelimitedAsync(path, ',', hasHeader: true, take: null, cancellationToken);
 
-    /// <summary>Reads the leading rows of a comma-separated file.</summary>
+    /// <summary>Reads comma-separated rows, optionally retaining only a leading batch.</summary>
     public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadCsvAsync(
         string path,
         bool hasHeader,
-        int take = DefaultDelimitedPreviewRowCount,
+        int? take = null,
         CancellationToken cancellationToken = default) =>
         ReadDelimitedAsync(path, ',', hasHeader, take, cancellationToken);
 
-    /// <summary>Reads the leading rows of a tab-separated file.</summary>
+    /// <summary>Reads rows using a configurable CSV delimiter.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadCsvAsync(
+        string path,
+        char delimiter,
+        bool hasHeader = true,
+        int? take = null,
+        CancellationToken cancellationToken = default) =>
+        ReadDelimitedAsync(path, delimiter, hasHeader, take, cancellationToken);
+
+    /// <summary>Reads every row of a tab-separated file.</summary>
     public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadTsvAsync(
         string path,
         CancellationToken cancellationToken = default) =>
-        ReadDelimitedAsync(path, '\t', hasHeader: true, DefaultDelimitedPreviewRowCount, cancellationToken);
+        ReadDelimitedAsync(path, '\t', hasHeader: true, take: null, cancellationToken);
 
-    /// <summary>Reads the leading rows of a tab-separated file.</summary>
+    /// <summary>Reads tab-separated rows, optionally retaining only a leading batch.</summary>
     public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadTsvAsync(
         string path,
         bool hasHeader,
-        int take = DefaultDelimitedPreviewRowCount,
+        int? take = null,
         CancellationToken cancellationToken = default) =>
         ReadDelimitedAsync(path, '\t', hasHeader, take, cancellationToken);
 
-    /// <summary>Reads the leading rows of a delimited text file.</summary>
+    /// <summary>Reads all delimited rows unless a leading row count is specified.</summary>
     public async Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadDelimitedAsync(
         string path,
         char delimiter,
         bool hasHeader,
-        int take = DefaultDelimitedPreviewRowCount,
+        int? take = null,
         CancellationToken cancellationToken = default)
     {
-        var boundedTake = ValidateRange(take, 1, MaximumDelimitedRowCount, nameof(take));
+        if (take is null)
+            return await ReadAllDelimitedAsync(path, delimiter, hasHeader, cancellationToken).ConfigureAwait(false);
+
+        var boundedTake = ValidateRange(take.Value, 1, MaximumDelimitedRowCount, nameof(take));
         var rows = new List<IReadOnlyDictionary<string, string?>>(Math.Min(boundedTake, 256));
         var hasMoreItems = false;
         await foreach (var row in StreamDelimitedAsync(path, delimiter, hasHeader, cancellationToken)

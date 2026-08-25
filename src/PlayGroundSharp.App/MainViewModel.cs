@@ -1179,18 +1179,23 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     internal async Task<InspectionResultEvent> InspectExpressionAsync(
         string expression,
+        bool forDataInference = false,
         CancellationToken cancellationToken = default)
     {
         if (!CanChangeSession)
             throw new InvalidOperationException(Localize("Inspector.CalculatedColumnWorkerBusy"));
 
+        using var preparation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        executionPreparationCancellation = preparation;
         IsPreparingExecution = true;
         try
         {
-            return await worker.InspectExpressionAsync(expression, cancellationToken);
+            return await worker.InspectExpressionAsync(expression, forDataInference, preparation.Token);
         }
         finally
         {
+            if (ReferenceEquals(executionPreparationCancellation, preparation))
+                executionPreparationCancellation = null;
             IsPreparingExecution = false;
         }
     }

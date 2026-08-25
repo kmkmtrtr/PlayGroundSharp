@@ -46,9 +46,9 @@ public sealed class TranscriptLineTests
     }
 
     [Fact]
-    public void ScalarPreviewsKeepTheCompleteCapturedText()
+    public void ScalarPreviewsAreBoundedForImmediateRendering()
     {
-        var value = new string('x', 25_000);
+        var value = new string('x', 100_000);
         var snapshot = new PlayGroundSharp.Core.ResultSnapshot(
             PlayGroundSharp.Core.SnapshotKind.String,
             value,
@@ -56,8 +56,37 @@ public sealed class TranscriptLineTests
 
         var preview = SnapshotTextFormatter.FormatPreview(snapshot);
 
-        Assert.Equal($"\"{value}\"", preview.Text);
-        Assert.False(preview.IsLimited);
+        Assert.True(preview.Text.Length <= 64 * 1024);
+        Assert.True(preview.IsLimited);
+    }
+
+    [Fact]
+    public void CompactScalarDisplayReportsOmittedCharacters()
+    {
+        var value = new string('x', 25_000);
+        var snapshot = new PlayGroundSharp.Core.ResultSnapshot(
+            PlayGroundSharp.Core.SnapshotKind.String,
+            value,
+            "System.String");
+
+        var compact = SnapshotTextFormatter.FormatCompact(snapshot);
+
+        Assert.True(compact.Length < 5_000);
+        Assert.Contains("+20,904 chars", compact, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompactScalarDisplayDistinguishesWorkerTruncation()
+    {
+        var snapshot = new PlayGroundSharp.Core.ResultSnapshot(
+            PlayGroundSharp.Core.SnapshotKind.String,
+            new string('x', 10_000),
+            "System.String",
+            IsTruncated: true);
+
+        var compact = SnapshotTextFormatter.FormatCompact(snapshot);
+
+        Assert.Contains("source continues", compact, StringComparison.Ordinal);
     }
 
     [Fact]

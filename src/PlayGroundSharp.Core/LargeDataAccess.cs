@@ -27,6 +27,18 @@ internal sealed class BoundedJsonNodeList(
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
+/// <summary>A read-only delimited-text batch that records whether the source contained more rows.</summary>
+internal sealed class BoundedDelimitedRowList(
+    IReadOnlyList<IReadOnlyDictionary<string, string?>> rows,
+    bool hasMoreItems) : IReadOnlyList<IReadOnlyDictionary<string, string?>>, IBoundedSequenceResult
+{
+    public bool HasMoreItems { get; } = hasMoreItems;
+    public int Count => rows.Count;
+    public IReadOnlyDictionary<string, string?> this[int index] => rows[index];
+    public IEnumerator<IReadOnlyDictionary<string, string?>> GetEnumerator() => rows.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
 /// <summary>Provides bounded and streaming helpers for inspecting large local files from submissions.</summary>
 public sealed class LargeDataAccess
 {
@@ -34,6 +46,9 @@ public sealed class LargeDataAccess
     public const int MaximumByteReadCount = 1_048_576;
     public const int MaximumJsonItemCount = 10_000;
     public const int DefaultJsonPreviewItemCount = 1_000;
+    public const int MaximumDelimitedRowCount = 10_000;
+    public const int MaximumDelimitedColumnCount = 4_096;
+    public const int MaximumDelimitedFieldCharacters = 1_048_576;
 
     /// <summary>Reads one complete JSON value such as an object, scalar, or array.</summary>
     public async Task<JsonNode?> ReadJsonAsync(
@@ -181,6 +196,199 @@ public sealed class LargeDataAccess
             if (string.IsNullOrWhiteSpace(line)) continue;
             yield return JsonNode.Parse(line);
         }
+    }
+
+    /// <summary>Reads every row of a comma-separated file.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadCsvAsync(
+        string path,
+        CancellationToken cancellationToken = default) =>
+        ReadDelimitedAsync(path, ',', hasHeader: true, take: null, cancellationToken);
+
+    /// <summary>Reads comma-separated rows, optionally retaining only a leading batch.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadCsvAsync(
+        string path,
+        bool hasHeader,
+        int? take = null,
+        CancellationToken cancellationToken = default) =>
+        ReadDelimitedAsync(path, ',', hasHeader, take, cancellationToken);
+
+    /// <summary>Reads rows using a configurable CSV delimiter.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadCsvAsync(
+        string path,
+        char delimiter,
+        bool hasHeader = true,
+        int? take = null,
+        CancellationToken cancellationToken = default) =>
+        ReadDelimitedAsync(path, delimiter, hasHeader, take, cancellationToken);
+
+    /// <summary>Reads every row of a tab-separated file.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadTsvAsync(
+        string path,
+        CancellationToken cancellationToken = default) =>
+        ReadDelimitedAsync(path, '\t', hasHeader: true, take: null, cancellationToken);
+
+    /// <summary>Reads tab-separated rows, optionally retaining only a leading batch.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadTsvAsync(
+        string path,
+        bool hasHeader,
+        int? take = null,
+        CancellationToken cancellationToken = default) =>
+        ReadDelimitedAsync(path, '\t', hasHeader, take, cancellationToken);
+
+    /// <summary>Reads all delimited rows unless a leading row count is specified.</summary>
+    public async Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadDelimitedAsync(
+        string path,
+        char delimiter,
+        bool hasHeader,
+        int? take = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (take is null)
+            return await ReadAllDelimitedAsync(path, delimiter, hasHeader, cancellationToken).ConfigureAwait(false);
+
+        var boundedTake = ValidateRange(take.Value, 1, MaximumDelimitedRowCount, nameof(take));
+        var rows = new List<IReadOnlyDictionary<string, string?>>(Math.Min(boundedTake, 256));
+        var hasMoreItems = false;
+        await foreach (var row in StreamDelimitedAsync(path, delimiter, hasHeader, cancellationToken)
+                           .WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            if (rows.Count >= boundedTake)
+            {
+                hasMoreItems = true;
+                break;
+            }
+            rows.Add(row);
+        }
+        return new BoundedDelimitedRowList(rows, hasMoreItems);
+    }
+
+    /// <summary>Reads every row of a comma-separated file into memory.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadAllCsvAsync(
+        string path,
+        CancellationToken cancellationToken) =>
+        ReadAllDelimitedAsync(path, ',', hasHeader: true, cancellationToken);
+
+    /// <summary>Reads every row of a comma-separated file into memory.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadAllCsvAsync(
+        string path,
+        bool hasHeader = true,
+        CancellationToken cancellationToken = default) =>
+        ReadAllDelimitedAsync(path, ',', hasHeader, cancellationToken);
+
+    /// <summary>Reads every row of a tab-separated file into memory.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadAllTsvAsync(
+        string path,
+        CancellationToken cancellationToken) =>
+        ReadAllDelimitedAsync(path, '\t', hasHeader: true, cancellationToken);
+
+    /// <summary>Reads every row of a tab-separated file into memory.</summary>
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadAllTsvAsync(
+        string path,
+        bool hasHeader = true,
+        CancellationToken cancellationToken = default) =>
+        ReadAllDelimitedAsync(path, '\t', hasHeader, cancellationToken);
+
+    /// <summary>Reads every row of a delimited text file into memory.</summary>
+    public async Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> ReadAllDelimitedAsync(
+        string path,
+        char delimiter,
+        bool hasHeader,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = new List<IReadOnlyDictionary<string, string?>>();
+        await foreach (var row in StreamDelimitedAsync(path, delimiter, hasHeader, cancellationToken)
+                           .WithCancellation(cancellationToken).ConfigureAwait(false))
+            rows.Add(row);
+        return rows;
+    }
+
+    /// <summary>Streams rows from a comma-separated file without retaining every row.</summary>
+    public IAsyncEnumerable<IReadOnlyDictionary<string, string?>> StreamCsvAsync(
+        string path,
+        CancellationToken cancellationToken) =>
+        StreamDelimitedAsync(path, ',', hasHeader: true, cancellationToken);
+
+    /// <summary>Streams rows from a comma-separated file without retaining every row.</summary>
+    public IAsyncEnumerable<IReadOnlyDictionary<string, string?>> StreamCsvAsync(
+        string path,
+        bool hasHeader = true,
+        CancellationToken cancellationToken = default) =>
+        StreamDelimitedAsync(path, ',', hasHeader, cancellationToken);
+
+    /// <summary>Streams rows from a tab-separated file without retaining every row.</summary>
+    public IAsyncEnumerable<IReadOnlyDictionary<string, string?>> StreamTsvAsync(
+        string path,
+        CancellationToken cancellationToken) =>
+        StreamDelimitedAsync(path, '\t', hasHeader: true, cancellationToken);
+
+    /// <summary>Streams rows from a tab-separated file without retaining every row.</summary>
+    public IAsyncEnumerable<IReadOnlyDictionary<string, string?>> StreamTsvAsync(
+        string path,
+        bool hasHeader = true,
+        CancellationToken cancellationToken = default) =>
+        StreamDelimitedAsync(path, '\t', hasHeader, cancellationToken);
+
+    /// <summary>Streams rows from a delimited text file without retaining every row.</summary>
+    public async IAsyncEnumerable<IReadOnlyDictionary<string, string?>> StreamDelimitedAsync(
+        string path,
+        char delimiter,
+        bool hasHeader,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ValidateDelimiter(delimiter);
+        var file = GetFile(path);
+        using var reader = new StreamReader(file.FullName, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        string[]? columns = null;
+        await foreach (var fields in DelimitedTextParser.ParseAsync(
+                           reader,
+                           delimiter,
+                           MaximumDelimitedColumnCount,
+                           MaximumDelimitedFieldCharacters,
+                           cancellationToken).ConfigureAwait(false))
+        {
+            if (columns is null)
+            {
+                columns = hasHeader ? CreateColumnNames(fields) : CreateColumnNames([], fields.Length);
+                if (hasHeader) continue;
+            }
+            if (fields.Length > columns.Length)
+                columns = CreateColumnNames(columns, fields.Length);
+            yield return CreateDelimitedRow(columns, fields);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string?> CreateDelimitedRow(
+        IReadOnlyList<string> columns,
+        IReadOnlyList<string> fields)
+    {
+        var row = new Dictionary<string, string?>(columns.Count, StringComparer.Ordinal);
+        for (var index = 0; index < columns.Count; index++)
+            row.Add(columns[index], index < fields.Count ? fields[index] : null);
+        return row;
+    }
+
+    private static string[] CreateColumnNames(IReadOnlyList<string> source, int minimumCount = 0)
+    {
+        var count = Math.Max(source.Count, minimumCount);
+        var names = new string[count];
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < count; index++)
+        {
+            var basis = index < source.Count && !string.IsNullOrWhiteSpace(source[index])
+                ? source[index].Trim()
+                : $"Column{index + 1}";
+            var name = basis;
+            var suffix = 2;
+            while (!used.Add(name)) name = basis + suffix++;
+            names[index] = name;
+        }
+        return names;
+    }
+
+    private static void ValidateDelimiter(char delimiter)
+    {
+        if (delimiter is '\0' or '\r' or '\n' or '"')
+            throw new ArgumentOutOfRangeException(nameof(delimiter), "Delimiter cannot be NUL, a line break, or a double quote.");
     }
 
     private static FileInfo GetFile(string path)

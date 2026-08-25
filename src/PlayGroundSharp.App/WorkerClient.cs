@@ -107,6 +107,7 @@ public sealed class WorkerClient : IAsyncDisposable
 
     public async Task<InspectionResultEvent> InspectExpressionAsync(
         string code,
+        bool forDataInference = false,
         CancellationToken cancellationToken = default)
     {
         EnsureConnected();
@@ -120,7 +121,7 @@ public sealed class WorkerClient : IAsyncDisposable
             await transport!.WriteAsync(PipeEnvelope.Create(
                 MessageKinds.InspectExpression,
                 correlationId,
-                new InspectExpressionRequest(code)), cancellationToken).ConfigureAwait(false);
+                new InspectExpressionRequest(code, forDataInference)), cancellationToken).ConfigureAwait(false);
             registration = cancellationToken.Register(() =>
                 _ = TryCancelCurrentOperationAsync());
             return await completion.Task.ConfigureAwait(false);

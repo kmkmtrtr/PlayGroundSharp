@@ -55,6 +55,43 @@ public static class DataSnippetBuilder
         return $"await Data.ReadJsonArrayAsync({ToVerbatimStringLiteral(path)}, {take}, ExecutionCancellation)";
     }
 
+    public static string CreateCsv(
+        string path,
+        bool hasHeader = true,
+        int? take = null) =>
+        CreateDelimited(path, ',', hasHeader, take);
+
+    public static string CreateTsv(
+        string path,
+        bool hasHeader = true,
+        int? take = null) =>
+        CreateDelimited(path, '\t', hasHeader, take);
+
+    public static string CreateDelimited(
+        string path,
+        char delimiter,
+        bool hasHeader = true,
+        int? take = null)
+    {
+        if (take is < 1 or > LargeDataAccess.MaximumDelimitedRowCount)
+            throw new ArgumentOutOfRangeException(nameof(take));
+        if (delimiter is '\0' or '\r' or '\n' or '"')
+            throw new ArgumentOutOfRangeException(nameof(delimiter));
+        var takeArgument = take is { } count ? $", take: {count}" : string.Empty;
+        return $"await Data.ReadDelimitedAsync({ToVerbatimStringLiteral(path)}, {ToCharacterLiteral(delimiter)}, hasHeader: {hasHeader.ToString().ToLowerInvariant()}{takeArgument}, cancellationToken: ExecutionCancellation)";
+    }
+
+    private static string ToCharacterLiteral(char value) => value switch
+    {
+        '\0' => "'\\0'",
+        '\t' => "'\\t'",
+        '\r' => "'\\r'",
+        '\n' => "'\\n'",
+        '\\' => "'\\\\'",
+        '\'' => "'\\\''",
+        var character => $"'{character}'"
+    };
+
     public static string CreateFileInspection(IReadOnlyList<string> paths) =>
         $"({CreatePathArray(paths)}){Environment.NewLine}" +
         $".Select(path => Data.Inspect(path)){Environment.NewLine}.ToArray()";

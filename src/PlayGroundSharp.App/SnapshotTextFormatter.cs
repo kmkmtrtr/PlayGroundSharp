@@ -10,6 +10,8 @@ internal sealed record SnapshotFormatResult(string Text, bool IsLimited);
 internal static class SnapshotTextFormatter
 {
     private const int PreviewItemLimit = 200;
+    private const int PreviewCharacterLimit = 64 * 1024;
+    private const int CompactScalarCharacterLimit = 4 * 1024;
     private const int CompactMaximumDepth = 3;
     private const int CompactRootMemberLimit = 6;
     private const int CompactNestedMemberLimit = 4;
@@ -19,7 +21,7 @@ internal static class SnapshotTextFormatter
     };
 
     public static SnapshotFormatResult FormatPreview(ResultSnapshot snapshot) =>
-        Format(snapshot, int.MaxValue, PreviewItemLimit);
+        Format(snapshot, PreviewCharacterLimit, PreviewItemLimit);
 
     public static string FormatFull(ResultSnapshot snapshot) =>
         Format(snapshot, int.MaxValue, int.MaxValue).Text;
@@ -112,12 +114,19 @@ internal static class SnapshotTextFormatter
 
     private static string FormatCompactScalar(ResultSnapshot snapshot)
     {
-        var display = snapshot.Display ?? snapshot.Kind.ToString();
+        var original = snapshot.Display ?? snapshot.Kind.ToString();
+        var length = Math.Min(original.Length, CompactScalarCharacterLimit);
+        if (length > 0 && length < original.Length && char.IsHighSurrogate(original[length - 1])) length--;
+        var display = original[..length];
         var value = snapshot.TypeName == typeof(char).FullName
             ? QuoteCharacter(display)
             : snapshot.Kind is SnapshotKind.String or SnapshotKind.DateTime or SnapshotKind.Guid
                 ? QuoteJsonString(display)
                 : display;
+        if (length < original.Length)
+            return snapshot.IsTruncated
+                ? $"{value}… (+{original.Length - length:N0} captured chars; source continues)"
+                : $"{value}… (+{original.Length - length:N0} chars)";
         return snapshot.IsTruncated ? value + "…" : value;
     }
 

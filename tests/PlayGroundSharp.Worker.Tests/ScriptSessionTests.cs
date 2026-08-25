@@ -1033,6 +1033,26 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task DataInferenceInspectsPropertiesAcrossSeventyThousandJsonRows()
+    {
+        var session = new ScriptSession();
+        var declaration = await session.ExecuteAsync(1, """
+            var rows = new JsonArray();
+            for (var index = 0; index < 70_000; index++)
+                rows.Add(index == 69_999
+                    ? new JsonObject { ["id"] = index, ["lateProperty"] = "found" }
+                    : new JsonObject { ["id"] = index });
+            """);
+
+        var inspection = await session.InspectExpressionAsync("rows", forDataInference: true);
+
+        Assert.True(declaration.StateAccepted);
+        var row = Assert.Single(inspection.Snapshot!.Items!);
+        Assert.Contains(row.Properties!, property => property.Name == "lateProperty" && property.IsOptional);
+        Assert.Equal(70_000, inspection.Snapshot.TotalCount);
+    }
+
+    [Fact]
     public async Task JsonArrayPreviewSnapshotReportsUncapturedItems()
     {
         var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.json");
@@ -1181,6 +1201,36 @@ public sealed class ScriptSessionTests
             Assert.Equal(10, bytes.Snapshot?.TotalCount);
             Assert.All([jsonLineFiles, textFiles, lineStreams, binaryFiles], result =>
                 Assert.Equal(1, result.Snapshot?.TotalCount));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecutesFullDelimitedReadsGeneratedForFileDrop()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-Delimited-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var csvPath = Path.Combine(directory, "items.csv");
+        var tsvPath = Path.Combine(directory, "items.tsv");
+        await File.WriteAllTextAsync(csvPath, "id,name\n1,Ada\n2,Grace\n");
+        await File.WriteAllTextAsync(tsvPath, "id\tname\n1\tAda\n2\tGrace\n");
+        try
+        {
+            var session = new ScriptSession();
+
+            var csv = await session.ExecuteAsync(1, DataSnippetBuilder.CreateCsv(csvPath));
+            var tsv = await session.ExecuteAsync(2, DataSnippetBuilder.CreateTsv(tsvPath));
+
+            Assert.True(csv.StateAccepted,
+                string.Join(" | ", csv.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+            Assert.True(tsv.StateAccepted,
+                string.Join(" | ", tsv.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+            Assert.Equal(2, csv.Snapshot?.TotalCount);
+            Assert.Equal(2, tsv.Snapshot?.TotalCount);
+            Assert.All([csv, tsv], result => Assert.False(result.Snapshot?.IsTruncated));
         }
         finally
         {

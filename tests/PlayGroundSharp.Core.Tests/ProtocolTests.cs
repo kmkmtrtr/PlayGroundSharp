@@ -157,6 +157,29 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void LegacyInspectionRequestDefaultsToOrdinarySnapshot()
+    {
+        var restored = JsonSerializer.Deserialize<InspectExpressionRequest>(
+            """{"code":"rows"}""",
+            ProtocolJson.Options);
+
+        Assert.NotNull(restored);
+        Assert.False(restored.ForDataInference);
+    }
+
+    [Fact]
+    public void LegacySnapshotDefaultsInferenceMetadataToFalse()
+    {
+        var restored = JsonSerializer.Deserialize<ResultSnapshot>(
+            """{"kind":7,"display":"1 property","typeName":"Json","properties":[{"name":"id","value":{"kind":1,"display":"1","typeName":"Json"}}]}""",
+            ProtocolJson.Options);
+
+        Assert.NotNull(restored);
+        Assert.False(restored.IsInferredNullable);
+        Assert.False(Assert.Single(restored.Properties!).IsOptional);
+    }
+
+    [Fact]
     public void StreamedResultPreservesItsSourceIndex()
     {
         var payload = new StreamedResultEvent(

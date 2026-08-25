@@ -830,7 +830,7 @@ public partial class ResultInspectorWindow : Window
 
         async Task<string?> EvaluateAsync(string expression, CancellationToken cancellationToken)
         {
-            var result = await viewModel.InspectExpressionAsync(expression, cancellationToken);
+            var result = await viewModel.InspectExpressionAsync(expression, cancellationToken: cancellationToken);
             if (result.Diagnostics.Count > 0)
                 return FormatInspectionDiagnostics(result.Diagnostics, result.TotalDiagnosticCount);
             if (result.Exception is { } exception)

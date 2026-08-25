@@ -20,6 +20,7 @@ public sealed class ResultSnapshotFactory
     public const int MaximumExceptionTextLength = 64 * 1024;
     private const int MaximumExceptionDepth = 8;
     private const int MinimumJsonSiblingTextCharacters = 4 * 1024;
+    private const int MinimumUsefulJsonItemNodes = 4;
 
     public ResultSnapshot Create(object? value) => Create(
         value,
@@ -960,16 +961,25 @@ public sealed class ResultSnapshotFactory
             {
                 var propertyCount = element.EnumerateObject().Count();
                 var properties = new List<ResultProperty>(Math.Min(propertyCount, 256));
+                var minimumNodesPerProperty = element.EnumerateObject()
+                    .Take(Math.Min(propertyCount, 32))
+                    .Any(static property => property.Value.ValueKind is JsonValueKind.Array or JsonValueKind.Object)
+                        ? MinimumUsefulJsonItemNodes
+                        : 1;
+                var capturedPropertyCount = Math.Min(
+                    Math.Min(propertyCount, MaximumItems),
+                    Math.Max(1, budget.AvailableNodes / minimumNodesPerProperty));
                 foreach (var property in element.EnumerateObject())
                 {
-                    if (!budget.CanTakeNode) break;
-                    var remainingSiblings = propertyCount - properties.Count - 1;
+                    if (properties.Count >= capturedPropertyCount || !budget.CanTakeNode) break;
+                    var remainingSiblings = capturedPropertyCount - properties.Count - 1;
                     var childReservation = budget.ReserveTextForSiblings(
                         reservedTextCharacters,
                         remainingSiblings,
                         MinimumJsonSiblingTextCharacters);
                     properties.Add(budget.CapturePreservingNodes(
                         remainingSiblings,
+                        minimumNodesPerProperty,
                         () => new ResultProperty(
                             property.Name,
                             CreateJsonElement(
@@ -991,10 +1001,17 @@ public sealed class ResultSnapshotFactory
             {
                 var itemCount = element.GetArrayLength();
                 var items = new List<ResultSnapshot>(Math.Min(itemCount, 256));
+                var minimumNodesPerItem = element.EnumerateArray()
+                    .Take(Math.Min(itemCount, 32))
+                    .Any(static item => item.ValueKind is JsonValueKind.Array or JsonValueKind.Object)
+                        ? MinimumUsefulJsonItemNodes
+                        : 1;
+                var capturedItemCount = Math.Min(
+                    Math.Min(itemCount, MaximumItems),
+                    Math.Max(1, budget.AvailableNodes / minimumNodesPerItem));
                 foreach (var item in element.EnumerateArray())
                 {
-                    if (items.Count >= MaximumItems || !budget.CanTakeNode) break;
-                    var capturedItemCount = Math.Min(itemCount, MaximumItems);
+                    if (items.Count >= capturedItemCount || !budget.CanTakeNode) break;
                     var remainingSiblings = capturedItemCount - items.Count - 1;
                     var childReservation = budget.ReserveTextForSiblings(
                         reservedTextCharacters,
@@ -1002,6 +1019,7 @@ public sealed class ResultSnapshotFactory
                         MinimumJsonSiblingTextCharacters);
                     items.Add(budget.CapturePreservingNodes(
                         remainingSiblings,
+                        minimumNodesPerItem,
                         () => CreateJsonElement(
                             item,
                             typeName,
@@ -1063,6 +1081,7 @@ public sealed class ResultSnapshotFactory
         private int reservedNodes;
 
         public bool CanTakeNode => remainingNodes > reservedNodes;
+        public int AvailableNodes => Math.Max(0, remainingNodes - reservedNodes);
         public int RemainingTextCharacters => remainingTextCharacters;
 
         public bool TryTakeNode()
@@ -1074,12 +1093,22 @@ public sealed class ResultSnapshotFactory
         }
 
         public T CapturePreservingNodes<T>(int remainingSiblingCount, Func<T> capture)
+            => CapturePreservingNodes(remainingSiblingCount, 1, capture);
+
+        public T CapturePreservingNodes<T>(
+            int remainingSiblingCount,
+            int minimumNodesPerSibling,
+            Func<T> capture)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(minimumNodesPerSibling);
             var previousReservation = reservedNodes;
+            var siblingNodeReservation = Math.Min(
+                int.MaxValue,
+                (long)Math.Max(0, remainingSiblingCount) * minimumNodesPerSibling);
             var requestedReservation = Math.Min(
                 Math.Max(0, remainingNodes - 1),
-                (int)Math.Min(int.MaxValue, (long)previousReservation + Math.Max(0, remainingSiblingCount)));
+                (int)Math.Min(int.MaxValue, (long)previousReservation + siblingNodeReservation));
             reservedNodes = Math.Max(previousReservation, requestedReservation);
             try
             {

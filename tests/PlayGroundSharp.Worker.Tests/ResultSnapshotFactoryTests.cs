@@ -412,6 +412,47 @@ public sealed class ResultSnapshotFactoryTests
     }
 
     [Fact]
+    public void LargeJsonObjectArrayShowsUsefulMembersInsteadOfOnlyEmptyObjects()
+    {
+        var json = new JsonArray(Enumerable.Range(0, 10_000)
+            .Select(index => (JsonNode)new JsonObject
+            {
+                ["id"] = index,
+                ["name"] = $"item-{index}"
+            })
+            .ToArray());
+
+        var snapshot = factory.Create(
+            json,
+            maximumNodes: 512,
+            maximumTextCharacters: 256 * 1024);
+
+        Assert.True(snapshot.IsTruncated);
+        Assert.NotEmpty(snapshot.Items!);
+        Assert.All(snapshot.Items!, item => Assert.NotEmpty(item.Properties!));
+        Assert.Equal("0", snapshot.Items![0].Properties!.Single(property => property.Name == "id").Value.Display);
+    }
+
+    [Fact]
+    public void LargeJsonObjectMapShowsMembersInsideCapturedValues()
+    {
+        var json = new JsonObject(Enumerable.Range(0, 10_000)
+            .Select(index => KeyValuePair.Create<string, JsonNode?>(
+                $"item-{index}",
+                new JsonObject { ["id"] = index, ["visible"] = true })));
+
+        var snapshot = factory.Create(
+            json,
+            maximumNodes: 512,
+            maximumTextCharacters: 256 * 1024);
+
+        Assert.True(snapshot.IsTruncated);
+        var firstValue = Assert.Single(snapshot.Properties!, property => property.Name == "item-0").Value;
+        Assert.NotEmpty(firstValue.Properties!);
+        Assert.Equal("0", firstValue.Properties!.Single(property => property.Name == "id").Value.Display);
+    }
+
+    [Fact]
     public void NestedMemberDoesNotConsumeNodeBudgetNeededByLaterSiblings()
     {
         var deep = new Node();

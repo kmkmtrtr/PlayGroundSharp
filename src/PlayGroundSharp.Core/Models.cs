@@ -71,7 +71,7 @@ public sealed record SessionContext(
         "Microsoft.CSharp", "System.Private.CoreLib", "System", "System.Collections", "System.Collections.Concurrent", "System.Console",
         "System.Diagnostics", "System.Diagnostics.Debug", "System.Diagnostics.Process", "System.Diagnostics.StackTrace",
         "System.Globalization", "System.IO", "System.IO.FileSystem", "System.IO.FileSystem.Primitives",
-        "System.Linq", "System.Reflection", "System.Reflection.Extensions", "System.Reflection.Primitives",
+        "System.Linq", "System.Linq.Expressions", "System.Net.Http", "System.Private.Uri", "System.Reflection", "System.Reflection.Extensions", "System.Reflection.Primitives",
         "System.Runtime", "System.Runtime.Extensions", "System.Runtime.InteropServices", "System.Text", "System.Text.Encoding",
         "System.Text.Encoding.CodePages", "System.Text.Encoding.Extensions", "System.Text.Json",
         "System.Text.RegularExpressions", "System.Threading", "System.Threading.Tasks",

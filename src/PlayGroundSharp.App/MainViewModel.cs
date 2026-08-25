@@ -574,7 +574,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SetLocalizedStatus("Status.WorkerDisconnected");
             return;
         }
-        if (code.TrimStart().StartsWith(':'))
+        if (IsCommandInput(code))
         {
             history.Add(code);
             historyPosition = history.Count;
@@ -772,7 +772,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var context = Context;
         var code = InputText;
         var offset = Math.Clamp(position, 0, code.Length);
-        if (code.TrimStart().StartsWith(':')) return GetCommandCompletionsAsync(context, code, cancellationToken);
+        if (IsCommandInput(code)) return GetCommandCompletionsAsync(context, code, cancellationToken);
         return Task.Run(
             () => languageService.GetCompletionsAsync(context, code, offset, cancellationToken),
             cancellationToken);
@@ -826,6 +826,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return Task.FromResult<string?>(Localize("Completion.Namespace"));
         var context = Context;
         var code = InputText;
+        if (IsCommandInput(code)) return Task.FromResult<string?>(null);
         var offset = Math.Clamp(position, 0, code.Length);
         return Task.Run(
             () => languageService.GetCompletionDescriptionAsync(context, code, offset, candidate, cancellationToken),
@@ -836,6 +837,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var context = Context;
         var code = InputText;
+        if (IsCommandInput(code)) return Task.FromResult<SignatureHelpResult?>(null);
         var offset = Math.Clamp(position, 0, code.Length);
         return Task.Run(
             () => languageService.GetSignatureHelpAsync(context, code, offset, cancellationToken),
@@ -846,6 +848,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var context = Context;
         var code = InputText;
+        if (IsCommandInput(code)) return Task.FromResult<QuickInfoResult?>(null);
         var offset = Math.Clamp(position, 0, code.Length);
         return Task.Run(
             () => languageService.GetQuickInfoAsync(context, code, offset, cancellationToken),
@@ -1037,6 +1040,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             DiagnosticDetails = string.Empty;
             return;
         }
+        if (IsCommandInput(value))
+        {
+            diagnosticErrorCount = 0;
+            diagnosticWarningCount = 0;
+            DiagnosticStatus = Localize("Diagnostics.Count", 0, 0);
+            DiagnosticDetails = string.Empty;
+            return;
+        }
         if (IsRunning || IsPreparingExecution)
         {
             diagnosticErrorCount = 0;
@@ -1051,6 +1062,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         diagnosticDelay = new CancellationTokenSource();
         _ = UpdateDiagnosticsAfterDelayAsync(value, diagnosticDelay);
     }
+
+    private static bool IsCommandInput(string value) => value.TrimStart().StartsWith(':');
 
     partial void OnExecutionKeyModeChanged(ExecutionKeyMode value) => SaveSettings();
 

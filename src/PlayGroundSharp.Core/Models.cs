@@ -28,14 +28,16 @@ public sealed record ResultSnapshot(
     int? TotalCount = null,
     string? TypeExpression = null,
     bool? IsReferenceType = null,
-    IReadOnlyList<int>? ItemIndexes = null);
+    IReadOnlyList<int>? ItemIndexes = null,
+    bool IsInferredNullable = false);
 
 public sealed record ResultProperty(
     string Name,
     ResultSnapshot Value,
     string? DeclaredTypeExpression = null,
     bool? DeclaredTypeIsReferenceType = null,
-    bool IsReadable = true);
+    bool IsReadable = true,
+    bool IsOptional = false);
 
 /// <summary>A process-neutral view of a variable retained by a script session.</summary>
 public sealed record VariableInfo(string Name, string TypeName, ResultSnapshot Value, bool IsReadOnly);

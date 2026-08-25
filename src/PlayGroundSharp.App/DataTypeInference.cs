@@ -133,6 +133,12 @@ internal static class DataTypeInference
         bool preserveClrTypes,
         bool expandObject)
     {
+        if (snapshot.IsInferredNullable)
+            return Infer(
+                snapshot with { IsInferredNullable = false },
+                warnings,
+                preserveClrTypes,
+                expandObject).WithNullable();
         if (snapshot.IsTruncated)
             warnings.Add(DataTypeInferenceWarning.TruncatedSnapshot);
         if (snapshot.Kind is SnapshotKind.MaxDepth or SnapshotKind.Circular or SnapshotKind.Exception)
@@ -175,6 +181,7 @@ internal static class DataTypeInference
                 {
                     propertyShape = Infer(property.Value, warnings, preserveClrTypes, expandObject: false);
                 }
+                if (property.IsOptional) propertyShape = propertyShape.WithNullable();
                 var inferredProperty = new ShapeProperty(property.Name, propertyShape);
                 if (propertyIndexes.TryGetValue(property.Name, out var existingIndex))
                     properties[existingIndex] = new(

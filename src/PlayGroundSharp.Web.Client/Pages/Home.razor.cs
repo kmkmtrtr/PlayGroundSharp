@@ -618,6 +618,8 @@ public partial class Home
         {
             ".json" => $"await Data.ReadJsonAsync({literal}, ExecutionCancellation)",
             ".jsonl" or ".ndjson" => DataSnippetBuilder.CreateJsonLines(path),
+            ".csv" => DataSnippetBuilder.CreateCsv(path),
+            ".tsv" => DataSnippetBuilder.CreateTsv(path),
             _ => $"Data.PreviewText({literal}, 65536)"
         };
     }

@@ -15,8 +15,8 @@ public sealed class ResultSnapshotFactory
     public const int MaximumDepth = 64;
     public const int MaximumItems = 10_000;
     public const int MaximumNodes = 50_000;
-    public const int MaximumStringLength = 10 * 1024 * 1024;
-    public const int MaximumTextCharacters = 10 * 1024 * 1024;
+    public const int MaximumStringLength = 256 * 1024;
+    public const int MaximumTextCharacters = 2 * 1024 * 1024;
     public const int MaximumExceptionTextLength = 64 * 1024;
     private const int MaximumExceptionDepth = 8;
     private const int MinimumJsonSiblingTextCharacters = 4 * 1024;

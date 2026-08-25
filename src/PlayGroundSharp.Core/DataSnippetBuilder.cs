@@ -55,6 +55,25 @@ public static class DataSnippetBuilder
         return $"await Data.ReadJsonArrayAsync({ToVerbatimStringLiteral(path)}, {take}, ExecutionCancellation)";
     }
 
+    public static string CreateCsv(
+        string path,
+        bool hasHeader = true,
+        int take = LargeDataAccess.DefaultDelimitedPreviewRowCount) =>
+        CreateDelimited(path, "ReadCsvAsync", hasHeader, take);
+
+    public static string CreateTsv(
+        string path,
+        bool hasHeader = true,
+        int take = LargeDataAccess.DefaultDelimitedPreviewRowCount) =>
+        CreateDelimited(path, "ReadTsvAsync", hasHeader, take);
+
+    private static string CreateDelimited(string path, string method, bool hasHeader, int take)
+    {
+        if (take is < 1 or > LargeDataAccess.MaximumDelimitedRowCount)
+            throw new ArgumentOutOfRangeException(nameof(take));
+        return $"await Data.{method}({ToVerbatimStringLiteral(path)}, hasHeader: {hasHeader.ToString().ToLowerInvariant()}, take: {take}, cancellationToken: ExecutionCancellation)";
+    }
+
     public static string CreateFileInspection(IReadOnlyList<string> paths) =>
         $"({CreatePathArray(paths)}){Environment.NewLine}" +
         $".Select(path => Data.Inspect(path)){Environment.NewLine}.ToArray()";

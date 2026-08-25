@@ -213,7 +213,10 @@ public sealed class WorkerHost
         CancellationToken operationToken)
     {
         var request = envelope.ReadPayload<InspectExpressionRequest>();
-        var result = await session.InspectExpressionAsync(request.Code, operationToken).ConfigureAwait(false);
+        var result = await session.InspectExpressionAsync(
+            request.Code,
+            request.ForDataInference,
+            operationToken).ConfigureAwait(false);
         await transport.WriteAsync(PipeEnvelope.Create(
             MessageKinds.InspectionResult,
             envelope.CorrelationId,

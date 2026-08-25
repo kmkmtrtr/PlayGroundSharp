@@ -182,6 +182,55 @@ public sealed class DataTypeInferenceTests
     }
 
     [Fact]
+    public void MarksAggregatedOptionalPropertiesAsNullable()
+    {
+        var row = new ResultSnapshot(
+            SnapshotKind.Json,
+            "2 inferred properties",
+            "System.Text.Json.JsonElement",
+            Properties:
+            [
+                new("id", Number("1")),
+                new("late", String(string.Empty), IsOptional: true)
+            ]);
+        var rows = new ResultSnapshot(
+            SnapshotKind.Json,
+            "70,000 rows",
+            "System.Text.Json.JsonElement",
+            Items: [row],
+            TotalCount: 70_000);
+
+        var generated = DataTypeInference.Generate(rows, "rows", "Row", "typedRows")!;
+
+        Assert.Contains("public string? Late", generated.GeneratedCode, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GeneratesAndExecutesTypesForDelimitedDictionaryRows()
+    {
+        var session = new ScriptSession();
+        var declaration = await session.ExecuteAsync(1, """
+            var csvRows = new List<IReadOnlyDictionary<string, string?>>
+            {
+                new Dictionary<string, string?> { ["name"] = "Ada", ["note"] = null },
+                new Dictionary<string, string?> { ["name"] = "Grace", ["note"] = "compiler" }
+            };
+            """);
+        var inspection = await session.InspectExpressionAsync("csvRows", forDataInference: true);
+        var generated = DataTypeInference.Generate(
+            inspection.Snapshot!, "csvRows", "CsvRow", "typedRows")!;
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var verification = await session.ExecuteAsync(3, "typedRows[1].Name + \"/\" + typedRows[1].Note");
+
+        Assert.True(declaration.StateAccepted);
+        Assert.Contains("string? Note", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.True(projection.StateAccepted,
+            string.Join(" | ", projection.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.Equal("Grace/compiler", verification.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task ClrProjectionConvertsJsonValuesToInferredScalarTypes()
     {
         var session = new ScriptSession();

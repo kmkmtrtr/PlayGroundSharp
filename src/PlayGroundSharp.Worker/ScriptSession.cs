@@ -28,9 +28,9 @@ public sealed class ScriptSession
 {
     private const int MaximumTransferredDiagnostics = 100;
     private const int MaximumVariableSnapshotNodes = 512;
-    private const int MaximumVariableSnapshotTextCharacters = 256 * 1024;
+    private const int MaximumVariableSnapshotTextCharacters = 128 * 1024;
     private const int MaximumVariableSnapshotTotalNodes = 50_000;
-    private const int MaximumVariableSnapshotTotalTextCharacters = 10 * 1024 * 1024;
+    private const int MaximumVariableSnapshotTotalTextCharacters = 2 * 1024 * 1024;
     private readonly object globals;
     private readonly Type globalsType;
     private readonly ResultHistory resultHistory;
@@ -343,6 +343,7 @@ public sealed class ScriptSession
 
     public async Task<ScriptInspectionResult> InspectExpressionAsync(
         string code,
+        bool forDataInference = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
@@ -394,7 +395,9 @@ public sealed class ScriptSession
             {
                 return new(
                     TupleElementNameMapper.Apply(
-                        snapshots.Create(candidate.ReturnValue, cancellationToken),
+                        forDataInference
+                            ? DataInferenceSnapshotFactory.Create(candidate.ReturnValue, snapshots, cancellationToken)
+                            : snapshots.Create(candidate.ReturnValue, cancellationToken),
                         GetTrailingResultType(compilation)),
                     [],
                     null);

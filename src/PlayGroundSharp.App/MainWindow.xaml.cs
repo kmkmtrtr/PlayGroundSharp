@@ -845,6 +845,8 @@ public partial class MainWindow : Window
             "Inspect" => DataSnippetBuilder.CreateFileInspection(dialog.FileName),
             "Json" => DataSnippetBuilder.CreateJson(dialog.FileName),
             "JsonLinesAll" => DataSnippetBuilder.CreateAllJsonLines(dialog.FileName),
+            "Csv" => DataSnippetBuilder.CreateCsv(dialog.FileName),
+            "Tsv" => DataSnippetBuilder.CreateTsv(dialog.FileName),
             "TextAll" => DataSnippetBuilder.CreateAllText(dialog.FileName),
             "Lines" => DataSnippetBuilder.CreateLineStream(dialog.FileName),
             "BytesAll" => DataSnippetBuilder.CreateAllBytes(dialog.FileName),
@@ -978,6 +980,10 @@ public partial class MainWindow : Window
             menu.Items.Add(CreateDropAction(
                 "Drop.ReadJsonLinesAll",
                 DataSnippetBuilder.CreateAllJsonLines(path)));
+            if (extension.Equals(".csv", StringComparison.OrdinalIgnoreCase))
+                menu.Items.Add(CreateDropAction("Drop.ReadCsv", DataSnippetBuilder.CreateCsv(path)));
+            if (extension.Equals(".tsv", StringComparison.OrdinalIgnoreCase))
+                menu.Items.Add(CreateDropAction("Drop.ReadTsv", DataSnippetBuilder.CreateTsv(path)));
             menu.Items.Add(CreateDropAction("Drop.ReadTextAll", DataSnippetBuilder.CreateAllText(path)));
             menu.Items.Add(CreateDropAction("Drop.ReadLines", DataSnippetBuilder.CreateLineStream(path)));
             menu.Items.Add(CreateDropAction("Drop.ReadBytes", DataSnippetBuilder.CreateAllBytes(path)));
@@ -1526,7 +1532,10 @@ public partial class MainWindow : Window
         NameRetainedResultMenuItem.Visibility = visibility;
         ReleaseRetainedResultMenuItem.Visibility = visibility;
         RetainedResultMenuSeparator.Visibility = visibility;
-        InferDataTypeMenuItem.IsEnabled = viewModel.CanChangeSession && DataTypeInference.CanInfer(item.Snapshot);
+        InferDataTypeMenuItem.IsEnabled = viewModel.CanChangeSession &&
+            (DataTypeInference.CanInfer(item.Snapshot) ||
+             item.Snapshot.Kind == SnapshotKind.MaxDepth &&
+             item.TypeName.Contains("Json", StringComparison.Ordinal));
     }
 
     private void NameRetainedResult_Click(object sender, RoutedEventArgs e)
@@ -1543,15 +1552,37 @@ public partial class MainWindow : Window
 
     private async void InferDataType_Click(object sender, RoutedEventArgs e)
     {
-        if (VariableList.SelectedItem is not VariableItem item || !DataTypeInference.CanInfer(item.Snapshot))
+        if (VariableList.SelectedItem is not VariableItem item)
         {
             viewModel.ShowStatusNotification("DataInference.Unsupported");
             return;
         }
+        ResultSnapshot inferenceSnapshot;
+        try
+        {
+            var inspection = await viewModel.InspectExpressionAsync(
+                item.SourceExpression,
+                forDataInference: true);
+            if (inspection.Snapshot is null || !DataTypeInference.CanInfer(inspection.Snapshot))
+            {
+                viewModel.ShowStatusNotification("DataInference.Unsupported");
+                return;
+            }
+            inferenceSnapshot = inspection.Snapshot;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception error)
+        {
+            viewModel.ShowStatusNotification(error.Message);
+            return;
+        }
         var dialog = new DataTypeInferenceDialog(
-            item.Snapshot,
+            inferenceSnapshot,
             item.SourceExpression,
-            DataTypeInference.SuggestTypeName(item.SourceExpression, item.Snapshot),
+            DataTypeInference.SuggestTypeName(item.SourceExpression, inferenceSnapshot),
             DataTypeInference.SuggestVariableName(item.SourceExpression),
             viewModel.LanguageMode,
             name => viewModel.VariableItems.Any(candidate =>

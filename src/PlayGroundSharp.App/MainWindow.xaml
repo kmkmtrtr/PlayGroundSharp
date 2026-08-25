@@ -165,6 +165,8 @@
                         <Separator />
                         <MenuItem Header="{DynamicResource Menu.ReadJson}" Tag="Json" Click="InsertDataSnippet_Click" />
                         <MenuItem Header="{DynamicResource Menu.ReadJsonLines}" Tag="JsonLinesAll" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.ReadCsv}" Tag="Csv" Click="InsertDataSnippet_Click" />
+                        <MenuItem Header="{DynamicResource Menu.ReadTsv}" Tag="Tsv" Click="InsertDataSnippet_Click" />
                         <MenuItem Header="{DynamicResource Menu.ReadTextAll}" Tag="TextAll" Click="InsertDataSnippet_Click" />
                         <MenuItem Header="{DynamicResource Menu.ReadLines}" Tag="Lines" Click="InsertDataSnippet_Click" />
                         <MenuItem Header="{DynamicResource Menu.ReadBinaryAll}" Tag="BytesAll" Click="InsertDataSnippet_Click" />

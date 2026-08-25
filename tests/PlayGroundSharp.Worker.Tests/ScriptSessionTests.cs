@@ -975,6 +975,26 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task DataInferenceInspectsPropertiesAcrossSeventyThousandJsonRows()
+    {
+        var session = new ScriptSession();
+        var declaration = await session.ExecuteAsync(1, """
+            var rows = new JsonArray();
+            for (var index = 0; index < 70_000; index++)
+                rows.Add(index == 69_999
+                    ? new JsonObject { ["id"] = index, ["lateProperty"] = "found" }
+                    : new JsonObject { ["id"] = index });
+            """);
+
+        var inspection = await session.InspectExpressionAsync("rows", forDataInference: true);
+
+        Assert.True(declaration.StateAccepted);
+        var row = Assert.Single(inspection.Snapshot!.Items!);
+        Assert.Contains(row.Properties!, property => property.Name == "lateProperty" && property.IsOptional);
+        Assert.Equal(70_000, inspection.Snapshot.TotalCount);
+    }
+
+    [Fact]
     public async Task JsonArrayPreviewSnapshotReportsUncapturedItems()
     {
         var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.json");

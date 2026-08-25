@@ -85,6 +85,56 @@ public sealed class LargeDataAccessTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadsQuotedCsvWithHeadersAndReportsBoundedRows()
+    {
+        var path = Path.Combine(directory, "quoted.csv");
+        await File.WriteAllTextAsync(path,
+            "name,note,name,\n\"Ada\",\"line 1\nline 2\",first,last\n\"Grace\",\"a,b and \"\"quotes\"\"\",second,end\n");
+        var data = new LargeDataAccess();
+
+        var limited = await data.ReadCsvAsync(path, hasHeader: true, take: 1);
+        var all = await data.ReadAllCsvAsync(path);
+
+        Assert.True(Assert.IsAssignableFrom<IBoundedSequenceResult>(limited).HasMoreItems);
+        var first = Assert.Single(limited);
+        Assert.Equal("Ada", first["name"]);
+        Assert.Equal("line 1\nline 2", first["note"]);
+        Assert.Equal("first", first["name2"]);
+        Assert.Equal("last", first["Column4"]);
+        Assert.Equal("a,b and \"quotes\"", all[1]["note"]);
+    }
+
+    [Fact]
+    public async Task ReadsHeaderlessTsvAndCustomDelimitedRows()
+    {
+        var tsvPath = Path.Combine(directory, "rows.tsv");
+        var pipePath = Path.Combine(directory, "rows.data");
+        await File.WriteAllTextAsync(tsvPath, "a\t1\nb\t2\n");
+        await File.WriteAllTextAsync(pipePath, "left|right\nx|y\n");
+        var data = new LargeDataAccess();
+
+        var tsv = await data.ReadTsvAsync(tsvPath, hasHeader: false);
+        var pipe = await data.ReadDelimitedAsync(pipePath, '|', hasHeader: true);
+
+        Assert.Equal("a", tsv[0]["Column1"]);
+        Assert.Equal("2", tsv[1]["Column2"]);
+        Assert.Equal("x", Assert.Single(pipe)["left"]);
+        Assert.Equal("y", Assert.Single(pipe)["right"]);
+    }
+
+    [Fact]
+    public async Task RejectsOversizedDelimitedFields()
+    {
+        var path = Path.Combine(directory, "large.csv");
+        await File.WriteAllTextAsync(path, new string('x', LargeDataAccess.MaximumDelimitedFieldCharacters + 1));
+
+        var error = await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await new LargeDataAccess().ReadCsvAsync(path));
+
+        Assert.Contains("field exceeded", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RejectsUnboundedReads()
     {
         var path = Path.Combine(directory, "sample.bin");
@@ -110,6 +160,8 @@ public sealed class LargeDataAccessTests : IDisposable
         var lineStream = DataSnippetBuilder.CreateLineStream("C:\\data\\a\"b.jsonl");
         var allBytes = DataSnippetBuilder.CreateAllBytes("C:\\data\\a\"b.jsonl");
         var jsonArray = DataSnippetBuilder.CreateJsonArray("C:\\data\\items.json");
+        var csv = DataSnippetBuilder.CreateCsv("C:\\data\\items.csv");
+        var tsv = DataSnippetBuilder.CreateTsv("C:\\data\\items.tsv", hasHeader: false);
         var inspections = DataSnippetBuilder.CreateFileInspection(["C:\\one.txt", "D:\\two.json"]);
         var jsonBatch = DataSnippetBuilder.CreateJsonBatch(["C:\\one.json", "D:\\two.json"]);
         var mixedJsonBatch = DataSnippetBuilder.CreateJsonFilesBatch(
@@ -134,6 +186,8 @@ public sealed class LargeDataAccessTests : IDisposable
         Assert.Equal($"Data.ReadLines({literal})", lineStream);
         Assert.Equal($"await Data.ReadAllBytesAsync({literal}, ExecutionCancellation)", allBytes);
         Assert.Contains("ReadJsonArrayAsync(@\"C:\\data\\items.json\", 1000", jsonArray, StringComparison.Ordinal);
+        Assert.Contains("ReadCsvAsync(@\"C:\\data\\items.csv\", hasHeader: true, take: 1000", csv, StringComparison.Ordinal);
+        Assert.Contains("ReadTsvAsync(@\"C:\\data\\items.tsv\", hasHeader: false, take: 1000", tsv, StringComparison.Ordinal);
         Assert.Contains("Select(path => Data.Inspect(path))", inspections, StringComparison.Ordinal);
         Assert.Contains("@\"C:\\one.txt\"", inspections, StringComparison.Ordinal);
         Assert.Contains("foreach (var path", jsonBatch, StringComparison.Ordinal);

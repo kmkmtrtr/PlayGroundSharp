@@ -58,7 +58,7 @@ public static class MessageKinds
 }
 
 public sealed record ExecuteRequest(int SubmissionIndex, string Code);
-public sealed record InspectExpressionRequest(string Code);
+public sealed record InspectExpressionRequest(string Code, bool ForDataInference = false);
 public sealed record CancelRequest(Guid ExecutionId);
 public sealed record ResetRequest;
 public sealed record AddReferenceRequest(string Path);

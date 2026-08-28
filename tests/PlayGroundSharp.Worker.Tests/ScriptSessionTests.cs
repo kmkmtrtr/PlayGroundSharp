@@ -759,7 +759,7 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
-    public async Task BoundsSnapshotsAcrossTheEntireVariableList()
+    public async Task SharesSnapshotBudgetAcrossTheEntireVariableListWithoutStarvingLaterVariables()
     {
         var session = new ScriptSession();
         var aliases = string.Join(
@@ -774,10 +774,14 @@ public sealed class ScriptSessionTests
 
         Assert.True(result.StateAccepted);
         Assert.Equal(49, variables.Count);
-        Assert.Equal(SnapshotKind.Sequence,
-            Assert.Single(variables, static variable => variable.Name == "shared").Value.Kind);
-        Assert.Contains(variables, static variable =>
-            variable.Value.Kind == SnapshotKind.MaxDepth && variable.Value.IsTruncated);
+        Assert.All(variables, variable =>
+        {
+            Assert.Equal(SnapshotKind.Sequence, variable.Value.Kind);
+            Assert.Equal(512, variable.Value.TotalCount);
+            Assert.Equal(512, variable.Value.Items!.Count);
+        });
+        Assert.Contains(variables, variable =>
+            variable.Value.Items!.Any(static item => item.IsTruncated));
     }
 
     [Fact]

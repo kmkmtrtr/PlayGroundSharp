@@ -231,6 +231,44 @@ public sealed class DataTypeInferenceTests
     }
 
     [Fact]
+    public async Task LargeInferredVariableUsesItsFairShareOfTheEagerPreviewBudget()
+    {
+        var session = new ScriptSession();
+        var source = await session.ExecuteAsync(1, """
+            var inferenceRows = new JsonArray(Enumerable.Range(1, 3)
+                .Select(row => (JsonNode)new JsonObject
+                {
+                    ["id"] = row,
+                    ["values"] = new JsonArray(Enumerable.Range(0, 5_000)
+                        .Select(index => (JsonNode)JsonValue.Create(index)!)
+                        .ToArray())
+                })
+                .ToArray());
+            """);
+        var inspection = await session.InspectExpressionAsync("inferenceRows", forDataInference: true);
+        var generated = DataTypeInference.Generate(
+            inspection.Snapshot!, "inferenceRows", "InferenceRow", "typedInferenceRows")!;
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var variable = Assert.Single(
+            session.GetVariables(),
+            candidate => candidate.Name == "typedInferenceRows");
+
+        Assert.True(source.StateAccepted);
+        Assert.True(projection.StateAccepted,
+            string.Join(" | ", projection.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.False(variable.Value.IsTruncated);
+        Assert.Equal(3, variable.Value.TotalCount);
+        Assert.Equal(3, variable.Value.Items!.Count);
+        Assert.All(variable.Value.Items, row =>
+        {
+            var values = Assert.Single(row.Properties!, property => property.Name == "Values").Value;
+            Assert.False(values.IsTruncated);
+            Assert.Equal(5_000, values.Items!.Count);
+        });
+    }
+
+    [Fact]
     public async Task ClrProjectionConvertsJsonValuesToInferredScalarTypes()
     {
         var session = new ScriptSession();

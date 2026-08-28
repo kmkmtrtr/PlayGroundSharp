@@ -429,8 +429,65 @@ public sealed class ResultSnapshotFactoryTests
 
         Assert.True(snapshot.IsTruncated);
         Assert.NotEmpty(snapshot.Items!);
-        Assert.All(snapshot.Items!, item => Assert.NotEmpty(item.Properties!));
+        Assert.All(snapshot.Items!, item =>
+        {
+            Assert.False(item.IsTruncated);
+            Assert.Equal(2, item.Properties!.Count);
+        });
         Assert.Equal("0", snapshot.Items![0].Properties!.Single(property => property.Name == "id").Value.Display);
+    }
+
+    [Fact]
+    public void JsonArrayRowsAreCapturedAtomicallyWhenNodeBudgetIsLimited()
+    {
+        var json = new JsonArray(Enumerable.Range(0, 100)
+            .Select(index => (JsonNode)new JsonObject
+            {
+                ["p1"] = index,
+                ["p2"] = index,
+                ["p3"] = index,
+                ["p4"] = index,
+                ["p5"] = index,
+                ["p6"] = index,
+                ["p7"] = index,
+                ["p8"] = index,
+                ["p9"] = index,
+                ["p10"] = index
+            })
+            .ToArray());
+
+        var snapshot = factory.Create(json, maximumNodes: 60, maximumTextCharacters: 256 * 1024);
+
+        Assert.True(snapshot.IsTruncated);
+        Assert.InRange(snapshot.Items!.Count, 1, 5);
+        Assert.All(snapshot.Items, item =>
+        {
+            Assert.False(item.IsTruncated);
+            Assert.Equal(10, item.Properties!.Count);
+        });
+    }
+
+    [Fact]
+    public void AtomicJsonRowsDoNotTruncateNestedMembersToReserveLaterRows()
+    {
+        static JsonNode Row(int value) => new JsonObject
+        {
+            ["nested"] = new JsonArray(Enumerable.Range(0, 20)
+                .Select(index => (JsonNode)JsonValue.Create(index)!)
+                .ToArray()),
+            ["after"] = value
+        };
+        var json = new JsonArray(Row(1), Row(2));
+
+        var snapshot = factory.Create(json, maximumNodes: 24, maximumTextCharacters: 256 * 1024);
+
+        var row = Assert.Single(snapshot.Items!);
+        Assert.False(row.IsTruncated);
+        Assert.Equal(2, row.Properties!.Count);
+        var nested = Assert.Single(row.Properties, property => property.Name == "nested").Value;
+        Assert.False(nested.IsTruncated);
+        Assert.Equal(20, nested.Items!.Count);
+        Assert.Equal("1", Assert.Single(row.Properties, property => property.Name == "after").Value.Display);
     }
 
     [Fact]

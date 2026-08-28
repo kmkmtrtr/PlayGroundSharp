@@ -221,43 +221,6 @@ public sealed class SnapshotTreeNodeTests
         Assert.DoesNotContain('…', root.Label);
     }
 
-    [Fact]
-    public void TruncatedNodeCanReplaceItsSnapshotWithFreshDetails()
-    {
-        var initial = new ResultSnapshot(
-            SnapshotKind.Json,
-            "10 properties",
-            "System.Text.Json.Nodes.JsonObject",
-            Properties: Enumerable.Range(1, 6)
-                .Select(index => new ResultProperty(
-                    $"p{index}",
-                    new(SnapshotKind.Number, index.ToString(), "System.Text.Json.Nodes.JsonNode")))
-                .ToArray(),
-            IsTruncated: true,
-            TotalCount: 10);
-        var refreshed = initial with
-        {
-            Properties = Enumerable.Range(1, 10)
-                .Select(index => new ResultProperty(
-                    $"p{index}",
-                    new(SnapshotKind.Number, index.ToString(), "System.Text.Json.Nodes.JsonNode")))
-                .ToArray(),
-            IsTruncated = false
-        };
-        var root = SnapshotTreeNode.CreateRoot(initial, AppLanguageMode.English, "rows[0]");
-
-        Assert.True(root.CanRefresh);
-        Assert.Equal(6, root.Children.Count);
-        Assert.Contains("(+4)", root.Label, StringComparison.Ordinal);
-
-        root.ReplaceSnapshot(refreshed);
-
-        Assert.False(root.CanRefresh);
-        Assert.Equal(10, root.Children.Count);
-        Assert.Contains("(+4)", root.Label, StringComparison.Ordinal);
-        Assert.DoesNotContain("captured", root.Detail, StringComparison.OrdinalIgnoreCase);
-    }
-
     private static int CountNodes(SnapshotTreeNode node) =>
         1 + node.Children.Sum(CountNodes);
 

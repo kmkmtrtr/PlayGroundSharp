@@ -6,6 +6,7 @@ namespace PlayGroundSharp.App;
 internal sealed record SnapshotTableCell(string Display, string ExportValue, ResultSnapshot? Source)
 {
     public static SnapshotTableCell Missing { get; } = new(string.Empty, string.Empty, null);
+    public static SnapshotTableCell Uncaptured { get; } = new("…", string.Empty, null);
 }
 
 internal sealed record SnapshotTableRowOrigin(
@@ -180,7 +181,9 @@ internal sealed class SnapshotTableModel
                 continue;
             }
 
-            var cells = Enumerable.Repeat(SnapshotTableCell.Missing, columns.Count).ToArray();
+            var cells = Enumerable.Repeat(
+                sourceRow.IsTruncated ? SnapshotTableCell.Uncaptured : SnapshotTableCell.Missing,
+                columns.Count).ToArray();
             foreach (var property in sourceRow.Properties!)
             {
                 if (!columnIndexes.TryGetValue(property.Name, out var columnIndex)) continue;

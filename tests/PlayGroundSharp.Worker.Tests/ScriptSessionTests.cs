@@ -1053,7 +1053,7 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
-    public async Task DedicatedInspectionRestoresPropertiesTruncatedByLargeJsonParent()
+    public async Task LargeJsonParentCapturesOnlyCompleteRows()
     {
         var session = new ScriptSession();
         var declaration = await session.ExecuteAsync(1, """
@@ -1076,14 +1076,17 @@ public sealed class ScriptSessionTests
 
         var parent = await session.InspectExpressionAsync("rowsForDetails");
         var initialRows = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(parent.Snapshot!.Items);
-        var truncatedIndex = Enumerable.Range(0, initialRows.Count)
-            .First(index => initialRows[index].IsTruncated && initialRows[index].Properties!.Count < 10);
-        var initialRow = initialRows[truncatedIndex];
-        var details = await session.InspectExpressionAsync($"rowsForDetails[{truncatedIndex}]");
+        var details = await session.InspectExpressionAsync($"rowsForDetails[{initialRows.Count}]");
 
         Assert.True(declaration.StateAccepted);
-        Assert.True(initialRow.IsTruncated);
-        Assert.True(initialRow.Properties!.Count < 10);
+        Assert.True(parent.Snapshot.IsTruncated);
+        Assert.Equal(12_500, parent.Snapshot.TotalCount);
+        Assert.InRange(initialRows.Count, 1, 12_499);
+        Assert.All(initialRows, row =>
+        {
+            Assert.False(row.IsTruncated);
+            Assert.Equal(10, row.Properties!.Count);
+        });
         Assert.False(details.Snapshot!.IsTruncated);
         Assert.Equal(10, details.Snapshot.Properties!.Count);
         Assert.Equal("p10", details.Snapshot.Properties[9].Name);

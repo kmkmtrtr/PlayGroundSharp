@@ -78,6 +78,25 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task CtrlSpaceAfterSessionVariableCompletesItsMembersAndInsertsTheDot()
+    {
+        var context = new SessionContext(
+            ["var values = Enumerable.Range(1, 10).ToArray();"],
+            SessionContext.DefaultImports,
+            []);
+
+        var items = await service.GetCompletionsAsync(context, "values", "values".Length);
+
+        var length = Assert.Single(items, static item => item.DisplayText == "Length");
+        var description = await service.GetCompletionDescriptionAsync(
+            context, "values", "values".Length, length);
+        Assert.Equal(".Length", length.TextToInsert);
+        Assert.Equal("values".Length, length.ReplacementStart);
+        Assert.NotNull(description);
+        Assert.Contains(items, static item => item.DisplayText == "Where" && item.TextToInsert == ".Where");
+    }
+
+    [Fact]
     public async Task CompletesLargeDataHelpers()
     {
         const string code = "Data.";

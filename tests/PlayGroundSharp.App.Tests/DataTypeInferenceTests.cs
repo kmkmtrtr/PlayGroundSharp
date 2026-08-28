@@ -128,10 +128,21 @@ public sealed class DataTypeInferenceTests
             SessionContext.Empty with { Submissions = [source, result.GeneratedCode] },
             "ordersTyped[0].",
             "ordersTyped[0].".Length);
+        var collectionCompletions = await service.GetCompletionsAsync(
+            SessionContext.Empty with { Submissions = [source, result.GeneratedCode] },
+            "ordersTyped",
+            "ordersTyped".Length);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
         Assert.Contains(completions, candidate => candidate.DisplayText == "Customer");
         Assert.Contains(completions, candidate => candidate.DisplayText == "Quantity");
+        Assert.Contains(collectionCompletions, candidate => candidate.DisplayText == "Add");
+        Assert.Contains(collectionCompletions, candidate => candidate.DisplayText == "Where");
+        Assert.All(collectionCompletions, candidate =>
+        {
+            Assert.StartsWith(".", candidate.TextToInsert, StringComparison.Ordinal);
+            Assert.Equal("ordersTyped".Length, candidate.ReplacementStart);
+        });
     }
 
     [Fact]

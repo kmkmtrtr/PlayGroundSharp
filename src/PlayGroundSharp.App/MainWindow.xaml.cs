@@ -2038,7 +2038,7 @@ public partial class MainWindow : Window
         lastCompletionFilterPrefix = null;
         completionFilterStart = requestText.TrimStart().StartsWith(':')
             ? 0
-            : FindCompletionStart(requestText, requestOffset);
+            : CompletionPlacement.FindStart(requestText, requestOffset, items);
         CompletionList.IsHitTestVisible = true;
         CompletionList.DisplayMemberPath = null;
         CompletionList.ItemTemplate = (DataTemplate)FindResource("CompletionItemTemplate");
@@ -2348,13 +2348,6 @@ public partial class MainWindow : Window
             ? viewModel.Localize("Assist.NoParameterDocumentation")
             : parameter.Summary;
         AssistDocumentation.ShowSignature(signature, parameterDocumentation);
-    }
-
-    private static int FindCompletionStart(string text, int caretOffset)
-    {
-        var start = Math.Clamp(caretOffset, 0, text.Length);
-        while (start > 0 && IsIdentifierPart(text[start - 1])) start--;
-        return start;
     }
 
     private static bool IsIdentifierPart(char character) => char.IsLetterOrDigit(character) || character == '_';

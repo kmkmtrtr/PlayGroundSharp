@@ -1053,6 +1053,43 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task DedicatedInspectionRestoresPropertiesTruncatedByLargeJsonParent()
+    {
+        var session = new ScriptSession();
+        var declaration = await session.ExecuteAsync(1, """
+            var rowsForDetails = new JsonArray();
+            for (var index = 0; index < 12_500; index++)
+                rowsForDetails.Add(new JsonObject
+                {
+                    ["p1"] = index,
+                    ["p2"] = index,
+                    ["p3"] = index,
+                    ["p4"] = index,
+                    ["p5"] = index,
+                    ["p6"] = index,
+                    ["p7"] = index,
+                    ["p8"] = index,
+                    ["p9"] = index,
+                    ["p10"] = index
+                });
+            """);
+
+        var parent = await session.InspectExpressionAsync("rowsForDetails");
+        var initialRows = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(parent.Snapshot!.Items);
+        var truncatedIndex = Enumerable.Range(0, initialRows.Count)
+            .First(index => initialRows[index].IsTruncated && initialRows[index].Properties!.Count < 10);
+        var initialRow = initialRows[truncatedIndex];
+        var details = await session.InspectExpressionAsync($"rowsForDetails[{truncatedIndex}]");
+
+        Assert.True(declaration.StateAccepted);
+        Assert.True(initialRow.IsTruncated);
+        Assert.True(initialRow.Properties!.Count < 10);
+        Assert.False(details.Snapshot!.IsTruncated);
+        Assert.Equal(10, details.Snapshot.Properties!.Count);
+        Assert.Equal("p10", details.Snapshot.Properties[9].Name);
+    }
+
+    [Fact]
     public async Task JsonArrayPreviewSnapshotReportsUncapturedItems()
     {
         var path = Path.Combine(Path.GetTempPath(), $"PlayGroundSharp-{Guid.NewGuid():N}.json");

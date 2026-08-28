@@ -93,6 +93,7 @@
             </TreeView.Resources>
             <TreeView.ItemContainerStyle>
                 <Style TargetType="TreeViewItem">
+                    <EventSetter Event="Expanded" Handler="SnapshotTreeItem_Expanded" />
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
                     <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
                     <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />

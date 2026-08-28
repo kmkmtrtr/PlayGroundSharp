@@ -29,6 +29,7 @@ public partial class ResultInspectorWindow : Window
     private readonly Dictionary<DataGridColumn, TextBlock> tableSortGlyphs = [];
     private readonly Dictionary<DataGridColumn, FrameworkElement> tableSortHeaders = [];
     private readonly Stack<TableNavigationState> tableHistory = [];
+    private readonly HashSet<SnapshotTreeNode> detailRefreshAttempts = [];
     private Dictionary<int, TableColumnFilter> tableColumnFilters = [];
     private SnapshotTableModel? tableModel;
     private TableColumnLayout? tableColumnLayout;
@@ -134,6 +135,25 @@ public partial class ResultInspectorWindow : Window
     {
         if (e.NewValue is not SnapshotTreeNode node) return;
         SetSelectedNode(node);
+    }
+
+    private async void SnapshotTreeItem_Expanded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not TreeViewItem { DataContext: SnapshotTreeNode node } item ||
+            !ReferenceEquals(e.OriginalSource, item) ||
+            !IsLoaded ||
+            !node.CanRefresh ||
+            !detailRefreshAttempts.Add(node))
+            return;
+
+        if (await RefreshSnapshotAsync(node.Snapshot, node.Expression) is not { } refreshed)
+        {
+            detailRefreshAttempts.Remove(node);
+            return;
+        }
+        node.ReplaceSnapshot(refreshed);
+        node.IsExpanded = true;
+        if (ReferenceEquals(selectedNode, node)) SetSelectedNode(node);
     }
 
     private void SnapshotTree_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -416,7 +436,8 @@ public partial class ResultInspectorWindow : Window
 
     private void TableBack_Click(object sender, RoutedEventArgs e) => NavigateToParentTable();
 
-    private void OpenCellTable_Click(object sender, RoutedEventArgs e) => OpenSelectedCellTable();
+    private async void OpenCellTable_Click(object sender, RoutedEventArgs e) =>
+        await OpenSelectedCellTableAsync();
 
     private async void CopyTable_Click(object sender, RoutedEventArgs e)
     {
@@ -486,10 +507,10 @@ public partial class ResultInspectorWindow : Window
         }
     }
 
-    private void TableGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private async void TableGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (FindAncestor<DataGridCell>(e.OriginalSource as DependencyObject) is null) return;
-        if (OpenSelectedCellTable()) e.Handled = true;
+        if (await OpenSelectedCellTableAsync()) e.Handled = true;
     }
 
     private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -538,11 +559,11 @@ public partial class ResultInspectorWindow : Window
         return IntPtr.Zero;
     }
 
-    private void TableGrid_PreviewKeyDown(object sender, KeyEventArgs e)
+    private async void TableGrid_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.Enter)
         {
-            if (OpenSelectedCellTable()) e.Handled = true;
+            if (await OpenSelectedCellTableAsync()) e.Handled = true;
             return;
         }
         if ((Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.Back) ||
@@ -627,7 +648,7 @@ public partial class ResultInspectorWindow : Window
         ConfigureTable();
     }
 
-    private bool OpenSelectedCellTable()
+    private async Task<bool> OpenSelectedCellTableAsync()
     {
         if (!TryGetSelectedTableCell(
                 out var cell,
@@ -638,10 +659,13 @@ public partial class ResultInspectorWindow : Window
             tableModel is null)
             return false;
 
-        var nestedTable = SnapshotTableModel.TryCreate(cell.Source);
+        var expression = GetSelectedCellExpression(columnIndex);
+        var source = await RefreshSnapshotAsync(cell.Source, expression);
+        if (source is null) return false;
+
+        var nestedTable = SnapshotTableModel.TryCreate(source);
         if (nestedTable is null) return false;
 
-        var expression = GetSelectedCellExpression(columnIndex);
         tableHistory.Push(new(
             tableModel,
             tablePath,
@@ -651,8 +675,49 @@ public partial class ResultInspectorWindow : Window
             sourceIndex,
             columnIndex));
         ShowTable(nestedTable, path, expression);
-        Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
+        _ = Dispatcher.BeginInvoke(() => TableGrid.Focus(), DispatcherPriority.Input);
         return true;
+    }
+
+    private async Task<ResultSnapshot?> RefreshSnapshotAsync(
+        ResultSnapshot source,
+        string? expression)
+    {
+        if (!source.IsTruncated || string.IsNullOrWhiteSpace(expression)) return source;
+
+        SetSearchStatus(AppLocalization.Text(languageMode, "Inspector.LoadingDetails"));
+        try
+        {
+            var result = await viewModel.InspectExpressionAsync(expression);
+            string? error = null;
+            if (result.Diagnostics.Count > 0)
+                error = FormatInspectionDiagnostics(result.Diagnostics, result.TotalDiagnosticCount);
+            else if (result.Exception is { } exception)
+                error = $"{exception.TypeName}: {exception.Message}";
+            else if (result.Snapshot is null)
+                error = AppLocalization.Text(languageMode, "Inspector.DetailsNoResult");
+
+            if (error is not null)
+            {
+                SetSearchStatus(AppLocalization.Text(languageMode, "Inspector.DetailsLoadFailed"));
+                MessageBox.Show(this, error, Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                return null;
+            }
+
+            ShowNotification("Inspector.DetailsLoaded");
+            return result.Snapshot;
+        }
+        catch (OperationCanceledException)
+        {
+            RestoreStatusDisplays();
+            return null;
+        }
+        catch (Exception error)
+        {
+            SetSearchStatus(AppLocalization.Text(languageMode, "Inspector.DetailsLoadFailed"));
+            MessageBox.Show(this, error.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
+            return null;
+        }
     }
 
     private bool NavigateToParentTable()

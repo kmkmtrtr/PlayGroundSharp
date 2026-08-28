@@ -10,7 +10,7 @@ public sealed partial class SnapshotTreeNode : ObservableObject
     private const int GroupSize = 100;
     private readonly AppLanguageMode languageMode;
     private readonly string name;
-    private readonly ResultSnapshot snapshot;
+    private ResultSnapshot snapshot;
     private readonly Func<IReadOnlyList<SnapshotTreeNode>>? childrenFactory;
     private IReadOnlyList<SnapshotTreeNode>? children;
 
@@ -34,21 +34,29 @@ public sealed partial class SnapshotTreeNode : ObservableObject
         Expression = expression;
         IsSearchMatch = isSearchMatch;
         this.isExpanded = isExpanded;
-        var compact = SnapshotTextFormatter.FormatCompact(snapshot).ReplaceLineEndings(" ");
-        Label = $"{name} = {compact}";
-        Detail = BuildDetail();
     }
 
-    public string Label { get; }
-    public string Detail { get; }
+    public string Label => $"{name} = {SnapshotTextFormatter.FormatCompact(snapshot).ReplaceLineEndings(" ")}";
+    public string Detail => BuildDetail();
     public string Path { get; }
     internal string? Expression { get; }
     public bool IsSearchMatch { get; }
     [ObservableProperty] private bool isExpanded;
     [ObservableProperty] private bool isSelected;
     internal ResultSnapshot Snapshot => snapshot;
+    internal bool CanRefresh => snapshot.IsTruncated && !string.IsNullOrWhiteSpace(Expression);
     public string CopyText => SnapshotTextFormatter.FormatFull(snapshot);
     public IReadOnlyList<SnapshotTreeNode> Children => children ??= childrenFactory?.Invoke() ?? CreateChildren();
+
+    internal void ReplaceSnapshot(ResultSnapshot refreshedSnapshot)
+    {
+        snapshot = refreshedSnapshot;
+        children = null;
+        OnPropertyChanged(nameof(Label));
+        OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(CopyText));
+        OnPropertyChanged(nameof(Children));
+    }
 
     public static SnapshotTreeNode CreateRoot(
         ResultSnapshot snapshot,

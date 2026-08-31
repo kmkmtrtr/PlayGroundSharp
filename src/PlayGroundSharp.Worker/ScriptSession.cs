@@ -108,7 +108,9 @@ public sealed class ScriptSession
     {
         if (state is null) return [];
         var sessionVariables = state.Variables.ToArray();
-        var variables = new List<VariableInfo>();
+        var typeNames = new string[sessionVariables.Length];
+        var variableSnapshots = new ResultSnapshot[sessionVariables.Length];
+        var snapshotUsages = new (int Nodes, int TextCharacters)[sessionVariables.Length];
         var remainingNodes = MaximumVariableSnapshotTotalNodes;
         var remainingTextCharacters = MaximumVariableSnapshotTotalTextCharacters;
         for (var variableIndex = 0; variableIndex < sessionVariables.Length; variableIndex++)
@@ -116,7 +118,9 @@ public sealed class ScriptSession
             cancellationToken.ThrowIfCancellationRequested();
             var variable = sessionVariables[variableIndex];
             var typeName = variable.Type.FullName ?? variable.Type.Name;
+            typeNames[variableIndex] = typeName;
             ResultSnapshot snapshot;
+            (int Nodes, int TextCharacters) usage;
             if (remainingNodes <= 0 || remainingTextCharacters <= 0)
             {
                 snapshot = new(
@@ -124,6 +128,7 @@ public sealed class ScriptSession
                     "… variable snapshot limit reached",
                     typeName,
                     IsTruncated: true);
+                usage = MeasureSnapshot(snapshot);
             }
             else
             {
@@ -133,13 +138,48 @@ public sealed class ScriptSession
                     Math.Max(1, remainingNodes / remainingVariableCount),
                     Math.Max(1, remainingTextCharacters / remainingVariableCount),
                     cancellationToken);
-                var usage = MeasureSnapshot(snapshot);
+                usage = MeasureSnapshot(snapshot);
                 remainingNodes -= usage.Nodes;
                 remainingTextCharacters -= usage.TextCharacters;
             }
-            variables.Add(new(variable.Name, typeName, snapshot, variable.IsReadOnly));
+            variableSnapshots[variableIndex] = snapshot;
+            snapshotUsages[variableIndex] = usage;
         }
-        return variables;
+
+        // The initial pass guarantees every variable a fair share. If later variables do not
+        // consume theirs, let earlier truncated values use the otherwise-idle aggregate budget.
+        for (var variableIndex = 0;
+             variableIndex < sessionVariables.Length && (remainingNodes > 0 || remainingTextCharacters > 0);
+             variableIndex++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var current = variableSnapshots[variableIndex];
+            if (!current.IsTruncated) continue;
+
+            var currentUsage = snapshotUsages[variableIndex];
+            var expanded = CreateVariableSnapshot(
+                sessionVariables[variableIndex],
+                Math.Max(1, currentUsage.Nodes + Math.Max(0, remainingNodes)),
+                Math.Max(1, currentUsage.TextCharacters + Math.Max(0, remainingTextCharacters)),
+                cancellationToken);
+            var expandedUsage = MeasureSnapshot(expanded);
+            var addedNodes = expandedUsage.Nodes - currentUsage.Nodes;
+            var addedTextCharacters = expandedUsage.TextCharacters - currentUsage.TextCharacters;
+            if (addedNodes > remainingNodes || addedTextCharacters > remainingTextCharacters ||
+                (addedNodes <= 0 && addedTextCharacters <= 0 && expanded.IsTruncated))
+                continue;
+
+            variableSnapshots[variableIndex] = expanded;
+            snapshotUsages[variableIndex] = expandedUsage;
+            remainingNodes -= addedNodes;
+            remainingTextCharacters -= addedTextCharacters;
+        }
+
+        return sessionVariables.Select((variable, index) => new VariableInfo(
+            variable.Name,
+            typeNames[index],
+            variableSnapshots[index],
+            variable.IsReadOnly)).ToArray();
     }
 
     public IReadOnlyList<RetainedResultInfo> GetRetainedResults(CancellationToken cancellationToken = default)

@@ -26,4 +26,16 @@ public sealed class CompletionPlacementTests
 
         Assert.Equal(8, CompletionPlacement.FindStart("Console.Wri", 11, candidates));
     }
+
+    [Fact]
+    public void KeepsTheFilterAfterTheDotForNumericLiteralReplacement()
+    {
+        CompletionCandidate[] candidates =
+        [
+            new("Billions", "Billions", "Billions", ["ExtensionMethod"],
+                "(1).Billions", ReplacementStart: 0)
+        ];
+
+        Assert.Equal(2, CompletionPlacement.FindStart("1.", 2, candidates));
+    }
 }

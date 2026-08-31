@@ -175,6 +175,24 @@ public sealed class CSharpLanguageService
         int position,
         CancellationToken cancellationToken = default)
     {
+        if (TryGetNumericLiteralReceiver(currentCode, position, out var numericMatch))
+        {
+            var literal = numericMatch.Groups["literal"].Value;
+            var parenthesizedCode = currentCode.Remove(numericMatch.Index, numericMatch.Length)
+                .Insert(numericMatch.Index, $"({literal}).");
+            var numericItems = await GetCompletionsAsync(
+                context,
+                parenthesizedCode,
+                position + 2,
+                cancellationToken).ConfigureAwait(false);
+            return numericItems.Select(item => item with
+                {
+                    InsertionText = $"({literal}).{item.TextToInsert}",
+                    ReplacementStart = numericMatch.Index
+                })
+                .ToArray();
+        }
+
         if (CanCompleteTrailingExpression(currentCode, position))
         {
             var memberCode = currentCode.Insert(position, ".");
@@ -239,7 +257,6 @@ public sealed class CSharpLanguageService
                 !context.Imports.Contains(sourceNamespace, StringComparer.Ordinal))
                 items[index] = item with { RequiredNamespace = sourceNamespace };
         }
-        ApplyNumericLiteralReceiverEdit(currentCode, position, items);
         AddUnimportedTypeCompletions(context, currentCode, position, items, cancellationToken);
         return items
             .DistinctBy(static item => (item.TextToInsert, item.RequiredNamespace), CompletionIdentityComparer.Instance)
@@ -1087,25 +1104,15 @@ public sealed class CSharpLanguageService
         return SyntaxFacts.IsIdentifierPartCharacter(character) || character is ')' or ']';
     }
 
-    private static void ApplyNumericLiteralReceiverEdit(
+    private static bool TryGetNumericLiteralReceiver(
         string currentCode,
         int position,
-        List<CompletionCandidate> items)
+        out Match match)
     {
         var memberStart = Math.Clamp(position, 0, currentCode.Length);
         while (memberStart > 0 && SyntaxFacts.IsIdentifierPartCharacter(currentCode[memberStart - 1])) memberStart--;
-        var match = NumericLiteralReceiverPattern.Match(currentCode[..memberStart]);
-        if (!match.Success) return;
-        var literal = match.Groups["literal"].Value;
-        for (var index = 0; index < items.Count; index++)
-        {
-            var item = items[index];
-            items[index] = item with
-            {
-                InsertionText = $"({literal}).{item.TextToInsert}",
-                ReplacementStart = match.Index
-            };
-        }
+        match = NumericLiteralReceiverPattern.Match(currentCode[..memberStart]);
+        return match.Success;
     }
 
     private static async Task AddExtensionCompletionsAndNamespacesAsync(

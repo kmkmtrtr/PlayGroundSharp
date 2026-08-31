@@ -30,7 +30,10 @@ public sealed class DataTypeInferenceTests
         Assert.Contains("public decimal Price", result.GeneratedCode, StringComparison.Ordinal);
         Assert.Contains("public decimal? Discount", result.GeneratedCode, StringComparison.Ordinal);
         Assert.Contains("public ShippingAddress? ShippingAddress", result.GeneratedCode, StringComparison.Ordinal);
-        Assert.Contains("JsonSerializer.Serialize(orders)", result.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains(
+            "JsonSerializer.Serialize((object?)(orders))",
+            result.GeneratedCode,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -125,6 +128,10 @@ public sealed class DataTypeInferenceTests
             "global::System.Collections.Generic.List<OrderItem> ordersTyped =",
             result.GeneratedCode,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "JsonSerializer.Serialize((object?)(orders))",
+            result.GeneratedCode,
+            StringComparison.Ordinal);
 
         var diagnostics = await service.GetDiagnosticsAsync(
             SessionContext.Empty with { Submissions = [source] },
@@ -178,7 +185,10 @@ public sealed class DataTypeInferenceTests
     [Fact]
     public async Task UnnamedDynamicResultKeepsTheGeneratedVariableStaticallyTypedForCompletion()
     {
-        var session = new ScriptSession();
+        var framework = DotNetFrameworkLocator.Discover()
+            .First(candidate => candidate.Version.Major == Environment.Version.Major);
+        var frameworkReferences = framework.GetReferencePaths();
+        var session = new ScriptSession(frameworkReferences, framework.TargetFramework);
         var source = await session.ExecuteAsync(
             1,
             "JsonDocument.Parse(\"[{\\\"customer\\\":\\\"A\\\",\\\"quantity\\\":2}]\").RootElement.Clone()");
@@ -187,13 +197,21 @@ public sealed class DataTypeInferenceTests
         Assert.NotNull(source.Snapshot);
         var generated = DataTypeInference.Generate(
             source.Snapshot!, "Out[1]", "OrderItem", "typedResult")!;
+        Assert.Contains(
+            "JsonSerializer.Serialize((object?)(Out[1]))",
+            generated.GeneratedCode,
+            StringComparison.Ordinal);
 
         var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
         var service = new CSharpLanguageService();
+        var completionContext = session.Context with
+        {
+            FrameworkReferencePaths = frameworkReferences
+        };
         var itemCompletions = await service.GetCompletionsAsync(
-            session.Context, "typedResult[0].", "typedResult[0].".Length);
+            completionContext, "typedResult[0].", "typedResult[0].".Length);
         var collectionCompletions = await service.GetCompletionsAsync(
-            session.Context, "typedResult.", "typedResult.".Length);
+            completionContext, "typedResult.", "typedResult.".Length);
 
         Assert.True(projection.StateAccepted,
             string.Join(" | ", projection.Diagnostics.Select(static diagnostic => diagnostic.Message)));

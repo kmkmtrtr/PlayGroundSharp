@@ -103,7 +103,8 @@ internal static class DataTypeInference
                 .Append(codeTargetType).Append(' ').Append(variableName)
                 .Append(" = global::System.Text.Json.JsonSerializer.Deserialize<")
                 .Append(codeTargetType).AppendLine(">(")
-                .Append("    global::System.Text.Json.JsonSerializer.Serialize(").Append(sourceExpression).AppendLine("))!;")
+                .Append("    global::System.Text.Json.JsonSerializer.Serialize((object?)(")
+                .Append(sourceExpression).AppendLine(")))!;")
                 .AppendLine()
                 .Append(definitions)
                 .ToString();

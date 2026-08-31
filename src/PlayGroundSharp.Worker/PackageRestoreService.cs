@@ -7,8 +7,18 @@ namespace PlayGroundSharp.Worker;
 
 public sealed record PackageRestoreResult(string PackageId, string Version, IReadOnlyList<string> AssemblyPaths);
 
+internal interface IPackageRestoreService
+{
+    Task<PackageRestoreResult> RestoreAsync(
+        string packageId,
+        string? version = null,
+        string? source = null,
+        Action<string>? progress = null,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>Restores a package through the .NET SDK and extracts compatible runtime assets.</summary>
-public sealed partial class PackageRestoreService
+public sealed partial class PackageRestoreService : IPackageRestoreService
 {
     private readonly string packageCache;
     private readonly string targetFramework;

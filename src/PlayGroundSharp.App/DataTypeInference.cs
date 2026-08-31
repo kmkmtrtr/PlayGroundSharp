@@ -181,6 +181,7 @@ internal static class DataTypeInference
                 {
                     propertyShape = Infer(property.Value, warnings, preserveClrTypes, expandObject: false);
                 }
+                if (property.Value.IsInferredNullable) propertyShape = propertyShape.WithNullable();
                 if (property.IsOptional) propertyShape = propertyShape.WithNullable();
                 var inferredProperty = new ShapeProperty(property.Name, propertyShape);
                 if (propertyIndexes.TryGetValue(property.Name, out var existingIndex))

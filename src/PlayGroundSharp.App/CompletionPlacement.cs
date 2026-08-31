@@ -12,8 +12,9 @@ internal static class CompletionPlacement
         var caret = Math.Clamp(caretOffset, 0, text.Length);
         if (candidates.Count > 0 &&
             candidates[0].ReplacementStart is { } explicitStart &&
+            explicitStart == caret &&
             candidates.All(candidate => candidate.ReplacementStart == explicitStart))
-            return Math.Clamp(explicitStart, 0, caret);
+            return caret;
 
         var start = caret;
         while (start > 0 && IsIdentifierPart(text[start - 1])) start--;

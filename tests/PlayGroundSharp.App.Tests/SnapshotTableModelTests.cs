@@ -52,6 +52,29 @@ public sealed class SnapshotTableModelTests
     }
 
     [Fact]
+    public void TruncatedCellTextDoesNotTurnGenuinelyMissingPropertiesIntoUncapturedCells()
+    {
+        var complete = Row(("Id", Number("1")), ("Note", Text("short")));
+        var truncatedText = Text("long value") with { IsTruncated = true };
+        var missingNote = Row(("Id", truncatedText)) with
+        {
+            IsTruncated = true,
+            TotalCount = 1
+        };
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Json,
+            "2 items",
+            "System.Text.Json.Nodes.JsonArray",
+            Items: [complete, missingNote],
+            TotalCount: 2);
+
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(snapshot));
+
+        Assert.Equal(["long value…", ""], table.Rows[1].Cells.Select(static cell => cell.Display));
+        Assert.Same(SnapshotTableCell.Missing, table.Rows[1].Cells[1]);
+    }
+
+    [Fact]
     public void LargeJsonSnapshotsProduceCompleteTableRowsWithoutEmptyCells()
     {
         var json = new JsonArray(Enumerable.Range(0, 100)

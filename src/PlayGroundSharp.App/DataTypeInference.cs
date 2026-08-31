@@ -96,12 +96,15 @@ internal static class DataTypeInference
                 rootObject!,
                 rootIsSequence,
                 sourceExpression,
+                codeTargetType,
                 variableName,
                 definitions)
             : new StringBuilder()
-                .Append("var ").Append(variableName).Append(" = global::System.Text.Json.JsonSerializer.Deserialize<")
+                .Append(codeTargetType).Append(' ').Append(variableName)
+                .Append(" = global::System.Text.Json.JsonSerializer.Deserialize<")
                 .Append(codeTargetType).AppendLine(">(")
-                .Append("    global::System.Text.Json.JsonSerializer.Serialize(").Append(sourceExpression).AppendLine("))!;")
+                .Append("    global::System.Text.Json.JsonSerializer.Serialize((object?)(")
+                .Append(sourceExpression).AppendLine(")))!;")
                 .AppendLine()
                 .Append(definitions)
                 .ToString();
@@ -497,6 +500,7 @@ internal static class DataTypeInference
             Shape root,
             bool rootIsSequence,
             string sourceExpression,
+            string targetType,
             string variableName,
             string definitions)
         {
@@ -506,7 +510,7 @@ internal static class DataTypeInference
             var readName = $"__Read{suffix}Member";
             var convertName = $"__Convert{suffix}Value";
             var result = new StringBuilder()
-                .Append("var ").Append(variableName).Append(" = ");
+                .Append(targetType).Append(' ').Append(variableName).Append(" = ");
             if (rootIsSequence)
             {
                 result.Append(mapSequenceName).Append("<").Append(renderer.RenderType(root)).Append(">((object?)(")

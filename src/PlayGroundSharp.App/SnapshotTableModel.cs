@@ -181,8 +181,11 @@ internal sealed class SnapshotTableModel
                 continue;
             }
 
+            var capturedPropertyCount = sourceRow.Properties!.Count;
+            var hasUncapturedProperties = sourceRow.IsTruncated &&
+                                          (sourceRow.TotalCount is null || sourceRow.TotalCount > capturedPropertyCount);
             var cells = Enumerable.Repeat(
-                sourceRow.IsTruncated ? SnapshotTableCell.Uncaptured : SnapshotTableCell.Missing,
+                hasUncapturedProperties ? SnapshotTableCell.Uncaptured : SnapshotTableCell.Missing,
                 columns.Count).ToArray();
             foreach (var property in sourceRow.Properties!)
             {

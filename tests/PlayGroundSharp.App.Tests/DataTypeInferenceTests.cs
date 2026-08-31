@@ -30,7 +30,10 @@ public sealed class DataTypeInferenceTests
         Assert.Contains("public decimal Price", result.GeneratedCode, StringComparison.Ordinal);
         Assert.Contains("public decimal? Discount", result.GeneratedCode, StringComparison.Ordinal);
         Assert.Contains("public ShippingAddress? ShippingAddress", result.GeneratedCode, StringComparison.Ordinal);
-        Assert.Contains("JsonSerializer.Serialize(orders)", result.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains(
+            "JsonSerializer.Serialize((object?)(orders))",
+            result.GeneratedCode,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -121,6 +124,15 @@ public sealed class DataTypeInferenceTests
         var service = new CSharpLanguageService();
         var source = "JsonNode orders = JsonNode.Parse(\"[{\\\"customer\\\":\\\"A\\\",\\\"quantity\\\":2}]\")!;";
 
+        Assert.StartsWith(
+            "global::System.Collections.Generic.List<OrderItem> ordersTyped =",
+            result.GeneratedCode,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "JsonSerializer.Serialize((object?)(orders))",
+            result.GeneratedCode,
+            StringComparison.Ordinal);
+
         var diagnostics = await service.GetDiagnosticsAsync(
             SessionContext.Empty with { Submissions = [source] },
             result.GeneratedCode);
@@ -163,9 +175,53 @@ public sealed class DataTypeInferenceTests
         Assert.True(result.StateAccepted);
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
         var variable = Assert.Single(session.GetVariables(), variable => variable.Name == "ordersTyped");
+        Assert.DoesNotContain("dynamic", variable.TypeName, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("List", variable.TypeName, StringComparison.Ordinal);
         var row = Assert.Single(variable.Value.Items!);
         Assert.Contains(row.Properties!, property => property.Name == "Customer" && property.Value.Display == "A");
         Assert.Contains(row.Properties!, property => property.Name == "Quantity" && property.Value.Display == "2");
+    }
+
+    [Fact]
+    public async Task UnnamedDynamicResultKeepsTheGeneratedVariableStaticallyTypedForCompletion()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .First(candidate => candidate.Version.Major == Environment.Version.Major);
+        var frameworkReferences = framework.GetReferencePaths();
+        var session = new ScriptSession(frameworkReferences, framework.TargetFramework);
+        var source = await session.ExecuteAsync(
+            1,
+            "JsonDocument.Parse(\"[{\\\"customer\\\":\\\"A\\\",\\\"quantity\\\":2}]\").RootElement.Clone()");
+        Assert.True(source.StateAccepted,
+            string.Join(" | ", source.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.NotNull(source.Snapshot);
+        var generated = DataTypeInference.Generate(
+            source.Snapshot!, "Out[1]", "OrderItem", "typedResult")!;
+        Assert.Contains(
+            "JsonSerializer.Serialize((object?)(Out[1]))",
+            generated.GeneratedCode,
+            StringComparison.Ordinal);
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var service = new CSharpLanguageService();
+        var completionContext = session.Context with
+        {
+            FrameworkReferencePaths = frameworkReferences
+        };
+        var itemCompletions = await service.GetCompletionsAsync(
+            completionContext, "typedResult[0].", "typedResult[0].".Length);
+        var collectionCompletions = await service.GetCompletionsAsync(
+            completionContext, "typedResult.", "typedResult.".Length);
+
+        Assert.True(projection.StateAccepted,
+            string.Join(" | ", projection.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var variable = Assert.Single(session.GetVariables(), variable => variable.Name == "typedResult");
+        Assert.DoesNotContain("dynamic", variable.TypeName, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual("System.Object", variable.TypeName);
+        Assert.Contains(itemCompletions, candidate => candidate.DisplayText == "Customer");
+        Assert.Contains(itemCompletions, candidate => candidate.DisplayText == "Quantity");
+        Assert.Contains(collectionCompletions, candidate => candidate.DisplayText == "Add");
+        Assert.Contains(collectionCompletions, candidate => candidate.DisplayText == "Where");
     }
 
     [Fact]
@@ -181,6 +237,10 @@ public sealed class DataTypeInferenceTests
 
         Assert.Contains("global::System.Net.IPAddress Address", generated.GeneratedCode, StringComparison.Ordinal);
         Assert.DoesNotContain("JsonSerializer", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.StartsWith(
+            "global::System.Collections.Generic.List<Endpoint> typedRows =",
+            generated.GeneratedCode,
+            StringComparison.Ordinal);
 
         var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
         var verification = await session.ExecuteAsync(3, "typedRows[0].Address.ToString()");

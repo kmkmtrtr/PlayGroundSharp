@@ -62,16 +62,30 @@ public sealed class PackageRestoreServiceTests
 
     private static async Task PackAsync(string project, string output)
     {
-        using var process = Process.Start(new ProcessStartInfo("dotnet", $"pack \"{project}\" -c Debug --no-restore -o \"{output}\" --nologo")
+        using var process = Process.Start(new ProcessStartInfo(
+            "dotnet",
+            $"pack \"{project}\" -c Debug --no-restore -o \"{output}\" --nologo --disable-build-servers")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true
         }) ?? throw new InvalidOperationException("dotnet pack failed to start.");
-        var outputText = await process.StandardOutput.ReadToEndAsync();
-        var errorText = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var outputTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var errorTask = process.StandardError.ReadToEndAsync(timeout.Token);
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync();
+            throw new TimeoutException($"dotnet pack timed out for {project}.");
+        }
+        var outputText = await outputTask;
+        var errorText = await errorTask;
         Assert.True(process.ExitCode == 0, outputText + errorText);
     }
 

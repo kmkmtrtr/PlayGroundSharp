@@ -785,6 +785,30 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task ReusesUnspentVariableBudgetForAnEarlierLargeVariable()
+    {
+        var session = new ScriptSession();
+        Assert.True((await session.ExecuteAsync(
+            1,
+            "record SmallRow(int A, int B, int C, int D);")).StateAccepted);
+        var result = await session.ExecuteAsync(
+            2,
+            "var large = Enumerable.Range(1, 8_000)" +
+            ".Select(value => new SmallRow(value, value, value, value)).ToArray(); " +
+            "var small = 1;");
+
+        var variables = session.GetVariables();
+
+        Assert.True(result.StateAccepted);
+        var large = Assert.Single(variables, static variable => variable.Name == "large");
+        Assert.Equal(8_000, large.Value.TotalCount);
+        Assert.Equal(8_000, large.Value.Items!.Count);
+        Assert.False(large.Value.IsTruncated);
+        Assert.Contains(variables, static variable =>
+            variable.Name == "small" && variable.Value.Display == "1");
+    }
+
+    [Fact]
     public async Task CompilationAndRuntimeErrorsDoNotPreventFollowingSubmissions()
     {
         var session = new ScriptSession();

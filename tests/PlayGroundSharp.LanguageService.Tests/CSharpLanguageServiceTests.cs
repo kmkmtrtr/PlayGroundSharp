@@ -97,6 +97,38 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task CtrlSpaceAfterPartialVariableNameKeepsIdentifierCompletion()
+    {
+        var context = new SessionContext(
+            ["var typedResult = Enumerable.Range(1, 10).ToArray();"],
+            SessionContext.DefaultImports,
+            []);
+
+        var items = await service.GetCompletionsAsync(context, "typedRes", "typedRes".Length);
+
+        var variable = Assert.Single(items, static item => item.DisplayText == "typedResult");
+        Assert.Equal("typedResult", variable.TextToInsert);
+        Assert.Null(variable.ReplacementStart);
+    }
+
+    [Fact]
+    public async Task CtrlSpaceAfterIndexedAndInvokedExpressionsCompletesTheirMembers()
+    {
+        var context = new SessionContext(
+            ["var typedResult = Enumerable.Range(1, 10).ToArray();"],
+            SessionContext.DefaultImports,
+            []);
+
+        var indexed = await service.GetCompletionsAsync(
+            context, "typedResult[0]", "typedResult[0]".Length);
+        var invoked = await service.GetCompletionsAsync(
+            context, "typedResult.First()", "typedResult.First()".Length);
+
+        Assert.Contains(indexed, static item => item.DisplayText == "CompareTo" && item.TextToInsert == ".CompareTo");
+        Assert.Contains(invoked, static item => item.DisplayText == "CompareTo" && item.TextToInsert == ".CompareTo");
+    }
+
+    [Fact]
     public async Task CompletesLargeDataHelpers()
     {
         const string code = "Data.";
@@ -286,6 +318,16 @@ public sealed class CSharpLanguageServiceTests
         Assert.Equal(0, extension.ReplacementStart);
         Assert.Equal("(1).Billions", extension.TextToInsert);
         Assert.Contains("billions", description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CompletesNumericLiteralImmediatelyAfterTheDot()
+    {
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, "1.", "1.".Length);
+
+        var toString = Assert.Single(items, static item => item.DisplayText == "ToString");
+        Assert.Equal(0, toString.ReplacementStart);
+        Assert.Equal("(1).ToString", toString.TextToInsert);
     }
 
     [Fact]

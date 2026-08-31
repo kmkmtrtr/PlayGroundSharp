@@ -117,7 +117,7 @@ public partial class CalculatedColumnDialog : Window
 
         var window = new CompletionWindow(FormulaText.TextArea)
         {
-            StartOffset = FindCompletionStart(requestText, requestOffset)
+            StartOffset = CompletionPlacement.FindStart(requestText, requestOffset, items)
         };
         foreach (var item in items)
             window.CompletionList.CompletionData.Add(new FormulaCompletionData(item));
@@ -137,16 +137,6 @@ public partial class CalculatedColumnDialog : Window
         cancellation.Cancel();
         cancellation.Dispose();
     }
-
-    private static int FindCompletionStart(string text, int caretOffset)
-    {
-        var start = Math.Clamp(caretOffset, 0, text.Length);
-        while (start > 0 && IsIdentifierPart(text[start - 1])) start--;
-        return start;
-    }
-
-    private static bool IsIdentifierPart(char character) =>
-        char.IsLetterOrDigit(character) || character == '_';
 
     private void UpdateGeneratedExpression()
     {

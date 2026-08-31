@@ -1,4 +1,6 @@
+using System.Text.Json.Nodes;
 using PlayGroundSharp.Core;
+using PlayGroundSharp.Worker;
 
 namespace PlayGroundSharp.App.Tests;
 
@@ -25,6 +27,62 @@ public sealed class SnapshotTableModelTests
         Assert.Equal(2, table.Rows.Count);
         Assert.Equal(["1", "Ada", ""], table.Rows[0].Cells.Select(static cell => cell.Display));
         Assert.Equal(["2", "", "true"], table.Rows[1].Cells.Select(static cell => cell.Display));
+    }
+
+    [Fact]
+    public void UncapturedPropertiesAreNotRenderedAsOrdinaryEmptyCells()
+    {
+        var complete = Row(("Id", Number("1")), ("Name", Text("Ada")));
+        var truncated = Row(("Id", Number("2"))) with
+        {
+            IsTruncated = true,
+            TotalCount = 2
+        };
+        var snapshot = new ResultSnapshot(
+            SnapshotKind.Json,
+            "2 items",
+            "System.Text.Json.Nodes.JsonArray",
+            Items: [complete, truncated],
+            TotalCount: 2);
+
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(snapshot));
+
+        Assert.Equal(["2", "…"], table.Rows[1].Cells.Select(static cell => cell.Display));
+        Assert.Same(SnapshotTableCell.Uncaptured, table.Rows[1].Cells[1]);
+    }
+
+    [Fact]
+    public void LargeJsonSnapshotsProduceCompleteTableRowsWithoutEmptyCells()
+    {
+        var json = new JsonArray(Enumerable.Range(0, 100)
+            .Select(index => (JsonNode)new JsonObject
+            {
+                ["p1"] = index,
+                ["p2"] = index,
+                ["p3"] = index,
+                ["p4"] = index,
+                ["p5"] = index,
+                ["p6"] = index,
+                ["p7"] = index,
+                ["p8"] = index,
+                ["p9"] = index,
+                ["p10"] = index
+            })
+            .ToArray());
+        var snapshot = new ResultSnapshotFactory().Create(
+            json,
+            maximumNodes: 60,
+            maximumTextCharacters: 256 * 1024);
+
+        var table = Assert.IsType<SnapshotTableModel>(SnapshotTableModel.TryCreate(snapshot));
+
+        Assert.Equal(10, table.Columns.Count);
+        Assert.All(table.Rows, row =>
+        {
+            Assert.Equal(10, row.Cells.Count);
+            Assert.DoesNotContain(row.Cells, cell => string.IsNullOrEmpty(cell.Display));
+            Assert.DoesNotContain(row.Cells, cell => ReferenceEquals(cell, SnapshotTableCell.Uncaptured));
+        });
     }
 
     [Fact]

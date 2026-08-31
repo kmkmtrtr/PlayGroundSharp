@@ -107,12 +107,14 @@ public sealed class ScriptSession
     public IReadOnlyList<VariableInfo> GetVariables(CancellationToken cancellationToken = default)
     {
         if (state is null) return [];
+        var sessionVariables = state.Variables.ToArray();
         var variables = new List<VariableInfo>();
         var remainingNodes = MaximumVariableSnapshotTotalNodes;
         var remainingTextCharacters = MaximumVariableSnapshotTotalTextCharacters;
-        foreach (var variable in state.Variables)
+        for (var variableIndex = 0; variableIndex < sessionVariables.Length; variableIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var variable = sessionVariables[variableIndex];
             var typeName = variable.Type.FullName ?? variable.Type.Name;
             ResultSnapshot snapshot;
             if (remainingNodes <= 0 || remainingTextCharacters <= 0)
@@ -125,10 +127,11 @@ public sealed class ScriptSession
             }
             else
             {
+                var remainingVariableCount = sessionVariables.Length - variableIndex;
                 snapshot = CreateVariableSnapshot(
                     variable,
-                    Math.Min(MaximumVariableSnapshotNodes, remainingNodes),
-                    Math.Min(MaximumVariableSnapshotTextCharacters, remainingTextCharacters),
+                    Math.Max(1, remainingNodes / remainingVariableCount),
+                    Math.Max(1, remainingTextCharacters / remainingVariableCount),
                     cancellationToken);
                 var usage = MeasureSnapshot(snapshot);
                 remainingNodes -= usage.Nodes;

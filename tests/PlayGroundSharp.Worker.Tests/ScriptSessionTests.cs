@@ -759,7 +759,7 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
-    public async Task BoundsSnapshotsAcrossTheEntireVariableList()
+    public async Task SharesSnapshotBudgetAcrossTheEntireVariableListWithoutStarvingLaterVariables()
     {
         var session = new ScriptSession();
         var aliases = string.Join(
@@ -774,10 +774,14 @@ public sealed class ScriptSessionTests
 
         Assert.True(result.StateAccepted);
         Assert.Equal(49, variables.Count);
-        Assert.Equal(SnapshotKind.Sequence,
-            Assert.Single(variables, static variable => variable.Name == "shared").Value.Kind);
-        Assert.Contains(variables, static variable =>
-            variable.Value.Kind == SnapshotKind.MaxDepth && variable.Value.IsTruncated);
+        Assert.All(variables, variable =>
+        {
+            Assert.Equal(SnapshotKind.Sequence, variable.Value.Kind);
+            Assert.Equal(512, variable.Value.TotalCount);
+            Assert.Equal(512, variable.Value.Items!.Count);
+        });
+        Assert.Contains(variables, variable =>
+            variable.Value.Items!.Any(static item => item.IsTruncated));
     }
 
     [Fact]
@@ -1050,6 +1054,46 @@ public sealed class ScriptSessionTests
         var row = Assert.Single(inspection.Snapshot!.Items!);
         Assert.Contains(row.Properties!, property => property.Name == "lateProperty" && property.IsOptional);
         Assert.Equal(70_000, inspection.Snapshot.TotalCount);
+    }
+
+    [Fact]
+    public async Task LargeJsonParentCapturesOnlyCompleteRows()
+    {
+        var session = new ScriptSession();
+        var declaration = await session.ExecuteAsync(1, """
+            var rowsForDetails = new JsonArray();
+            for (var index = 0; index < 12_500; index++)
+                rowsForDetails.Add(new JsonObject
+                {
+                    ["p1"] = index,
+                    ["p2"] = index,
+                    ["p3"] = index,
+                    ["p4"] = index,
+                    ["p5"] = index,
+                    ["p6"] = index,
+                    ["p7"] = index,
+                    ["p8"] = index,
+                    ["p9"] = index,
+                    ["p10"] = index
+                });
+            """);
+
+        var parent = await session.InspectExpressionAsync("rowsForDetails");
+        var initialRows = Assert.IsAssignableFrom<IReadOnlyList<ResultSnapshot>>(parent.Snapshot!.Items);
+        var details = await session.InspectExpressionAsync($"rowsForDetails[{initialRows.Count}]");
+
+        Assert.True(declaration.StateAccepted);
+        Assert.True(parent.Snapshot.IsTruncated);
+        Assert.Equal(12_500, parent.Snapshot.TotalCount);
+        Assert.InRange(initialRows.Count, 1, 12_499);
+        Assert.All(initialRows, row =>
+        {
+            Assert.False(row.IsTruncated);
+            Assert.Equal(10, row.Properties!.Count);
+        });
+        Assert.False(details.Snapshot!.IsTruncated);
+        Assert.Equal(10, details.Snapshot.Properties!.Count);
+        Assert.Equal("p10", details.Snapshot.Properties[9].Name);
     }
 
     [Fact]

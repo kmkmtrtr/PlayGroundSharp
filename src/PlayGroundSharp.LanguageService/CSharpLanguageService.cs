@@ -175,6 +175,22 @@ public sealed class CSharpLanguageService
         int position,
         CancellationToken cancellationToken = default)
     {
+        if (CanCompleteTrailingExpression(currentCode, position))
+        {
+            var memberCode = currentCode.Insert(position, ".");
+            var memberItems = await GetCompletionsAsync(
+                context, memberCode, position + 1, cancellationToken).ConfigureAwait(false);
+            if (memberItems.Count > 0)
+            {
+                return memberItems.Select(item => item with
+                    {
+                        InsertionText = "." + item.TextToInsert,
+                        ReplacementStart = position
+                    })
+                    .ToArray();
+            }
+        }
+
         var analysisCode = GetCompletionAnalysisCode(currentCode, position);
         using var workspaceDocument = CreateDocument(context, analysisCode);
         var service = CompletionService.GetService(workspaceDocument.Document)
@@ -331,12 +347,18 @@ public sealed class CSharpLanguageService
         CompletionCandidate candidate,
         CancellationToken cancellationToken = default)
     {
-        var analysisCode = GetCompletionAnalysisCode(currentCode, position);
+        var completesTrailingExpression = candidate.ReplacementStart == position &&
+                                          candidate.TextToInsert.StartsWith(".", StringComparison.Ordinal);
+        var completionSource = completesTrailingExpression
+            ? currentCode.Insert(position, ".")
+            : currentCode;
+        var completionPosition = completesTrailingExpression ? position + 1 : position;
+        var analysisCode = GetCompletionAnalysisCode(completionSource, completionPosition);
         using var workspaceDocument = CreateDocument(context, analysisCode);
         var service = CompletionService.GetService(workspaceDocument.Document);
         if (service is null) return null;
         var completions = await service.GetCompletionsAsync(workspaceDocument.Document,
-            workspaceDocument.CurrentOffset + position, cancellationToken: cancellationToken).ConfigureAwait(false);
+            workspaceDocument.CurrentOffset + completionPosition, cancellationToken: cancellationToken).ConfigureAwait(false);
         var item = candidate.RequiredNamespace is null || candidate.IsExtensionMethod
             ? completions?.ItemsList.FirstOrDefault(item =>
                 item.DisplayText == candidate.DisplayText && item.FilterText == candidate.FilterText)
@@ -1057,6 +1079,13 @@ public sealed class CSharpLanguageService
         position > 0 && position <= currentCode.Length && currentCode[position - 1] == '.'
             ? currentCode.Insert(position, "__PlayGroundSharpCompletion")
             : currentCode;
+
+    private static bool CanCompleteTrailingExpression(string currentCode, int position)
+    {
+        if (position <= 0 || position > currentCode.Length || currentCode[position - 1] == '.') return false;
+        var character = currentCode[position - 1];
+        return SyntaxFacts.IsIdentifierPartCharacter(character) || character is ')' or ']';
+    }
 
     private static void ApplyNumericLiteralReceiverEdit(
         string currentCode,

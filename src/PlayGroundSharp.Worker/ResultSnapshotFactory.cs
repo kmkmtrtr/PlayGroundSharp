@@ -948,7 +948,8 @@ public sealed class ResultSnapshotFactory
         int depth,
         SnapshotBudget budget,
         bool nodeAlreadyTaken = false,
-        int reservedTextCharacters = 0)
+        int reservedTextCharacters = 0,
+        bool captureAtomically = false)
     {
         if (!nodeAlreadyTaken && !budget.TryTakeNode())
             return new(SnapshotKind.MaxDepth, "… snapshot limit reached", typeName, IsTruncated: true);
@@ -977,17 +978,21 @@ public sealed class ResultSnapshotFactory
                         reservedTextCharacters,
                         remainingSiblings,
                         MinimumJsonSiblingTextCharacters);
-                    properties.Add(budget.CapturePreservingNodes(
-                        remainingSiblings,
-                        minimumNodesPerProperty,
-                        () => new ResultProperty(
+                    ResultProperty CaptureProperty() => new(
                             property.Name,
                             CreateJsonElement(
                                 property.Value,
                                 typeName,
                                 depth + 1,
                                 budget,
-                                reservedTextCharacters: childReservation))));
+                                reservedTextCharacters: childReservation,
+                                captureAtomically: captureAtomically));
+                    properties.Add(captureAtomically
+                        ? CaptureProperty()
+                        : budget.CapturePreservingNodes(
+                            remainingSiblings,
+                            minimumNodesPerProperty,
+                            CaptureProperty));
                 }
                 return new(
                     SnapshotKind.Json,
@@ -1001,31 +1006,30 @@ public sealed class ResultSnapshotFactory
             {
                 var itemCount = element.GetArrayLength();
                 var items = new List<ResultSnapshot>(Math.Min(itemCount, 256));
-                var minimumNodesPerItem = element.EnumerateArray()
-                    .Take(Math.Min(itemCount, 32))
-                    .Any(static item => item.ValueKind is JsonValueKind.Array or JsonValueKind.Object)
-                        ? MinimumUsefulJsonItemNodes
-                        : 1;
-                var capturedItemCount = Math.Min(
-                    Math.Min(itemCount, MaximumItems),
-                    Math.Max(1, budget.AvailableNodes / minimumNodesPerItem));
+                var capturedItemLimit = Math.Min(itemCount, MaximumItems);
                 foreach (var item in element.EnumerateArray())
                 {
-                    if (items.Count >= capturedItemCount || !budget.CanTakeNode) break;
-                    var remainingSiblings = capturedItemCount - items.Count - 1;
+                    if (items.Count >= capturedItemLimit || !budget.CanTakeNode) break;
+                    var requiredNodes = CountJsonSnapshotNodes(
+                        item,
+                        depth + 1,
+                        budget.AvailableNodes,
+                        budget);
+                    var itemFits = requiredNodes <= budget.AvailableNodes;
+                    if (!itemFits && items.Count > 0) break;
+
+                    var remainingSiblings = capturedItemLimit - items.Count - 1;
                     var childReservation = budget.ReserveTextForSiblings(
                         reservedTextCharacters,
                         remainingSiblings,
                         MinimumJsonSiblingTextCharacters);
-                    items.Add(budget.CapturePreservingNodes(
-                        remainingSiblings,
-                        minimumNodesPerItem,
-                        () => CreateJsonElement(
-                            item,
-                            typeName,
-                            depth + 1,
-                            budget,
-                            reservedTextCharacters: childReservation)));
+                    items.Add(CreateJsonElement(
+                        item,
+                        typeName,
+                        depth + 1,
+                        budget,
+                        reservedTextCharacters: childReservation,
+                        captureAtomically: itemFits));
                 }
                 return new(
                     SnapshotKind.Json,
@@ -1062,6 +1066,36 @@ public sealed class ResultSnapshotFactory
         }
     }
 
+    private static int CountJsonSnapshotNodes(
+        JsonElement element,
+        int depth,
+        int limit,
+        SnapshotBudget budget)
+    {
+        budget.ThrowIfCancellationRequested();
+        if (limit <= 0) return 1;
+        if (depth >= MaximumDepth && element.ValueKind is JsonValueKind.Array or JsonValueKind.Object)
+            return 1;
+
+        var count = 1;
+        IEnumerable<JsonElement> children = element.ValueKind switch
+        {
+            JsonValueKind.Array => element.EnumerateArray().Take(MaximumItems),
+            JsonValueKind.Object => element.EnumerateObject().Take(MaximumItems)
+                .Select(static property => property.Value),
+            _ => []
+        };
+        foreach (var child in children)
+        {
+            var remaining = limit - count;
+            if (remaining <= 0) return limit + 1;
+            var childCount = CountJsonSnapshotNodes(child, depth + 1, remaining, budget);
+            if (childCount > remaining) return limit + 1;
+            count += childCount;
+        }
+        return count;
+    }
+
     private static bool IsNumber(Type type) => Type.GetTypeCode(type) is
         TypeCode.Byte or TypeCode.SByte or TypeCode.Int16 or TypeCode.UInt16 or TypeCode.Int32 or TypeCode.UInt32 or
         TypeCode.Int64 or TypeCode.UInt64 or TypeCode.Single or TypeCode.Double or TypeCode.Decimal;
@@ -1091,6 +1125,8 @@ public sealed class ResultSnapshotFactory
             remainingNodes--;
             return true;
         }
+
+        public void ThrowIfCancellationRequested() => cancellationToken.ThrowIfCancellationRequested();
 
         public T CapturePreservingNodes<T>(int remainingSiblingCount, Func<T> capture)
             => CapturePreservingNodes(remainingSiblingCount, 1, capture);

@@ -78,6 +78,84 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task CompletesMembersAfterATypedRetainedResultIsNamed()
+    {
+        var context = new SessionContext(
+            ["var json = RetainResultAs<global::System.Text.Json.Nodes.JsonObject>(3);"],
+            SessionContext.DefaultImports,
+            []);
+        const string code = "json.";
+
+        var items = await service.GetCompletionsAsync(context, code, code.Length);
+        var diagnostics = await service.GetDiagnosticsAsync(context, "json.ContainsKey(\"name\")");
+        var names = items.Select(static item => item.DisplayText).ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(names.Contains("TryGetPropertyValue"),
+            string.Join(" | ", diagnostics.Select(static item => $"{item.Id}: {item.Message}")));
+        Assert.Contains("Add", names);
+        Assert.Contains("ToJsonString", names);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public async Task UsesRecoveredVariableTypeForDynamicHistoryAndLatestRedeclaration()
+    {
+        var context = new SessionContext(
+            ["var value = 42;", "var value = Out[1];"],
+            SessionContext.DefaultImports,
+            [],
+            VariableTypeHints:
+            [
+                new("value", "string")
+            ]);
+
+        var items = await service.GetCompletionsAsync(context, "value.", "value.".Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "Length");
+        Assert.Contains(items, static item => item.DisplayText == "Contains");
+        Assert.Contains(items, static item => item.DisplayText == "Substring");
+    }
+
+    [Fact]
+    public async Task UsesRecoveredTupleNamesForCompletion()
+    {
+        var context = new SessionContext(
+            ["var pair = Out[1];"],
+            SessionContext.DefaultImports,
+            [],
+            VariableTypeHints:
+            [
+                new("pair", "(int index, int delay)")
+            ]);
+
+        var items = await service.GetCompletionsAsync(context, "pair.", "pair.".Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "index");
+        Assert.Contains(items, static item => item.DisplayText == "delay");
+        Assert.DoesNotContain(items, static item => item.DisplayText == "Item1");
+        Assert.DoesNotContain(items, static item => item.DisplayText == "Item2");
+
+        var ctrlSpaceItems = await service.GetCompletionsAsync(context, "pair", "pair".Length);
+        var delay = Assert.Single(ctrlSpaceItems, static item => item.DisplayText == "delay");
+        Assert.Equal(".delay", delay.TextToInsert);
+        Assert.Equal("pair".Length, delay.ReplacementStart);
+    }
+
+    [Fact]
+    public async Task PreservesOutVariablesDeclaredByHistoricalResultExpressions()
+    {
+        var context = new SessionContext(
+            ["int.TryParse(\"42\", out var parsed)"],
+            SessionContext.DefaultImports,
+            []);
+
+        var items = await service.GetCompletionsAsync(context, "parsed.", "parsed.".Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "CompareTo");
+        Assert.Contains(items, static item => item.DisplayText == "ToString");
+    }
+
+    [Fact]
     public async Task CtrlSpaceAfterSessionVariableCompletesItsMembersAndInsertsTheDot()
     {
         var context = new SessionContext(

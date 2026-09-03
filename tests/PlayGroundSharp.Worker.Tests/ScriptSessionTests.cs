@@ -94,6 +94,80 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task PreservesTupleElementNamesAndTypeForSessionVariables()
+    {
+        var session = new ScriptSession();
+
+        var result = await session.ExecuteAsync(
+            1,
+            "var pair = (index: 1, delay: 20); var nested = new[] { (name: \"Ada\", score: 99) }; ");
+
+        Assert.True(result.StateAccepted);
+        var pair = Assert.Single(session.GetVariables(), static variable => variable.Name == "pair");
+        Assert.Equal(["index", "delay"], pair.Value.Properties?.Select(static property => property.Name));
+        Assert.Contains("index", pair.CompletionTypeExpression, StringComparison.Ordinal);
+        Assert.Contains("delay", pair.CompletionTypeExpression, StringComparison.Ordinal);
+        var nested = Assert.Single(session.GetVariables(), static variable => variable.Name == "nested");
+        var item = Assert.Single(nested.Value.Items!);
+        Assert.Equal(["name", "score"], item.Properties?.Select(static property => property.Name));
+        Assert.Contains("name", nested.CompletionTypeExpression, StringComparison.Ordinal);
+        Assert.Contains("score", nested.CompletionTypeExpression, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RecoversRuntimeTypeForImplicitOutVariableButNotExplicitDynamic()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .First(candidate => candidate.Version.Major == Environment.Version.Major);
+        var session = new ScriptSession(framework.GetReferencePaths(), framework.TargetFramework);
+        await session.ExecuteAsync(1, "new JsonObject { [\"name\"] = \"Alice\" }");
+
+        var result = await session.ExecuteAsync(
+            2,
+            "var json = Out[1]; var name = Last[\"name\"].GetValue<string>(); " +
+            "dynamic explicitlyDynamic = json;");
+
+        Assert.True(result.StateAccepted);
+        var variables = session.GetVariables();
+        Assert.Equal(
+            "global::System.Text.Json.Nodes.JsonObject",
+            Assert.Single(variables, static variable => variable.Name == "json").CompletionTypeExpression);
+        Assert.Equal(
+            "string",
+            Assert.Single(variables, static variable => variable.Name == "name").CompletionTypeExpression);
+        Assert.Null(Assert.Single(
+            variables,
+            static variable => variable.Name == "explicitlyDynamic").CompletionTypeExpression);
+    }
+
+    [Fact]
+    public async Task CarriesTupleNamesThroughOutAndLastVariables()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .First(candidate => candidate.Version.Major == Environment.Version.Major);
+        var session = new ScriptSession(framework.GetReferencePaths(), framework.TargetFramework);
+        await session.ExecuteAsync(1, "(index: 1, delay: 20)");
+
+        var result = await session.ExecuteAsync(2, "var fromOut = Out[1]; var fromLast = Last;");
+        var chained = await session.ExecuteAsync(3, "Out[1]");
+
+        Assert.True(result.StateAccepted);
+        foreach (var variable in session.GetVariables().Where(static variable =>
+                     variable.Name is "fromOut" or "fromLast"))
+        {
+            Assert.Equal(["index", "delay"], variable.Value.Properties?.Select(static property => property.Name));
+            Assert.Contains("index", variable.CompletionTypeExpression, StringComparison.Ordinal);
+            Assert.Contains("delay", variable.CompletionTypeExpression, StringComparison.Ordinal);
+        }
+        Assert.Equal(["index", "delay"], chained.Snapshot?.Properties?.Select(static property => property.Name));
+        var retained = Assert.Single(
+            session.GetRetainedResults(),
+            static retained => retained.SubmissionIndex == 3);
+        Assert.Contains("index", retained.TypeExpression, StringComparison.Ordinal);
+        Assert.Contains("delay", retained.TypeExpression, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PreservesNestedAndLongTupleElementNames()
     {
         var result = await new ScriptSession().ExecuteAsync(
@@ -589,19 +663,57 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task CancelledSubmissionDoesNotReplaceVariableCompletionTypeHints()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "var value = \"before\";");
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.ExecuteAsync(
+            2,
+            "var value = 42; await Task.Delay(10_000, ExecutionCancellation);",
+            cancellationToken: cancellation.Token));
+
+        var value = Assert.Single(session.GetVariables(), static variable => variable.Name == "value");
+        Assert.Equal("string", value.CompletionTypeExpression);
+        Assert.Equal("before", value.Value.Display);
+    }
+
+    [Fact]
+    public async Task RuntimeExceptionKeepsVariablesAndTheirCompletionTypes()
+    {
+        var session = new ScriptSession();
+
+        var result = await session.ExecuteAsync(
+            1,
+            "var pair = (index: 1, delay: 20); throw new InvalidOperationException(\"boom\");");
+
+        Assert.True(result.StateAccepted);
+        Assert.Contains("boom", result.Exception?.Message, StringComparison.Ordinal);
+        var pair = Assert.Single(session.GetVariables(), static variable => variable.Name == "pair");
+        Assert.Equal(["index", "delay"], pair.Value.Properties?.Select(static property => property.Name));
+        Assert.Contains("index", pair.CompletionTypeExpression, StringComparison.Ordinal);
+        Assert.Contains("delay", pair.CompletionTypeExpression, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CancellationDuringResultCaptureDoesNotAcceptTheSubmission()
     {
         var session = new ScriptSession();
-        Assert.True((await session.ExecuteAsync(1, "var retained = 21;")).StateAccepted);
+        Assert.True((await session.ExecuteAsync(1, "var retained = 21; var stable = \"before\";")).StateAccepted);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(800));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.ExecuteAsync(
                 2,
+                "var stable = 42; " +
                 "Enumerable.Range(1, 10_000).Select(i => { System.Threading.Thread.SpinWait(5_000_000); return i; })",
                 cancellationToken: cancellation.Token))
             .WaitAsync(TimeSpan.FromSeconds(4));
 
         Assert.Single(session.Context.Submissions);
+        var stable = Assert.Single(session.GetVariables(), static variable => variable.Name == "stable");
+        Assert.Equal("string", stable.CompletionTypeExpression);
+        Assert.Equal("before", stable.Value.Display);
         var next = await session.ExecuteAsync(2, "retained * 2");
         Assert.Equal("42", next.Snapshot?.Display);
         Assert.Equal(2, session.Context.Submissions.Count);

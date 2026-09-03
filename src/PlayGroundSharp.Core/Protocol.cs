@@ -5,7 +5,7 @@ namespace PlayGroundSharp.Core;
 /// <summary>Defines compatibility information for the named-pipe protocol.</summary>
 public static class ProtocolConstants
 {
-    public const int Version = 4;
+    public const int Version = 5;
 }
 
 /// <summary>A serialized, versioned message exchanged between App and Worker.</summary>

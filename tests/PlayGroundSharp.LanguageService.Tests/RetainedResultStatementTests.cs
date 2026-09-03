@@ -24,7 +24,7 @@ public sealed class RetainedResultStatementTests
     [Fact]
     public void CreatesTypedNamingSubmission() =>
         Assert.Equal(
-            "var json = RetainResultAs<global::System.Text.Json.Nodes.JsonNode?>(3);",
+            "global::System.Text.Json.Nodes.JsonNode? json = RetainResultAs<global::System.Text.Json.Nodes.JsonNode?>(3);",
             RetainedResultStatement.Name(3, "global::System.Text.Json.Nodes.JsonNode?", "json"));
 
     [Fact]
@@ -32,6 +32,12 @@ public sealed class RetainedResultStatementTests
         Assert.Equal(
             "dynamic item = RetainResultAsDynamic(4);",
             RetainedResultStatement.Name(4, "dynamic", "item"));
+
+    [Fact]
+    public void CreatesTupleNamingSubmissionWithoutLosingElementNames() =>
+        Assert.Equal(
+            "(int index, int delay) pair = RetainResultAs<(int index, int delay)>(5);",
+            RetainedResultStatement.Name(5, "(int index, int delay)", "pair"));
 
     [Fact]
     public void CreatesReleaseSubmission() =>

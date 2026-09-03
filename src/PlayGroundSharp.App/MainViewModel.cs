@@ -1255,7 +1255,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         [.. submissions],
         [.. imports],
         [.. references],
-        CurrentTargetFramework.GetReferencePaths());
+        CurrentTargetFramework.GetReferencePaths(),
+        [.. VariableItems
+            .Where(static item => !item.IsUnnamedResult && item.TypeExpression is not null)
+            .Select(static item => new VariableTypeHint(item.Name, item.TypeExpression!))]);
 
     private async Task UpdateDiagnosticsAfterDelayAsync(string code, CancellationTokenSource delay)
     {
@@ -1527,7 +1530,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 variable.TypeName,
                 FormatSnapshot(variable.Value),
                 variable.IsReadOnly,
-                variable.Value))
+                variable.Value,
+                typeExpression: variable.CompletionTypeExpression))
             .Concat(variableEvent.RetainedResults.Select(result => new VariableItem(
                 Localize("Variables.Unnamed", result.SubmissionIndex),
                 result.TypeName,

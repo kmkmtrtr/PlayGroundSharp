@@ -146,15 +146,40 @@ internal static class DataInferenceSnapshotFactory
             JsonElement element => CreateJson(element, budget),
             IReadOnlyDictionary<string, string?> values => CreateStringDictionary(values, budget),
             IDictionary dictionary => CreateDictionary(dictionary, budget),
-            string => new(SnapshotKind.String, string.Empty, typeof(string).FullName),
-            bool => new(SnapshotKind.Boolean, "false", typeof(bool).FullName),
+            IEnumerable genericDictionary when
+                TryGetStringDictionaryEntryType(value.GetType(), out var entryType) =>
+                CreateGenericStringDictionary(genericDictionary, entryType, value.GetType().FullName, budget),
+            IEnumerable sequence when value is not string && IsMaterializedSequence(value) =>
+                CreateSequence(sequence, value.GetType().FullName, budget),
+            string => CreateScalar(SnapshotKind.String, value, string.Empty),
+            bool => CreateScalar(SnapshotKind.Boolean, value, "false"),
             DateTime or DateTimeOffset or DateOnly or TimeOnly =>
-                new(SnapshotKind.DateTime, string.Empty, value.GetType().FullName),
-            Guid => new(SnapshotKind.Guid, string.Empty, typeof(Guid).FullName),
+                CreateScalar(SnapshotKind.DateTime, value, string.Empty),
+            TimeSpan => CreateScalar(SnapshotKind.String, value, string.Empty),
+            Guid => CreateScalar(SnapshotKind.Guid, value, string.Empty),
             byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal =>
-                new(SnapshotKind.Number, Convert.ToString(value, CultureInfo.InvariantCulture), value.GetType().FullName),
+                CreateScalar(
+                    SnapshotKind.Number,
+                    value,
+                    Convert.ToString(value, CultureInfo.InvariantCulture)),
+            _ when value.GetType().IsEnum =>
+                CreateScalar(SnapshotKind.Enum, value, value.ToString()),
             _ => new(SnapshotKind.MaxDepth, "unsupported inferred value", value.GetType().FullName)
         };
+    }
+
+    private static ResultSnapshot CreateScalar(
+        SnapshotKind kind,
+        object value,
+        string? display)
+    {
+        var type = value.GetType();
+        return new(
+            kind,
+            display,
+            type.FullName,
+            TypeExpression: CSharpTypeExpression.TryCreate(type),
+            IsReferenceType: !type.IsValueType);
     }
 
     private static ResultSnapshot CreateStringDictionary(
@@ -182,6 +207,48 @@ internal static class DataInferenceSnapshotFactory
             values.GetType().FullName,
             Properties: properties,
             TotalCount: properties.Count);
+    }
+
+    private static ResultSnapshot CreateGenericStringDictionary(
+        IEnumerable values,
+        Type entryType,
+        string? typeName,
+        SchemaBudget budget)
+    {
+        var keyProperty = entryType.GetProperty(nameof(KeyValuePair<string, object?>.Key))!;
+        var valueProperty = entryType.GetProperty(nameof(KeyValuePair<string, object?>.Value))!;
+        var properties = new List<ResultProperty>();
+        foreach (var entry in values)
+        {
+            budget.CancellationToken.ThrowIfCancellationRequested();
+            if (properties.Count >= MaximumSchemaNodes)
+                throw new InvalidDataException($"The inferred data shape exceeded {MaximumSchemaNodes:N0} properties.");
+            if (entry is null || keyProperty.GetValue(entry) is not string name) continue;
+            properties.Add(new(name, CreateValue(valueProperty.GetValue(entry), budget)));
+        }
+        return new(
+            SnapshotKind.Object,
+            $"{properties.Count:N0} inferred properties",
+            typeName,
+            Properties: properties,
+            TotalCount: properties.Count);
+    }
+
+    private static bool TryGetStringDictionaryEntryType(Type type, out Type entryType)
+    {
+        foreach (var contract in type.GetInterfaces())
+        {
+            if (!contract.IsGenericType) continue;
+            var definition = contract.GetGenericTypeDefinition();
+            if (definition != typeof(IDictionary<,>) && definition != typeof(IReadOnlyDictionary<,>))
+                continue;
+            var arguments = contract.GetGenericArguments();
+            if (arguments[0] != typeof(string)) continue;
+            entryType = typeof(KeyValuePair<,>).MakeGenericType(arguments);
+            return true;
+        }
+        entryType = null!;
+        return false;
     }
 
     private static ResultSnapshot CreateDataTable(DataTable table, SchemaBudget budget)

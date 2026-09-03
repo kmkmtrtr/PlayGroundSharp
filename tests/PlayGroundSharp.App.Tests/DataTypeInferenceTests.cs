@@ -302,6 +302,57 @@ public sealed class DataTypeInferenceTests
     }
 
     [Fact]
+    public async Task GeneratesAndExecutesTypesForDapperStyleGenericDictionaryRows()
+    {
+        var session = new ScriptSession();
+        var declaration = await session.ExecuteAsync(1, """
+            dynamic first = new global::System.Dynamic.ExpandoObject();
+            first.id = 1;
+            first.customer_name = "Ada";
+            first.ordered_on = new DateOnly(2026, 8, 31);
+            first.total = 12.5m;
+            first.tags = new[] { "new", "vip" };
+            first.note = DBNull.Value;
+            dynamic second = new global::System.Dynamic.ExpandoObject();
+            second.id = 2;
+            second.customer_name = "Grace";
+            second.ordered_on = new DateOnly(2026, 9, 1);
+            second.total = 20m;
+            second.tags = new[] { "returning" };
+            second.note = "priority";
+            var dapperRows = new[] { first, second };
+            """);
+        var inspection = await session.InspectExpressionAsync("dapperRows", forDataInference: true);
+        var generated = DataTypeInference.Generate(
+            inspection.Snapshot!, "dapperRows", "OrderRow", "typedRows")!;
+
+        var projection = await session.ExecuteAsync(2, generated.GeneratedCode);
+        var verification = await session.ExecuteAsync(
+            3,
+            "typedRows[0].CustomerName + \"/\" + typedRows[1].Note + \"/\" + " +
+            "typedRows[0].OrderedOn.Year + \"/\" + typedRows[0].Tags[1]");
+
+        Assert.True(declaration.StateAccepted);
+        var inferredRow = Assert.Single(inspection.Snapshot!.Items!);
+        Assert.Equal(
+            ["id", "customer_name", "ordered_on", "total", "tags", "note"],
+            inferredRow.Properties!.Select(static property => property.Name));
+        Assert.Contains("public int Id", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains("public string CustomerName", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains("public global::System.DateOnly OrderedOn", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains("public decimal Total", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.Contains(
+            "public global::System.Collections.Generic.List<string> Tags",
+            generated.GeneratedCode,
+            StringComparison.Ordinal);
+        Assert.Contains("public string? Note", generated.GeneratedCode, StringComparison.Ordinal);
+        Assert.True(projection.StateAccepted,
+            string.Join(" | ", projection.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.True(verification.StateAccepted);
+        Assert.Equal("Ada/priority/2026/vip", verification.Snapshot?.Display);
+    }
+
+    [Fact]
     public async Task LargeInferredVariableUsesItsFairShareOfTheEagerPreviewBudget()
     {
         var session = new ScriptSession();

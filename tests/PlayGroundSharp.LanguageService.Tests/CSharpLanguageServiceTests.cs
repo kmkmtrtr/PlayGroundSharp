@@ -98,6 +98,50 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task UsesRecoveredVariableTypeForDynamicHistoryAndLatestRedeclaration()
+    {
+        var context = new SessionContext(
+            ["var value = 42;", "var value = Out[1];"],
+            SessionContext.DefaultImports,
+            [],
+            VariableTypeHints:
+            [
+                new("value", "string")
+            ]);
+
+        var items = await service.GetCompletionsAsync(context, "value.", "value.".Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "Length");
+        Assert.Contains(items, static item => item.DisplayText == "Contains");
+        Assert.Contains(items, static item => item.DisplayText == "Substring");
+    }
+
+    [Fact]
+    public async Task UsesRecoveredTupleNamesForCompletion()
+    {
+        var context = new SessionContext(
+            ["var pair = Out[1];"],
+            SessionContext.DefaultImports,
+            [],
+            VariableTypeHints:
+            [
+                new("pair", "(int index, int delay)")
+            ]);
+
+        var items = await service.GetCompletionsAsync(context, "pair.", "pair.".Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "index");
+        Assert.Contains(items, static item => item.DisplayText == "delay");
+        Assert.DoesNotContain(items, static item => item.DisplayText == "Item1");
+        Assert.DoesNotContain(items, static item => item.DisplayText == "Item2");
+
+        var ctrlSpaceItems = await service.GetCompletionsAsync(context, "pair", "pair".Length);
+        var delay = Assert.Single(ctrlSpaceItems, static item => item.DisplayText == "delay");
+        Assert.Equal(".delay", delay.TextToInsert);
+        Assert.Equal("pair".Length, delay.ReplacementStart);
+    }
+
+    [Fact]
     public async Task CtrlSpaceAfterSessionVariableCompletesItsMembersAndInsertsTheDot()
     {
         var context = new SessionContext(

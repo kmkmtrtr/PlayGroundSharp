@@ -34,6 +34,12 @@ public sealed class RetainedResultStatementTests
             RetainedResultStatement.Name(4, "dynamic", "item"));
 
     [Fact]
+    public void CreatesTupleNamingSubmissionWithoutLosingElementNames() =>
+        Assert.Equal(
+            "(int index, int delay) pair = RetainResultAs<(int index, int delay)>(5);",
+            RetainedResultStatement.Name(5, "(int index, int delay)", "pair"));
+
+    [Fact]
     public void CreatesReleaseSubmission() =>
         Assert.Equal("ReleaseResult(5);", RetainedResultStatement.Release(5));
 

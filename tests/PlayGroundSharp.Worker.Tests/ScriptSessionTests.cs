@@ -94,6 +94,80 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task PreservesTupleElementNamesAndTypeForSessionVariables()
+    {
+        var session = new ScriptSession();
+
+        var result = await session.ExecuteAsync(
+            1,
+            "var pair = (index: 1, delay: 20); var nested = new[] { (name: \"Ada\", score: 99) }; ");
+
+        Assert.True(result.StateAccepted);
+        var pair = Assert.Single(session.GetVariables(), static variable => variable.Name == "pair");
+        Assert.Equal(["index", "delay"], pair.Value.Properties?.Select(static property => property.Name));
+        Assert.Contains("index", pair.CompletionTypeExpression, StringComparison.Ordinal);
+        Assert.Contains("delay", pair.CompletionTypeExpression, StringComparison.Ordinal);
+        var nested = Assert.Single(session.GetVariables(), static variable => variable.Name == "nested");
+        var item = Assert.Single(nested.Value.Items!);
+        Assert.Equal(["name", "score"], item.Properties?.Select(static property => property.Name));
+        Assert.Contains("name", nested.CompletionTypeExpression, StringComparison.Ordinal);
+        Assert.Contains("score", nested.CompletionTypeExpression, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RecoversRuntimeTypeForImplicitOutVariableButNotExplicitDynamic()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .First(candidate => candidate.Version.Major == Environment.Version.Major);
+        var session = new ScriptSession(framework.GetReferencePaths(), framework.TargetFramework);
+        await session.ExecuteAsync(1, "new JsonObject { [\"name\"] = \"Alice\" }");
+
+        var result = await session.ExecuteAsync(
+            2,
+            "var json = Out[1]; var name = Last[\"name\"].GetValue<string>(); " +
+            "dynamic explicitlyDynamic = json;");
+
+        Assert.True(result.StateAccepted);
+        var variables = session.GetVariables();
+        Assert.Equal(
+            "global::System.Text.Json.Nodes.JsonObject",
+            Assert.Single(variables, static variable => variable.Name == "json").CompletionTypeExpression);
+        Assert.Equal(
+            "string",
+            Assert.Single(variables, static variable => variable.Name == "name").CompletionTypeExpression);
+        Assert.Null(Assert.Single(
+            variables,
+            static variable => variable.Name == "explicitlyDynamic").CompletionTypeExpression);
+    }
+
+    [Fact]
+    public async Task CarriesTupleNamesThroughOutAndLastVariables()
+    {
+        var framework = DotNetFrameworkLocator.Discover()
+            .First(candidate => candidate.Version.Major == Environment.Version.Major);
+        var session = new ScriptSession(framework.GetReferencePaths(), framework.TargetFramework);
+        await session.ExecuteAsync(1, "(index: 1, delay: 20)");
+
+        var result = await session.ExecuteAsync(2, "var fromOut = Out[1]; var fromLast = Last;");
+        var chained = await session.ExecuteAsync(3, "Out[1]");
+
+        Assert.True(result.StateAccepted);
+        foreach (var variable in session.GetVariables().Where(static variable =>
+                     variable.Name is "fromOut" or "fromLast"))
+        {
+            Assert.Equal(["index", "delay"], variable.Value.Properties?.Select(static property => property.Name));
+            Assert.Contains("index", variable.CompletionTypeExpression, StringComparison.Ordinal);
+            Assert.Contains("delay", variable.CompletionTypeExpression, StringComparison.Ordinal);
+        }
+        Assert.Equal(["index", "delay"], chained.Snapshot?.Properties?.Select(static property => property.Name));
+        var retained = Assert.Single(
+            session.GetRetainedResults(),
+            static retained => retained.SubmissionIndex == 3);
+        Assert.Contains("index", retained.TypeExpression, StringComparison.Ordinal);
+        Assert.Contains("delay", retained.TypeExpression, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PreservesNestedAndLongTupleElementNames()
     {
         var result = await new ScriptSession().ExecuteAsync(

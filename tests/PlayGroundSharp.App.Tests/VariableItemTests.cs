@@ -10,12 +10,13 @@ public sealed class VariableItemTests
         await using var viewModel = new MainViewModel();
         var value = new ResultSnapshot(SnapshotKind.Number, "42", "System.Int32");
         var items = viewModel.CreateVariableItems(new(
-            [new("answer", "System.Int32", value, false)],
+            [new("answer", "System.Int32", value, false, "int")],
             [new(3, "System.Int32", "int", value)]));
 
         var variable = Assert.Single(items, static item => !item.IsUnnamedResult);
         Assert.Equal("var", variable.Kind);
         Assert.Equal("answer", variable.SourceExpression);
+        Assert.Equal("int", variable.TypeExpression);
         var result = Assert.Single(items, static item => item.IsUnnamedResult);
         Assert.Equal("result", result.Kind);
         Assert.Equal("Out[3]", result.SourceExpression);

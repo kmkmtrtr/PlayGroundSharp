@@ -104,6 +104,24 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void VariablesEventPreservesCompletionTypeExpressions()
+    {
+        var payload = new VariablesEvent(
+            [new(
+                "pair",
+                "System.ValueTuple`2[System.Int32,System.Int32]",
+                new(SnapshotKind.Object, "2 members", "System.ValueTuple`2"),
+                false,
+                "(int index, int delay)")],
+            []);
+
+        var envelope = PipeEnvelope.Create(MessageKinds.Variables, Guid.NewGuid(), payload);
+        var variable = Assert.Single(envelope.ReadPayload<VariablesEvent>().Variables);
+
+        Assert.Equal("(int index, int delay)", variable.CompletionTypeExpression);
+    }
+
+    [Fact]
     public void InspectionResultRoundTripsSnapshotAndDiagnostics()
     {
         var payload = new InspectionResultEvent(

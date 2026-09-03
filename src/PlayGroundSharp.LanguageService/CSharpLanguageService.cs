@@ -193,6 +193,29 @@ public sealed class CSharpLanguageService
                 .ToArray();
         }
 
+        if (TryCreateHintedCompletionRequest(
+                context,
+                currentCode,
+                position,
+                out var hintedCode,
+                out var hintedPosition,
+                out var hintedReplacementStart,
+                out var positionDelta))
+        {
+            var hintedItems = await GetCompletionsAsync(
+                context with { VariableTypeHints = null },
+                hintedCode,
+                hintedPosition,
+                cancellationToken).ConfigureAwait(false);
+            if (hintedItems.Count > 0)
+            {
+                return hintedItems.Select(item => item.ReplacementStart is { } start && start >= hintedReplacementStart
+                        ? item with { ReplacementStart = start - positionDelta }
+                        : item)
+                    .ToArray();
+            }
+        }
+
         if (CanCompleteTrailingExpression(currentCode, position))
         {
             var memberCode = currentCode.Insert(position, ".");
@@ -364,6 +387,16 @@ public sealed class CSharpLanguageService
         CompletionCandidate candidate,
         CancellationToken cancellationToken = default)
     {
+        if (TryCreateHintedCompletionRequest(
+                context, currentCode, position, out var hintedCode, out var hintedPosition, out _, out _))
+            return await GetCompletionDescriptionAsync(
+                    context with { VariableTypeHints = null },
+                    hintedCode,
+                    hintedPosition,
+                    candidate,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
         var completesTrailingExpression = candidate.ReplacementStart == position &&
                                           candidate.TextToInsert.StartsWith(".", StringComparison.Ordinal);
         var completionSource = completesTrailingExpression
@@ -999,7 +1032,8 @@ public sealed class CSharpLanguageService
         var usingDirectives = string.Join(Environment.NewLine, context.Imports.Select(static import => $"using {import};"));
         var globals = CreateGlobalsCode(context);
         var prefix = usingDirectives + Environment.NewLine + Environment.NewLine + globals + Environment.NewLine + Environment.NewLine +
-            string.Join(Environment.NewLine + Environment.NewLine, context.Submissions.Select(NormalizeHistoricalSubmission));
+            string.Join(Environment.NewLine + Environment.NewLine,
+                context.Submissions.Select(NormalizeHistoricalSubmissionForDocument));
         if (prefix.Length > 0) prefix += Environment.NewLine + Environment.NewLine;
         var document = workspace.AddDocument(projectId, "Current.csx", SourceText.From(prefix + currentCode));
         return new(workspace, document, prefix.Length);
@@ -1218,6 +1252,20 @@ public sealed class CSharpLanguageService
     private static string NormalizeHistoricalSubmission(string code) =>
         PrepareCurrentSubmissionForDiagnostics(code);
 
+    private static string NormalizeHistoricalSubmissionForDocument(string code)
+    {
+        var root = CSharpSyntaxTree.ParseText(
+                code,
+                new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script))
+            .GetCompilationUnitRoot();
+        if (root.Members.LastOrDefault() is GlobalStatementSyntax
+            {
+                Statement: ExpressionStatementSyntax
+            } trailingExpression)
+            return code.Remove(trailingExpression.FullSpan.Start, trailingExpression.FullSpan.Length).TrimEnd();
+        return PrepareCurrentSubmissionForDiagnostics(code);
+    }
+
     private static MemberAccessExpressionSyntax? FindMemberAccessAtPosition(SyntaxNode root, int position) =>
         root.DescendantNodes()
             .OfType<MemberAccessExpressionSyntax>()
@@ -1225,6 +1273,51 @@ public sealed class CSharpLanguageService
                            node.SpanStart <= position && node.Span.End >= position)
             .OrderBy(static node => node.Span.Length)
             .FirstOrDefault();
+
+    private static bool TryCreateHintedCompletionRequest(
+        SessionContext context,
+        string currentCode,
+        int position,
+        out string hintedCode,
+        out int hintedPosition,
+        out int hintedReplacementStart,
+        out int positionDelta)
+    {
+        hintedCode = currentCode;
+        hintedPosition = position;
+        hintedReplacementStart = position;
+        positionDelta = 0;
+        if (context.VariableTypeHints is not { Count: > 0 } || position < 0 || position > currentCode.Length)
+            return false;
+
+        var hints = context.VariableTypeHints
+            .Where(static hint => RetainedResultStatement.IsValidVariableName(hint.Name))
+            .GroupBy(static hint => SyntaxFactory.ParseToken(hint.Name).ValueText, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.Last().TypeExpression, StringComparer.Ordinal);
+        if (hints.Count == 0) return false;
+
+        var root = CSharpSyntaxTree.ParseText(
+                currentCode,
+                new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script))
+            .GetRoot();
+        var access = FindMemberAccessAtPosition(root, position);
+        if (access is null) return false;
+        var identifier = access.Expression.DescendantNodesAndSelf()
+            .OfType<IdentifierNameSyntax>()
+            .FirstOrDefault(candidate => hints.ContainsKey(candidate.Identifier.ValueText));
+        if (identifier is null || !hints.TryGetValue(identifier.Identifier.ValueText, out var typeExpression))
+            return false;
+        var type = SyntaxFactory.ParseTypeName(typeExpression);
+        if (type.ContainsDiagnostics) return false;
+
+        var replacement = $"default({typeExpression})";
+        hintedCode = currentCode.Remove(identifier.SpanStart, identifier.Span.Length)
+            .Insert(identifier.SpanStart, replacement);
+        hintedReplacementStart = identifier.SpanStart;
+        positionDelta = replacement.Length - identifier.Span.Length;
+        hintedPosition = position + positionDelta;
+        return true;
+    }
 
     private static string? CompleteMemberDeclaration(string code, int insertionPosition)
     {

@@ -40,7 +40,15 @@ public sealed record ResultProperty(
     bool IsOptional = false);
 
 /// <summary>A process-neutral view of a variable retained by a script session.</summary>
-public sealed record VariableInfo(string Name, string TypeName, ResultSnapshot Value, bool IsReadOnly);
+public sealed record VariableInfo(
+    string Name,
+    string TypeName,
+    ResultSnapshot Value,
+    bool IsReadOnly,
+    string? CompletionTypeExpression = null);
+
+/// <summary>An editor-only static type recovered for a session variable.</summary>
+public sealed record VariableTypeHint(string Name, string TypeExpression);
 
 /// <summary>A process-neutral view of an unnamed result retained by a script session.</summary>
 public sealed record RetainedResultInfo(
@@ -57,7 +65,8 @@ public sealed record SessionContext(
     IReadOnlyList<string> Submissions,
     IReadOnlyList<string> Imports,
     IReadOnlyList<string> ReferencePaths,
-    IReadOnlyList<string>? FrameworkReferencePaths = null)
+    IReadOnlyList<string>? FrameworkReferencePaths = null,
+    IReadOnlyList<VariableTypeHint>? VariableTypeHints = null)
 {
     public static IReadOnlyList<string> DefaultImports { get; } =
     [

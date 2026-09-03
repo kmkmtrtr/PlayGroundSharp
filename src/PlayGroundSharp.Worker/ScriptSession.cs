@@ -41,6 +41,9 @@ public sealed class ScriptSession
     private readonly List<string> references = [];
     private readonly Dictionary<string, (string Identity, string Path)> assemblyIdentities = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> resolvedAssemblyNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, VariableStaticType> variableStaticTypes = new(StringComparer.Ordinal);
+    private readonly Dictionary<int, ITypeSymbol> retainedResultStaticTypes = [];
+    private ITypeSymbol? lastResultStaticType;
     private readonly bool requiresReferenceAssemblyBootstrap;
     private ScriptState<object?>? state;
     private ScriptOptions options;
@@ -175,11 +178,16 @@ public sealed class ScriptSession
             remainingTextCharacters -= addedTextCharacters;
         }
 
-        return sessionVariables.Select((variable, index) => new VariableInfo(
-            variable.Name,
-            typeNames[index],
-            variableSnapshots[index],
-            variable.IsReadOnly)).ToArray();
+        return sessionVariables.Select((variable, index) =>
+        {
+            variableStaticTypes.TryGetValue(variable.Name, out var staticType);
+            return new VariableInfo(
+                variable.Name,
+                typeNames[index],
+                variableSnapshots[index],
+                variable.IsReadOnly,
+                GetCompletionTypeExpression(staticType, variableSnapshots[index]));
+        }).ToArray();
     }
 
     public IReadOnlyList<RetainedResultInfo> GetRetainedResults(CancellationToken cancellationToken = default)
@@ -304,6 +312,8 @@ public sealed class ScriptSession
                     error.Diagnostics.Length);
             }
 
+            var compilation = candidate.Script.GetCompilation();
+            CaptureVariableStaticTypes(compilation);
             if (candidate.Exception is OperationCanceledException cancelled && cancellationToken.IsCancellationRequested)
                 throw cancelled;
             if (candidate.Exception is not null)
@@ -313,11 +323,11 @@ public sealed class ScriptSession
                 return new(true, false, null, null, [], ResultSnapshotFactory.CreateException(candidate.Exception));
             }
 
-            var compilation = candidate.Script.GetCompilation();
             var hasReturnValue = HasTrailingValueExpression(compilation);
-            var resultType = hasReturnValue ? GetTrailingResultType(compilation) : null;
+            var resultType = hasReturnValue ? GetEffectiveTrailingResultType(compilation) : null;
             var resultTypeExpression = hasReturnValue
-                ? GetTrailingResultTypeExpression(compilation, candidate.ReturnValue)
+                ? (resultType is null ? null : TryFormatStaticType(resultType)) ??
+                  GetTrailingResultTypeExpression(compilation, candidate.ReturnValue)
                 : null;
             ResultSnapshot? snapshot = null;
             ResultSnapshot? retainedPreview = null;
@@ -372,6 +382,11 @@ public sealed class ScriptSession
                     trailingIdentifier is not null &&
                     candidate.Variables.Any(variable => variable.Name == trailingIdentifier),
                     retainedPreview);
+                if (resultType is not null)
+                {
+                    retainedResultStaticTypes[submissionIndex] = resultType;
+                    lastResultStaticType = resultType;
+                }
             }
 
             return new(true, hasReturnValue, candidate.ReturnValue, snapshot, [], null);
@@ -443,7 +458,7 @@ public sealed class ScriptSession
                         forDataInference
                             ? DataInferenceSnapshotFactory.Create(candidate.ReturnValue, snapshots, cancellationToken)
                             : snapshots.Create(candidate.ReturnValue, cancellationToken),
-                        GetTrailingResultType(compilation)),
+                        GetEffectiveTrailingResultType(compilation)),
                     [],
                     null);
             }
@@ -540,6 +555,9 @@ public sealed class ScriptSession
     {
         state = null;
         submissions.Clear();
+        variableStaticTypes.Clear();
+        retainedResultStaticTypes.Clear();
+        lastResultStaticType = null;
         SetGlobal(nameof(SessionGlobals.Last), null);
         resultHistory.Clear();
     }
@@ -570,11 +588,16 @@ public sealed class ScriptSession
     {
         try
         {
-            return snapshots.Create(
+            var snapshot = snapshots.Create(
                 variable.Value,
                 maximumNodes,
                 maximumTextCharacters,
                 cancellationToken);
+            if (!variableStaticTypes.TryGetValue(variable.Name, out var staticType)) return snapshot;
+            snapshot = TupleElementNameMapper.Apply(snapshot, staticType.Type);
+            return TryFormatStaticType(staticType.Type) is { } typeExpression
+                ? snapshot with { TypeExpression = typeExpression }
+                : snapshot;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -585,6 +608,112 @@ public sealed class ScriptSession
             return new(SnapshotKind.Exception, $"{error.GetType().Name}: {error.Message}", variable.Type.FullName);
         }
     }
+
+    private void CaptureVariableStaticTypes(Compilation compilation)
+    {
+        var tree = compilation.SyntaxTrees.Last();
+        var root = tree.GetCompilationUnitRoot();
+        var model = compilation.GetSemanticModel(tree);
+        foreach (var field in root.Members.OfType<FieldDeclarationSyntax>())
+        foreach (var declarator in field.Declaration.Variables)
+        {
+            var declaration = declarator.Parent as VariableDeclarationSyntax;
+            var variableType = declaration is null ? null : model.GetTypeInfo(declaration.Type).Type;
+            if (variableType is null) continue;
+            var isImplicit = declaration!.Type.IsVar;
+            var recoveredType = isImplicit
+                ? TryGetBuiltInFlowStaticType(declarator.Initializer?.Value, model)
+                : null;
+            var allowRuntimeFallback = isImplicit &&
+                                       IsBuiltInDynamicFlow(declarator.Initializer?.Value, model);
+            variableStaticTypes[declarator.Identifier.ValueText] = new(
+                recoveredType ?? variableType,
+                allowRuntimeFallback);
+        }
+    }
+
+    private ITypeSymbol? TryGetBuiltInFlowStaticType(ExpressionSyntax? expression, SemanticModel model)
+    {
+        if (expression is null) return null;
+        while (expression is ParenthesizedExpressionSyntax parenthesized)
+            expression = parenthesized.Expression;
+
+        if (expression is ElementAccessExpressionSyntax access)
+        {
+            if (access.Expression is not IdentifierNameSyntax { Identifier.ValueText: "Out" } ||
+                access.ArgumentList.Arguments.Count != 1 ||
+                !IsSessionGlobalsProperty(access.Expression, model))
+                return null;
+            var constant = model.GetConstantValue(access.ArgumentList.Arguments[0].Expression);
+            if (constant is { HasValue: true, Value: int index } &&
+                retainedResultStaticTypes.TryGetValue(index, out var retainedType))
+                return retainedType;
+            return null;
+        }
+
+        if (expression is not IdentifierNameSyntax identifier) return null;
+        if (identifier.Identifier.ValueText == "Last" && lastResultStaticType is not null &&
+            IsSessionGlobalsProperty(identifier, model))
+            return lastResultStaticType;
+        if (variableStaticTypes.TryGetValue(identifier.Identifier.ValueText, out var existing) &&
+            existing.AllowRuntimeFallback)
+            return existing.Type;
+        return null;
+    }
+
+    private ITypeSymbol? GetEffectiveTrailingResultType(Compilation compilation)
+    {
+        var tree = compilation.SyntaxTrees.Last();
+        var root = tree.GetCompilationUnitRoot();
+        if (root.Members.LastOrDefault() is not GlobalStatementSyntax
+            {
+                Statement: ExpressionStatementSyntax expression
+            })
+            return null;
+        var model = compilation.GetSemanticModel(tree);
+        var type = model.GetTypeInfo(expression.Expression).ConvertedType;
+        return type?.TypeKind == TypeKind.Dynamic
+            ? TryGetBuiltInFlowStaticType(expression.Expression, model) ?? type
+            : type;
+    }
+
+    private bool IsBuiltInDynamicFlow(ExpressionSyntax? expression, SemanticModel model)
+    {
+        if (expression is null) return false;
+        foreach (var identifier in expression.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>())
+        {
+            if (variableStaticTypes.TryGetValue(identifier.Identifier.ValueText, out var existing) &&
+                existing.AllowRuntimeFallback)
+                return true;
+            if (IsSessionGlobalsProperty(identifier, model))
+                return true;
+            if (identifier.Identifier.ValueText is "Last" or "Out" or "Data" &&
+                model.GetSymbolInfo(identifier).Symbol is null)
+                return true;
+        }
+        return false;
+    }
+
+    private static bool IsSessionGlobalsProperty(ExpressionSyntax expression, SemanticModel model) =>
+        model.GetSymbolInfo(expression).Symbol is IPropertySymbol
+        {
+            Name: "Last" or "Out" or "Data",
+            ContainingType.Name: "SessionGlobals"
+        };
+
+    private static string? GetCompletionTypeExpression(
+        VariableStaticType? staticType,
+        ResultSnapshot snapshot)
+    {
+        if (staticType is null) return null;
+        return TryFormatStaticType(staticType.Type) ??
+               (staticType.AllowRuntimeFallback ? snapshot.TypeExpression : null);
+    }
+
+    private static string? TryFormatStaticType(ITypeSymbol type) =>
+        type.TypeKind is TypeKind.Dynamic or TypeKind.Error || ContainsAnonymousType(type)
+            ? null
+            : FormatTypeExpression(type);
 
     private static (int Nodes, int TextCharacters) MeasureSnapshot(ResultSnapshot snapshot)
     {
@@ -714,23 +843,15 @@ public sealed class ScriptSession
         if (type is null || type.TypeKind is TypeKind.Dynamic or TypeKind.Error || ContainsAnonymousType(type))
             return TryFormatRuntimeType(value?.GetType()) ?? "dynamic";
 
+        return FormatTypeExpression(type);
+    }
+
+    private static string FormatTypeExpression(ITypeSymbol type)
+    {
         var format = SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
             SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions |
             SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
         return type.ToDisplayString(format);
-    }
-
-    private static ITypeSymbol? GetTrailingResultType(Compilation compilation)
-    {
-        var tree = compilation.SyntaxTrees.Last();
-        var root = tree.GetCompilationUnitRoot();
-        if (root.Members.LastOrDefault() is not GlobalStatementSyntax
-            {
-                Statement: ExpressionStatementSyntax expression
-            })
-            return null;
-
-        return compilation.GetSemanticModel(tree).GetTypeInfo(expression.Expression).ConvertedType;
     }
 
     private static string? GetTrailingIdentifier(Compilation compilation)
@@ -783,6 +904,8 @@ public sealed class ScriptSession
         IPointerTypeSymbol pointer => ContainsAnonymousType(pointer.PointedAtType),
         _ => false
     };
+
+    private sealed record VariableStaticType(ITypeSymbol Type, bool AllowRuntimeFallback);
 
     private static DiagnosticInfo ToDiagnostic(Diagnostic diagnostic)
     {

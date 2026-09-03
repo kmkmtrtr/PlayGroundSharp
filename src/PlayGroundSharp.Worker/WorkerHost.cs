@@ -9,7 +9,7 @@ public sealed class WorkerHost
 {
     private readonly string pipeName;
     private readonly ScriptSession session;
-    private readonly PackageRestoreService packageRestore;
+    private readonly IPackageRestoreService packageRestore;
     private readonly PackageSearchService packageSearch = new();
     private volatile CancellationTokenSource? operationCancellation;
 
@@ -19,13 +19,21 @@ public sealed class WorkerHost
     }
 
     public WorkerHost(WorkerConfiguration configuration)
+        : this(configuration, null)
+    {
+    }
+
+    internal WorkerHost(
+        WorkerConfiguration configuration,
+        IPackageRestoreService? packageRestore)
     {
         pipeName = configuration.PipeName;
         var frameworkReferences = configuration.FrameworkReferenceDirectory is { } directory
             ? Directory.EnumerateFiles(directory, "*.dll").ToArray()
             : null;
         session = new ScriptSession(frameworkReferences, configuration.TargetFramework);
-        packageRestore = new PackageRestoreService(targetFramework: configuration.TargetFramework);
+        this.packageRestore = packageRestore ??
+            new PackageRestoreService(targetFramework: configuration.TargetFramework);
     }
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
@@ -132,15 +140,15 @@ public sealed class WorkerHost
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+            ReleaseOperation(cancellation.Token);
             await TryWriteAsync(transport, PipeEnvelope.Create(
                 MessageKinds.Cancelled, envelope.CorrelationId, new CancelledEvent(true)), hostToken).ConfigureAwait(false);
-            ReleaseOperation(cancellation.Token);
         }
         catch (Exception error)
         {
+            ReleaseOperation(cancellation.Token);
             await TryWriteAsync(transport, PipeEnvelope.Create(
                 MessageKinds.Error, envelope.CorrelationId, new WorkerErrorEvent(error.Message)), hostToken).ConfigureAwait(false);
-            ReleaseOperation(cancellation.Token);
         }
         finally
         {
@@ -201,9 +209,9 @@ public sealed class WorkerHost
         await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Variables, envelope.CorrelationId,
             new VariablesEvent(session.GetVariables(), session.GetRetainedResults())), hostToken).ConfigureAwait(false);
         // A terminal event is the client's signal that it may submit the next operation.
+        ReleaseOperation(operationToken);
         await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.Completed, envelope.CorrelationId,
             new ExecutionCompletedEvent(request.SubmissionIndex, result.StateAccepted, Process.GetCurrentProcess().WorkingSet64)), hostToken).ConfigureAwait(false);
-        ReleaseOperation(operationToken);
     }
 
     private async Task InspectExpressionAsync(
@@ -217,6 +225,7 @@ public sealed class WorkerHost
             request.Code,
             request.ForDataInference,
             operationToken).ConfigureAwait(false);
+        ReleaseOperation(operationToken);
         await transport.WriteAsync(PipeEnvelope.Create(
             MessageKinds.InspectionResult,
             envelope.CorrelationId,
@@ -225,7 +234,6 @@ public sealed class WorkerHost
                 result.Diagnostics,
                 result.Exception,
                 result.TotalDiagnosticCount)), hostToken).ConfigureAwait(false);
-        ReleaseOperation(operationToken);
     }
 
     private Task SendContextAsync(PipeTransport transport, Guid correlationId, CancellationToken cancellationToken)
@@ -242,10 +250,10 @@ public sealed class WorkerHost
             message => transport.WriteAsync(PipeEnvelope.Create(MessageKinds.PackageProgress, envelope.CorrelationId,
                 new PackageProgressEvent(message)), cancellationToken).GetAwaiter().GetResult(), cancellationToken).ConfigureAwait(false);
         foreach (var path in restored.AssemblyPaths) session.AddReference(path);
-        await SendContextAsync(transport, envelope.CorrelationId, cancellationToken).ConfigureAwait(false);
         await transport.WriteAsync(PipeEnvelope.Create(MessageKinds.PackageAdded, envelope.CorrelationId,
             new PackageAddedEvent(restored.PackageId, restored.Version, restored.AssemblyPaths)), cancellationToken).ConfigureAwait(false);
         ReleaseOperation(cancellationToken);
+        await SendContextAsync(transport, envelope.CorrelationId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task SearchPackagesAsync(PipeTransport transport, PipeEnvelope envelope, CancellationToken cancellationToken)
@@ -253,8 +261,8 @@ public sealed class WorkerHost
         var request = envelope.ReadPayload<SearchPackagesRequest>();
         var results = await packageSearch.SearchAsync(
             request.Query, request.IncludePrerelease, request.Take, cancellationToken).ConfigureAwait(false);
+        ReleaseOperation(cancellationToken);
         await transport.WriteAsync(PipeEnvelope.Create(
             MessageKinds.PackageSearchResults, envelope.CorrelationId, results), cancellationToken).ConfigureAwait(false);
-        ReleaseOperation(cancellationToken);
     }
 }

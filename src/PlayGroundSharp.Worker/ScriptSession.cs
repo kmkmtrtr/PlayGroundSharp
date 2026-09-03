@@ -313,11 +313,11 @@ public sealed class ScriptSession
             }
 
             var compilation = candidate.Script.GetCompilation();
-            CaptureVariableStaticTypes(compilation);
             if (candidate.Exception is OperationCanceledException cancelled && cancellationToken.IsCancellationRequested)
                 throw cancelled;
             if (candidate.Exception is not null)
             {
+                CaptureVariableStaticTypes(compilation);
                 state = candidate;
                 submissions.Add(code);
                 return new(true, false, null, null, [], ResultSnapshotFactory.CreateException(candidate.Exception));
@@ -371,6 +371,7 @@ public sealed class ScriptSession
 
             state = candidate;
             submissions.Add(code);
+            CaptureVariableStaticTypes(compilation);
             if (hasReturnValue)
             {
                 SetGlobal(nameof(SessionGlobals.Last), candidate.ReturnValue);

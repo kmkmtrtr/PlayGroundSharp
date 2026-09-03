@@ -142,6 +142,20 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task PreservesOutVariablesDeclaredByHistoricalResultExpressions()
+    {
+        var context = new SessionContext(
+            ["int.TryParse(\"42\", out var parsed)"],
+            SessionContext.DefaultImports,
+            []);
+
+        var items = await service.GetCompletionsAsync(context, "parsed.", "parsed.".Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "CompareTo");
+        Assert.Contains(items, static item => item.DisplayText == "ToString");
+    }
+
+    [Fact]
     public async Task CtrlSpaceAfterSessionVariableCompletesItsMembersAndInsertsTheDot()
     {
         var context = new SessionContext(

@@ -1262,7 +1262,13 @@ public sealed class CSharpLanguageService
             {
                 Statement: ExpressionStatementSyntax
             } trailingExpression)
+        {
+            // A result expression can also introduce a session variable through `out var`
+            // or a pattern. Keep those declarations available to later editor submissions.
+            if (trailingExpression.DescendantNodes().OfType<SingleVariableDesignationSyntax>().Any())
+                return PrepareCurrentSubmissionForDiagnostics(code);
             return code.Remove(trailingExpression.FullSpan.Start, trailingExpression.FullSpan.Length).TrimEnd();
+        }
         return PrepareCurrentSubmissionForDiagnostics(code);
     }
 

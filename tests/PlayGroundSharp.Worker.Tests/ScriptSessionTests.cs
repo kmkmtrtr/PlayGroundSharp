@@ -663,19 +663,57 @@ public sealed class ScriptSessionTests
     }
 
     [Fact]
+    public async Task CancelledSubmissionDoesNotReplaceVariableCompletionTypeHints()
+    {
+        var session = new ScriptSession();
+        await session.ExecuteAsync(1, "var value = \"before\";");
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.ExecuteAsync(
+            2,
+            "var value = 42; await Task.Delay(10_000, ExecutionCancellation);",
+            cancellationToken: cancellation.Token));
+
+        var value = Assert.Single(session.GetVariables(), static variable => variable.Name == "value");
+        Assert.Equal("string", value.CompletionTypeExpression);
+        Assert.Equal("before", value.Value.Display);
+    }
+
+    [Fact]
+    public async Task RuntimeExceptionKeepsVariablesAndTheirCompletionTypes()
+    {
+        var session = new ScriptSession();
+
+        var result = await session.ExecuteAsync(
+            1,
+            "var pair = (index: 1, delay: 20); throw new InvalidOperationException(\"boom\");");
+
+        Assert.True(result.StateAccepted);
+        Assert.Contains("boom", result.Exception?.Message, StringComparison.Ordinal);
+        var pair = Assert.Single(session.GetVariables(), static variable => variable.Name == "pair");
+        Assert.Equal(["index", "delay"], pair.Value.Properties?.Select(static property => property.Name));
+        Assert.Contains("index", pair.CompletionTypeExpression, StringComparison.Ordinal);
+        Assert.Contains("delay", pair.CompletionTypeExpression, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CancellationDuringResultCaptureDoesNotAcceptTheSubmission()
     {
         var session = new ScriptSession();
-        Assert.True((await session.ExecuteAsync(1, "var retained = 21;")).StateAccepted);
+        Assert.True((await session.ExecuteAsync(1, "var retained = 21; var stable = \"before\";")).StateAccepted);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(800));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.ExecuteAsync(
                 2,
+                "var stable = 42; " +
                 "Enumerable.Range(1, 10_000).Select(i => { System.Threading.Thread.SpinWait(5_000_000); return i; })",
                 cancellationToken: cancellation.Token))
             .WaitAsync(TimeSpan.FromSeconds(4));
 
         Assert.Single(session.Context.Submissions);
+        var stable = Assert.Single(session.GetVariables(), static variable => variable.Name == "stable");
+        Assert.Equal("string", stable.CompletionTypeExpression);
+        Assert.Equal("before", stable.Value.Display);
         var next = await session.ExecuteAsync(2, "retained * 2");
         Assert.Equal("42", next.Snapshot?.Display);
         Assert.Equal(2, session.Context.Submissions.Count);

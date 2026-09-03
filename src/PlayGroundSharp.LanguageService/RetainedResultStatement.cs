@@ -24,7 +24,7 @@ public static class RetainedResultStatement
 
         return string.Equals(typeExpression, "dynamic", StringComparison.Ordinal)
             ? $"dynamic {variableName} = RetainResultAsDynamic({submissionIndex});"
-            : $"var {variableName} = RetainResultAs<{typeExpression}>({submissionIndex});";
+            : $"{typeExpression} {variableName} = RetainResultAs<{typeExpression}>({submissionIndex});";
     }
 
     public static bool RepresentsSameIdentifier(string left, string right)

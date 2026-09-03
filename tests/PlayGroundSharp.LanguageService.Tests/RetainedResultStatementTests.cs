@@ -24,7 +24,7 @@ public sealed class RetainedResultStatementTests
     [Fact]
     public void CreatesTypedNamingSubmission() =>
         Assert.Equal(
-            "var json = RetainResultAs<global::System.Text.Json.Nodes.JsonNode?>(3);",
+            "global::System.Text.Json.Nodes.JsonNode? json = RetainResultAs<global::System.Text.Json.Nodes.JsonNode?>(3);",
             RetainedResultStatement.Name(3, "global::System.Text.Json.Nodes.JsonNode?", "json"));
 
     [Fact]

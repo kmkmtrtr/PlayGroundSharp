@@ -78,6 +78,26 @@ public sealed class CSharpLanguageServiceTests
     }
 
     [Fact]
+    public async Task CompletesMembersAfterATypedRetainedResultIsNamed()
+    {
+        var context = new SessionContext(
+            ["var json = RetainResultAs<global::System.Text.Json.Nodes.JsonObject>(3);"],
+            SessionContext.DefaultImports,
+            []);
+        const string code = "json.";
+
+        var items = await service.GetCompletionsAsync(context, code, code.Length);
+        var diagnostics = await service.GetDiagnosticsAsync(context, "json.ContainsKey(\"name\")");
+        var names = items.Select(static item => item.DisplayText).ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(names.Contains("TryGetPropertyValue"),
+            string.Join(" | ", diagnostics.Select(static item => $"{item.Id}: {item.Message}")));
+        Assert.Contains("Add", names);
+        Assert.Contains("ToJsonString", names);
+        Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public async Task CtrlSpaceAfterSessionVariableCompletesItsMembersAndInsertsTheDot()
     {
         var context = new SessionContext(

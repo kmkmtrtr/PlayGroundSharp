@@ -1037,10 +1037,17 @@ public sealed class CSharpLanguageService
     private static string CreateGlobalsCode(SessionContext context) =>
         GetFrameworkReferencePaths(context).Length > 0
             ? "dynamic Last = default!; dynamic Out = default!; dynamic Data = default!; " +
-              "System.Threading.CancellationToken ExecutionCancellation = default;"
+              "System.Threading.CancellationToken ExecutionCancellation = default; " +
+              CreateRetainedResultHelpersCode()
             : "dynamic Last = default!; dynamic Out = default!; " +
               "var Data = new PlayGroundSharp.Core.LargeDataAccess(); " +
-              "System.Threading.CancellationToken ExecutionCancellation = default;";
+              "System.Threading.CancellationToken ExecutionCancellation = default; " +
+              CreateRetainedResultHelpersCode();
+
+    private static string CreateRetainedResultHelpersCode() =>
+        "T RetainResultAs<T>(int index) => default!; " +
+        "dynamic RetainResultAsDynamic(int index) => default!; " +
+        "void ReleaseResult(int index) { }";
 
     private static IReadOnlyList<MetadataReference> CreatePlatformReferences()
     {

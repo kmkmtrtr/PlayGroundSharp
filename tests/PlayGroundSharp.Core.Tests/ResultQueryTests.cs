@@ -8,6 +8,26 @@ namespace PlayGroundSharp.Core.Tests;
 public sealed class ResultQueryTests
 {
     [Fact]
+    public void PropertyReadsPublicInstanceFieldsIncludingInheritedFields()
+    {
+        var value = new FieldCustomer();
+
+        Assert.Equal("Ada", ResultQuery.Property(value, "Name"));
+        Assert.Equal(42, ResultQuery.Property(value, "Id"));
+        Assert.Null(ResultQuery.Property(value, "Missing"));
+        Assert.Null(ResultQuery.Property(value, "StaticName"));
+    }
+
+    [Fact]
+    public void PropertyReadsValueTupleFields()
+    {
+        var value = ("Ada", 42);
+
+        Assert.Equal("Ada", ResultQuery.Property(value, "Item1"));
+        Assert.Equal(42, ResultQuery.Property(value, "Item2"));
+    }
+
+    [Fact]
     public void PropertyReadsClrDictionaryAndJsonValues()
     {
         var customer = new Customer("Ada");
@@ -64,4 +84,15 @@ public sealed class ResultQueryTests
     }
 
     private sealed record Customer(string Name);
+
+    private class FieldCustomerBase
+    {
+        public readonly int Id = 42;
+    }
+
+    private sealed class FieldCustomer : FieldCustomerBase
+    {
+        public readonly string Name = "Ada";
+        public static readonly string StaticName = "Grace";
+    }
 }

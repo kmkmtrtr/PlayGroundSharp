@@ -24,12 +24,13 @@ public static class ResultQuery
         if (source is IDictionary dictionary)
             return dictionary.Contains(name) ? dictionary[name] : null;
 
-        var property = source.GetType().GetProperty(
+        var type = source.GetType();
+        var property = type.GetProperty(
             name,
             BindingFlags.Instance | BindingFlags.Public);
         return property?.GetIndexParameters().Length == 0
             ? property.GetValue(source)
-            : null;
+            : type.GetField(name, BindingFlags.Instance | BindingFlags.Public)?.GetValue(source);
     }
 
     public static IEnumerable<object?> Flatten(object? value)

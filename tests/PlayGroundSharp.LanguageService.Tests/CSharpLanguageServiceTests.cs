@@ -8,6 +8,50 @@ public sealed class CSharpLanguageServiceTests
 {
     private readonly CSharpLanguageService service = new();
 
+    [Theory]
+    [InlineData("(1)+2.", "(1)+(2).CompareTo(0)")]
+    [InlineData("(1)-2.", "(1)-(2).CompareTo(0)")]
+    [InlineData("1 +2.", "1 +(2).CompareTo(0)")]
+    [InlineData("-2.", "(-2).CompareTo(0)")]
+    [InlineData("+2.", "(+2).CompareTo(0)")]
+    [InlineData("2e-3.", "(2e-3).CompareTo(0)")]
+    public async Task NumericCompletionPreservesBinaryOperators(string code, string expected)
+    {
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+        var item = Assert.Single(items, static item => item.DisplayText == "CompareTo");
+        var completed = code[..(item.ReplacementStart ?? code.Length)] + item.TextToInsert + "(0)";
+
+        Assert.Equal(expected, completed);
+        Assert.DoesNotContain(await service.GetDiagnosticsAsync(SessionContext.Empty, completed),
+            static diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Theory]
+    [InlineData("// HttpCli")]
+    [InlineData("/* HttpCli")]
+    [InlineData("\"HttpCli")]
+    [InlineData("@\"HttpCli")]
+    [InlineData("\"\"\"HttpCli")]
+    [InlineData("$\"HttpCli")]
+    [InlineData("#if false\nHttpCli")]
+    public async Task DoesNotOfferTypeImportsInsideCommentsOrStrings(string code)
+    {
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+
+        Assert.DoesNotContain(items, static item => item.RequiredNamespace is not null);
+    }
+
+    [Theory]
+    [InlineData("new HttpCli")]
+    [InlineData("$\"{new HttpCli")]
+    public async Task OffersTypeImportsInCodeAndInterpolationExpressions(string code)
+    {
+        var items = await service.GetCompletionsAsync(SessionContext.Empty, code, code.Length);
+
+        Assert.Contains(items, static item => item.DisplayText == "HttpClient" &&
+            item.RequiredNamespace == "System.Net.Http");
+    }
+
     [Fact]
     public async Task SelectedFrameworkReferencePackControlsAvailableApis()
     {

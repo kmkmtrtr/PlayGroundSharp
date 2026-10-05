@@ -137,7 +137,7 @@ public sealed record SymbolExplorerEntry(
 public sealed class CSharpLanguageService
 {
     private static readonly Regex NumericLiteralReceiverPattern = new(
-        @"(?<![\p{L}\p{N}_\.])(?<literal>[+-]?(?:0[xX][0-9A-Fa-f_]+|0[bB][01_]+|(?:\d[\d_]*)(?:\.\d[\d_]*)?(?:[eE][+-]?\d[\d_]*)?[fFdDmM]?))\.$",
+        @"(?<![\p{L}\p{N}_\.])(?<literal>(?:0[xX][0-9A-Fa-f_]+|0[bB][01_]+|(?:\d[\d_]*)(?:\.\d[\d_]*)?(?:[eE][+-]?\d[\d_]*)?[fFdDmM]?))\.$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Lazy<MefHostServices> WorkspaceHost = new(
         static () => MefHostServices.Create(MefHostServices.DefaultAssemblies),
@@ -177,7 +177,7 @@ public sealed class CSharpLanguageService
     {
         if (TryGetNumericLiteralReceiver(currentCode, position, out var numericMatch))
         {
-            var literal = numericMatch.Groups["literal"].Value;
+            var literal = numericMatch.Literal;
             var parenthesizedCode = currentCode.Remove(numericMatch.Index, numericMatch.Length)
                 .Insert(numericMatch.Index, $"({literal}).");
             var numericItems = await GetCompletionsAsync(
@@ -1107,12 +1107,25 @@ public sealed class CSharpLanguageService
     private static bool TryGetNumericLiteralReceiver(
         string currentCode,
         int position,
-        out Match match)
+        out (int Index, int Length, string Literal) match)
     {
         var memberStart = Math.Clamp(position, 0, currentCode.Length);
         while (memberStart > 0 && SyntaxFacts.IsIdentifierPartCharacter(currentCode[memberStart - 1])) memberStart--;
-        match = NumericLiteralReceiverPattern.Match(currentCode[..memberStart]);
-        return match.Success;
+        var numericMatch = NumericLiteralReceiverPattern.Match(currentCode[..memberStart]);
+        match = default;
+        if (!numericMatch.Success) return false;
+
+        var start = numericMatch.Index;
+        var root = CSharpSyntaxTree.ParseText(currentCode[..(memberStart - 1)],
+            new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script)).GetRoot();
+        var token = root.FindToken(start);
+        if (!token.IsKind(SyntaxKind.NumericLiteralToken) || token.SpanStart != start) return false;
+        if (token.Parent?.Parent is PrefixUnaryExpressionSyntax unary &&
+            unary.Kind() is SyntaxKind.UnaryMinusExpression or SyntaxKind.UnaryPlusExpression)
+            start = unary.SpanStart;
+
+        match = (start, memberStart - start, currentCode[start..(memberStart - 1)]);
+        return true;
     }
 
     private static async Task AddExtensionCompletionsAndNamespacesAsync(
@@ -1243,6 +1256,14 @@ public sealed class CSharpLanguageService
         while (start > 0 && IsIdentifierPart(currentCode[start - 1])) start--;
         var prefix = currentCode[start..Math.Clamp(position, start, currentCode.Length)];
         if (prefix.Length < 2 || start > 0 && currentCode[start - 1] == '.') return;
+
+        // A textual prefix can also occur in comments, string text, or disabled code.
+        // Only offer imports for identifiers parsed as C# code (including interpolation expressions).
+        var root = CSharpSyntaxTree.ParseText(currentCode,
+            new CSharpParseOptions(LanguageVersion.Latest, kind: SourceCodeKind.Script),
+            cancellationToken: cancellationToken).GetRoot(cancellationToken);
+        var token = root.FindToken(start);
+        if (!token.IsKind(SyntaxKind.IdentifierToken) || !token.Span.Contains(start)) return;
 
         var imported = context.Imports.ToHashSet(StringComparer.Ordinal);
         var candidates = GetPlatformReferencedTypes(context)
